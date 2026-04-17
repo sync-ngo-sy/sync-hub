@@ -6,7 +6,13 @@ import type {
   ComparisonResponse,
   DataConnector,
   IndexingWorkbench,
+  ParsingDocumentDetail,
+  ParsingOverview,
+  ParserProfile,
+  ParserProfileInput,
+  SearchFilterOptions,
   SearchFilters,
+  SearchQueryOptions,
   SearchResponse,
   SystemHealth,
 } from "@/lib/contracts";
@@ -19,20 +25,41 @@ import {
   defaultCompareIds,
   defaultIntelligenceIds,
   getCandidate,
+  getParserProfiles,
+  getParsingDocument,
   indexingWorkbench,
+  parsingOverview,
+  publishParserProfile,
+  saveParserProfile,
   searchCandidates,
   systemHealth,
 } from "@/data/mockData";
+import {
+  buildParsingDocumentDetail,
+  buildParsingOverview,
+  type ParsingCandidateRow,
+  type ParsingProcessingRunRow,
+  type ParsingProfileRow,
+  type ParsingSourceDocumentRow,
+} from "@/lib/parsingQuality";
 import { deriveSearchFilters } from "@/lib/queryIntent";
+import { formatSeniorityValue, SEARCH_SENIORITY_TABLE, SEARCH_SKILL_TABLE } from "@/lib/searchTaxonomy";
 import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
 
 type JsonRecord = Record<string, unknown>;
 
 type PlatformApi = {
-  search: (query: string, filters: SearchFilters) => Promise<SearchResponse>;
+  search: (query: string, filters: SearchFilters, options?: SearchQueryOptions) => Promise<SearchResponse>;
+  getSearchFilterOptions: () => Promise<SearchFilterOptions>;
   getCandidate: (candidateId: string) => Promise<CandidateDetail>;
   compare: (candidateIds: string[], requiredSkills?: string[]) => Promise<ComparisonResponse>;
   ask: (question: string, candidateIds: string[]) => Promise<AskResponse>;
+  getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null) => Promise<string | null>;
+  getParsingOverview: (tenantId?: string) => Promise<ParsingOverview>;
+  getParsingDocument: (documentId: string, tenantId?: string) => Promise<ParsingDocumentDetail>;
+  getParserProfiles: (tenantId?: string) => Promise<ParserProfile[]>;
+  saveParserProfile: (profile: ParserProfileInput, tenantId?: string) => Promise<ParserProfile>;
+  publishParserProfile: (profileId: string, tenantId?: string) => Promise<ParserProfile>;
   getAnalytics: () => Promise<AnalyticsSnapshot>;
   getSystemHealth: () => Promise<SystemHealth>;
   getDataConnectors: () => Promise<DataConnector[]>;
@@ -50,6 +77,8 @@ type CandidateDossierRow = {
   seniority: string | null;
   primary_role: string | null;
   top_skills: string[] | null;
+  email: string | null;
+  phone: string | null;
   links: string[] | null;
   summary_short: string | null;
   short_summary: string | null;
@@ -71,6 +100,49 @@ type CandidateChunkRow = {
   chunk_type: string;
   text: string;
 };
+
+type CandidateSearchFacetRow = {
+  seniority: string | null;
+  skills: string[] | null;
+};
+
+type ParsingRemoteSnapshot = {
+  documents: ParsingSourceDocumentRow[];
+  candidates: ParsingCandidateRow[];
+  profiles: ParsingProfileRow[];
+  runs: ParsingProcessingRunRow[];
+};
+
+type ParserProfileRow = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: string;
+  extraction_provider: string;
+  extraction_model: string;
+  parser_version: string;
+  model_version: string;
+  prompt_version: string;
+  chunk_version: string;
+  embedding_provider: string;
+  embedding_model: string;
+  embedding_version: string;
+  chunking_profile: string;
+  ocr_enabled: boolean;
+  allow_heuristic_fallback: boolean;
+  prompt_template: string;
+  notes: string | null;
+  last_evaluated_at: string | null;
+  avg_parse_percentage: number | null;
+  avg_confidence: number | null;
+  documents_evaluated: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const STORAGE_BUCKET = "cv-originals";
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -99,21 +171,13 @@ function hueFromId(seed: string) {
   return seed.split("").reduce((memo, character) => memo + character.charCodeAt(0), 0) % 360;
 }
 
-function calibrateMatchScore(rawScore: unknown, subscores: JsonRecord) {
-  const semantic = toNumber(subscores.semantic_similarity);
-  const role = toNumber(subscores.role_match);
-  const seniority = toNumber(subscores.seniority_match);
-  const skill = toNumber(subscores.skill_match);
-  const experience = toNumber(subscores.experience_match);
-  const maxChunkRrf = toNumber(subscores.max_chunk_rrf);
-  const avgTop3ChunkRrf = toNumber(subscores.avg_top3_chunk_rrf);
-  const lexicalSignal = Math.max(
-    Math.min(1, maxChunkRrf * 32),
-    Math.min(1, avgTop3ChunkRrf * 40),
-  );
-  const retrievalSignal = Math.max(semantic, lexicalSignal);
-  const calibrated = (0.42 * retrievalSignal) + (0.22 * role) + (0.12 * seniority) + (0.14 * skill) + (0.10 * experience);
-  return Math.round(Math.max(0, Math.min(1, Math.max(toNumber(rawScore), calibrated))) * 100);
+function dedupeSorted(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeBackendMatchScore(rawScore: unknown) {
+  const normalized = Math.max(0, Math.min(1, toNumber(rawScore)));
+  return Math.round((1 - Math.exp(-6 * normalized)) * 100);
 }
 
 function mapEvidenceSnippet(payload: JsonRecord, fallbackIndex: number): CandidateDetail["evidence"][number] {
@@ -139,6 +203,61 @@ async function invokeFunction<T>(name: string, body: JsonRecord): Promise<T> {
   return data as T;
 }
 
+async function fetchParsingSnapshot(tenantId: string): Promise<ParsingRemoteSnapshot> {
+  if (!supabase) {
+    throw new Error("Missing Supabase browser client configuration.");
+  }
+
+  const [documentsResult, candidatesResult, profilesResult, runsResult] = await Promise.all([
+    supabase
+      .from("source_documents")
+      .select("id, candidate_id, source_type, original_filename, mime_type, source_uri, storage_path, created_at, updated_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(10000),
+    supabase
+      .from("candidates")
+      .select("id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, status")
+      .eq("tenant_id", tenantId)
+      .limit(10000),
+    supabase
+      .from("candidate_profiles")
+      .select("candidate_id, source_document_id, profile_json, timeline_json, skill_matrix_json, raw_text, confidence, missing_fields, parse_warnings, created_at, updated_at")
+      .eq("tenant_id", tenantId)
+      .limit(10000),
+    supabase
+      .from("processing_runs")
+      .select("source_document_id, status, parser_version, model_version, prompt_version, chunk_version, embedding_version, warnings, error_code, error_message, created_at, updated_at, metadata_json")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(20000),
+  ]);
+
+  if (documentsResult.error) {
+    throw documentsResult.error;
+  }
+  if (candidatesResult.error) {
+    throw candidatesResult.error;
+  }
+  if (profilesResult.error) {
+    throw profilesResult.error;
+  }
+  if (runsResult.error) {
+    throw runsResult.error;
+  }
+
+  return {
+    documents: (documentsResult.data ?? []) as ParsingSourceDocumentRow[],
+    candidates: (candidatesResult.data ?? []) as ParsingCandidateRow[],
+    profiles: (profilesResult.data ?? []) as ParsingProfileRow[],
+    runs: (runsResult.data ?? []) as ParsingProcessingRunRow[],
+  };
+}
+
+function isBrowserOpenableSource(sourceUri?: string | null) {
+  return Boolean(sourceUri && /^(https?:)?\/\//i.test(sourceUri));
+}
+
 function mapRemoteSearch(payload: JsonRecord): SearchResponse {
   const rawResults = asArray(payload.results);
 
@@ -158,7 +277,7 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
         seniority: String(record.seniority ?? "unknown"),
         primaryRole: String(record.primary_role ?? "generalist"),
         topSkills: toStringArray(matchedFilters.matched_skills),
-        matchScore: calibrateMatchScore(record.score, subscores),
+        matchScore: normalizeBackendMatchScore(record.score),
         matchSignals: {
           semantic: toNumber(subscores.semantic_similarity),
           skill: toNumber(subscores.skill_match),
@@ -169,7 +288,6 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
         risks: [],
         recommendedRoles: [],
         stage: "Retrieved",
-        availability: "Unknown",
         avatarHue: hueFromId(String(record.candidate_id)),
         matchNarrative: String(record.summary_short ?? "Live result from search_candidates_v1."),
       };
@@ -180,6 +298,40 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
       rankVersion: String(asRecord(payload.meta).rank_version ?? "v1"),
       source: "remote",
     },
+  };
+}
+
+function createFallbackSearchFilterOptions(): SearchFilterOptions {
+  const fallbackSeniorityValues = ["junior", "mid", "senior", "staff-plus"];
+
+  return {
+    seniority: fallbackSeniorityValues.map((value) => ({
+      value,
+      label: formatSeniorityValue(value) || value,
+    })),
+    skills: dedupeSorted(SEARCH_SKILL_TABLE.map((entry) => String(entry.value))),
+  };
+}
+
+function mapSearchFilterOptions(rows: CandidateSearchFacetRow[]): SearchFilterOptions {
+  const seniority = dedupeSorted(
+    rows
+      .map((row) => row.seniority ?? "")
+      .filter((value) => value && value !== "unclassified"),
+  ).map((value) => ({
+    value,
+    label: formatSeniorityValue(value) || value,
+  }));
+
+  const skills = dedupeSorted(
+    rows.flatMap((row) => row.skills ?? []),
+  );
+
+  const fallback = createFallbackSearchFilterOptions();
+
+  return {
+    seniority: seniority.length ? seniority : fallback.seniority,
+    skills: skills.length ? skills : fallback.skills,
   };
 }
 
@@ -239,6 +391,37 @@ function mapRemoteAsk(payload: JsonRecord, candidateIds: string[]): AskResponse 
   };
 }
 
+function mapRemoteParserProfile(row: ParserProfileRow): ParserProfile {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description ?? "",
+    status: row.status as ParserProfile["status"],
+    extractionProvider: row.extraction_provider,
+    extractionModel: row.extraction_model,
+    parserVersion: row.parser_version,
+    modelVersion: row.model_version,
+    promptVersion: row.prompt_version,
+    chunkVersion: row.chunk_version,
+    embeddingProvider: row.embedding_provider,
+    embeddingModel: row.embedding_model,
+    embeddingVersion: row.embedding_version,
+    chunkingProfile: row.chunking_profile,
+    ocrEnabled: Boolean(row.ocr_enabled),
+    allowHeuristicFallback: Boolean(row.allow_heuristic_fallback),
+    promptTemplate: row.prompt_template,
+    notes: row.notes ?? "",
+    lastEvaluatedAt: row.last_evaluated_at,
+    avgParsePercentage: row.avg_parse_percentage,
+    avgConfidence: row.avg_confidence,
+    documentsEvaluated: toNumber(row.documents_evaluated),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[]): CandidateDetail {
   const profile = asRecord(row.profile_json);
   const timeline = asArray(row.timeline_json).map((entry) => {
@@ -287,9 +470,9 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
     seniority: row.seniority ?? "unknown",
     primaryRole: row.primary_role ?? "generalist",
     topSkills: toStringArray(row.top_skills),
-    matchScore: Math.round(toNumber(row.confidence, 0.72) * 100),
+    matchScore: 0,
     matchSignals: {
-      semantic: Math.min(1, Math.max(0.4, toNumber(row.confidence, 0.72))),
+      semantic: 0,
       skill: Math.min(1, Math.max(0.3, toStringArray(row.top_skills).length / 10)),
       experience: Math.min(1, toNumber(row.years_experience) / 10),
     },
@@ -298,10 +481,11 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
     risks: toStringArray(row.risks),
     recommendedRoles: toStringArray(row.recommended_roles),
     stage: "Indexed",
-    availability: "Unknown",
     avatarHue: hueFromId(row.candidate_id),
     matchNarrative: row.short_summary ?? row.summary_short ?? "Grounded dossier view from candidate_dossier_v1.",
     longSummary: row.long_summary ?? row.short_summary ?? row.summary_short ?? "",
+    email: row.email,
+    phone: row.phone,
     links: toStringArray(row.links),
     education,
     certifications: toStringArray(profile.certifications),
@@ -330,9 +514,13 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
 
 function createMockApi(): PlatformApi {
   return {
-    async search(query, filters) {
+    async search(query, filters, options) {
       await wait(180);
-      return searchCandidates(query, filters);
+      return searchCandidates(query, filters, options);
+    },
+    async getSearchFilterOptions() {
+      await wait(80);
+      return createFallbackSearchFilterOptions();
     },
     async getCandidate(candidateId) {
       await wait(120);
@@ -345,6 +533,33 @@ function createMockApi(): PlatformApi {
     async ask(question, candidateIds) {
       await wait(130);
       return askCandidates(question, candidateIds.length ? candidateIds : defaultIntelligenceIds);
+    },
+    async getOriginalDocumentUrl(storagePath, sourceUri) {
+      await wait(40);
+      if (isBrowserOpenableSource(sourceUri)) {
+        return sourceUri ?? null;
+      }
+      return storagePath ? sourceUri ?? null : null;
+    },
+    async getParsingOverview() {
+      await wait(120);
+      return parsingOverview;
+    },
+    async getParsingDocument(documentId) {
+      await wait(120);
+      return getParsingDocument(documentId);
+    },
+    async getParserProfiles() {
+      await wait(120);
+      return getParserProfiles();
+    },
+    async saveParserProfile(profile) {
+      await wait(120);
+      return saveParserProfile(profile);
+    },
+    async publishParserProfile(profileId) {
+      await wait(100);
+      return publishParserProfile(profileId);
     },
     async getAnalytics() {
       await wait(80);
@@ -373,9 +588,11 @@ function createRemoteApi(): PlatformApi {
   const mock = createMockApi();
 
   return {
-    async search(query, filters) {
+    async search(query, filters, options) {
       try {
         const derivedFilters = deriveSearchFilters(query, filters);
+        const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
+        const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
         const payload = await invokeFunction<JsonRecord>("search", {
           q: query,
           filters: {
@@ -385,11 +602,32 @@ function createRemoteApi(): PlatformApi {
             location: derivedFilters.location ?? null,
             skills: derivedFilters.skills ?? [],
           },
-          limit: 8,
+          limit,
+          offset,
         });
         return mapRemoteSearch(payload);
       } catch {
-        return mock.search(query, filters);
+        return mock.search(query, filters, options);
+      }
+    },
+    async getSearchFilterOptions() {
+      if (!supabase) {
+        return mock.getSearchFilterOptions();
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("candidate_search_rows")
+          .select("seniority, skills")
+          .limit(10000);
+
+        if (error) {
+          throw error;
+        }
+
+        return mapSearchFilterOptions((data ?? []) as CandidateSearchFacetRow[]);
+      } catch {
+        return mock.getSearchFilterOptions();
       }
     },
     async getCandidate(candidateId) {
@@ -402,7 +640,7 @@ function createRemoteApi(): PlatformApi {
           supabase
             .from("candidate_dossier_v1")
             .select(
-              "candidate_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, links, summary_short, short_summary, long_summary, strengths, risks, recommended_roles, timeline_json, profile_json, original_filename, mime_type, storage_path, source_uri, confidence",
+              "candidate_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, short_summary, long_summary, strengths, risks, recommended_roles, timeline_json, profile_json, original_filename, mime_type, storage_path, source_uri, confidence",
             )
             .eq("candidate_id", candidateId)
             .maybeSingle(),
@@ -450,6 +688,137 @@ function createRemoteApi(): PlatformApi {
         return mapRemoteAsk(payload, candidateIds);
       } catch {
         return mock.ask(question, candidateIds);
+      }
+    },
+    async getOriginalDocumentUrl(storagePath, sourceUri) {
+      if (supabase && storagePath) {
+        try {
+          const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, 60 * 10);
+          if (error) {
+            throw error;
+          }
+          if (data?.signedUrl) {
+            return data.signedUrl;
+          }
+        } catch {
+          return mock.getOriginalDocumentUrl(storagePath, sourceUri);
+        }
+      }
+
+      return mock.getOriginalDocumentUrl(storagePath, sourceUri);
+    },
+    async getParsingOverview(tenantId) {
+      if (!supabase || !tenantId) {
+        return mock.getParsingOverview();
+      }
+
+      try {
+        const snapshot = await fetchParsingSnapshot(tenantId);
+        return buildParsingOverview(snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
+      } catch {
+        return mock.getParsingOverview();
+      }
+    },
+    async getParsingDocument(documentId, tenantId) {
+      if (!supabase || !tenantId) {
+        return mock.getParsingDocument(documentId);
+      }
+
+      try {
+        const snapshot = await fetchParsingSnapshot(tenantId);
+        const detail = buildParsingDocumentDetail(documentId, snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
+        if (!detail) {
+          throw new Error(`Document ${documentId} was not found.`);
+        }
+        return detail;
+      } catch {
+        return mock.getParsingDocument(documentId);
+      }
+    },
+    async getParserProfiles(tenantId) {
+      if (!supabase || !tenantId) {
+        return mock.getParserProfiles();
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("parser_profiles")
+          .select(
+            "id, tenant_id, name, slug, description, status, extraction_provider, extraction_model, parser_version, model_version, prompt_version, chunk_version, embedding_provider, embedding_model, embedding_version, chunking_profile, ocr_enabled, allow_heuristic_fallback, prompt_template, notes, last_evaluated_at, avg_parse_percentage, avg_confidence, documents_evaluated, created_at, updated_at",
+          )
+          .eq("tenant_id", tenantId)
+          .order("status", { ascending: true })
+          .order("updated_at", { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        return ((data ?? []) as ParserProfileRow[]).map(mapRemoteParserProfile);
+      } catch {
+        return mock.getParserProfiles();
+      }
+    },
+    async saveParserProfile(profile, tenantId) {
+      if (!supabase || !tenantId) {
+        return mock.saveParserProfile(profile);
+      }
+
+      try {
+        const payload = {
+          id: profile.id ?? undefined,
+          tenant_id: tenantId,
+          name: profile.name.trim(),
+          slug: profile.slug.trim().toLowerCase(),
+          description: profile.description,
+          extraction_provider: profile.extractionProvider,
+          extraction_model: profile.extractionModel,
+          parser_version: profile.parserVersion,
+          model_version: profile.modelVersion,
+          prompt_version: profile.promptVersion,
+          chunk_version: profile.chunkVersion,
+          embedding_provider: profile.embeddingProvider,
+          embedding_model: profile.embeddingModel,
+          embedding_version: profile.embeddingVersion,
+          chunking_profile: profile.chunkingProfile,
+          ocr_enabled: profile.ocrEnabled,
+          allow_heuristic_fallback: profile.allowHeuristicFallback,
+          prompt_template: profile.promptTemplate,
+          notes: profile.notes,
+        };
+
+        const mutation = profile.id
+          ? supabase.from("parser_profiles").update(payload).eq("id", profile.id).select(
+              "id, tenant_id, name, slug, description, status, extraction_provider, extraction_model, parser_version, model_version, prompt_version, chunk_version, embedding_provider, embedding_model, embedding_version, chunking_profile, ocr_enabled, allow_heuristic_fallback, prompt_template, notes, last_evaluated_at, avg_parse_percentage, avg_confidence, documents_evaluated, created_at, updated_at",
+            ).single()
+          : supabase.from("parser_profiles").insert(payload).select(
+              "id, tenant_id, name, slug, description, status, extraction_provider, extraction_model, parser_version, model_version, prompt_version, chunk_version, embedding_provider, embedding_model, embedding_version, chunking_profile, ocr_enabled, allow_heuristic_fallback, prompt_template, notes, last_evaluated_at, avg_parse_percentage, avg_confidence, documents_evaluated, created_at, updated_at",
+            ).single();
+
+        const { data, error } = await mutation;
+
+        if (error) {
+          throw error;
+        }
+
+        return mapRemoteParserProfile(data as ParserProfileRow);
+      } catch {
+        return mock.saveParserProfile(profile);
+      }
+    },
+    async publishParserProfile(profileId, tenantId) {
+      if (!supabase || !tenantId) {
+        return mock.publishParserProfile(profileId);
+      }
+
+      try {
+        const { data, error } = await supabase.rpc("publish_parser_profile_v1", { p_profile_id: profileId });
+        if (error) {
+          throw error;
+        }
+        return mapRemoteParserProfile(data as ParserProfileRow);
+      } catch {
+        return mock.publishParserProfile(profileId);
       }
     },
     async getAnalytics() {

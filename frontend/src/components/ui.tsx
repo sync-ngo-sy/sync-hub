@@ -14,7 +14,7 @@ export function Panel({ children, className }: PanelProps) {
 type PageIntroProps = {
   eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
 };
 
@@ -24,7 +24,7 @@ export function PageIntro({ eyebrow, title, description, actions }: PageIntroPro
       <div>
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </div>
       {actions ? <div className="page-intro__actions">{actions}</div> : null}
     </header>
@@ -136,14 +136,16 @@ export function MetricBars({ values }: MetricBarsProps) {
 type EmptyStateProps = {
   title: string;
   detail: string;
+  action?: ReactNode;
 };
 
-export function EmptyState({ title, detail }: EmptyStateProps) {
+export function EmptyState({ title, detail, action }: EmptyStateProps) {
   return (
     <Panel className="empty-state">
       <Sparkles size={18} />
       <strong>{title}</strong>
       <p>{detail}</p>
+      {action ? action : null}
     </Panel>
   );
 }

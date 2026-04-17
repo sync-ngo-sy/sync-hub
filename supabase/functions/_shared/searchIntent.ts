@@ -1,3 +1,5 @@
+import { extractSeniorityFromText, extractSkillsFromText, normalizeSeniorityValue, normalizeSkillList } from "./searchTaxonomy.ts";
+
 type SearchFilters = {
   role?: string | null;
   seniority?: string | null;
@@ -27,47 +29,21 @@ export const SEARCH_SENIORITY_VALUES = [
   "unclassified",
 ] as const;
 
-const SKILL_ALIASES: Record<string, string> = {
-  ".net": ".NET",
-  "angularjs": "Angular",
-  "asp-net": "ASP.NET",
-  "asp-net-core": "ASP.NET Core",
-  "aws": "AWS",
-  "azure": "Azure",
-  "c#": "C#",
-  "c++": "C++",
-  "docker": "Docker",
-  "dotnet": ".NET",
-  "flask": "Flask",
-  "gcp": "Google Cloud",
-  "golang": "Go",
-  "graphql": "GraphQL",
-  "java": "Java",
-  "javascript": "JavaScript",
-  "js": "JavaScript",
-  "k8s": "Kubernetes",
-  "kafka": "Kafka",
-  "mongodb": "MongoDB",
-  "mysql": "MySQL",
-  "nestjs": "NestJS",
-  "next.js": "Next.js",
-  "nextjs": "Next.js",
-  "node": "Node.js",
-  "node-js": "Node.js",
-  "node.js": "Node.js",
-  "nodejs": "Node.js",
-  "postgres": "PostgreSQL",
-  "postgresql": "PostgreSQL",
-  "python": "Python",
-  "react": "React",
-  "reactjs": "React",
-  "redis": "Redis",
-  "supabase": "Supabase",
-  "terraform": "Terraform",
-  "ts": "TypeScript",
-  "typescript": "TypeScript",
-  "vue": "Vue",
+export type SearchIntentPayload = {
+  role: string | null;
+  seniority: string | null;
+  min_years_experience: number | null;
+  skills: string[];
+  location: string | null;
 };
+
+function nullableEnum(values: readonly string[], description: string) {
+  return {
+    type: ["string", "null"] as const,
+    enum: [...values, null],
+    description,
+  };
+}
 
 const ROLE_PATTERNS: Array<{ role: string; patterns: RegExp[] }> = [
   { role: "full-stack", patterns: [/\bfull[\s-]?stack\b/i] },
@@ -76,35 +52,12 @@ const ROLE_PATTERNS: Array<{ role: string; patterns: RegExp[] }> = [
     role: "backend",
     patterns: [/\bback[\s-]?end\b/i, /\bapi\b/i, /\bmicroservices?\b/i, /\bnode(?:\.js)?\b/i, /\bdjango\b/i, /\bflask\b/i, /\b\.net\b/i],
   },
-  { role: "ml", patterns: [/\bml\b/i, /\bai\b/i, /\bmachine learning\b/i, /\bllm\b/i, /\bsearch\b/i] },
+  { role: "ml", patterns: [/\bml\b/i, /\bai\b/i, /\bmachine learning\b/i, /\bllm\b/i] },
   { role: "data", patterns: [/\bdata engineer\b/i, /\banalytics\b/i, /\betl\b/i] },
   { role: "devops", patterns: [/\bdevops\b/i, /\bsre\b/i, /\bterraform\b/i, /\bkubernetes\b/i] },
   { role: "mobile", patterns: [/\bmobile\b/i, /\bandroid\b/i, /\bios\b/i, /\bflutter\b/i, /\breact native\b/i] },
   { role: "security", patterns: [/\bsecurity\b/i, /\bcybersecurity\b/i, /\bsoc\b/i] },
 ];
-
-const SENIORITY_PATTERNS: Array<{ seniority: string; patterns: RegExp[] }> = [
-  { seniority: "staff-plus", patterns: [/\bstaff\b/i, /\bprincipal\b/i, /\blead\b/i, /\barchitect\b/i, /\bhead of\b/i] },
-  { seniority: "senior", patterns: [/\bsenior\b/i, /\bsr\.?\b/i] },
-  { seniority: "mid", patterns: [/\bmid\b/i, /\bmid-level\b/i] },
-  { seniority: "junior", patterns: [/\bjunior\b/i, /\bintern\b/i, /\bentry level\b/i] },
-];
-
-function normalizeAlias(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function escapePattern(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function dedupe(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
-}
 
 function extractRole(query: string) {
   for (const entry of ROLE_PATTERNS) {
@@ -116,15 +69,16 @@ function extractRole(query: string) {
 }
 
 function extractSeniority(query: string) {
-  for (const entry of SENIORITY_PATTERNS) {
-    if (entry.patterns.some((pattern) => pattern.test(query))) {
-      return entry.seniority;
-    }
-  }
-  return null;
+  return extractSeniorityFromText(query) ?? null;
 }
 
 function extractMinYears(query: string) {
+  const rangeMatch = query.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\s*(?:years?|yrs?)(?:\s+of\s+experience)?\b/i);
+  if (rangeMatch) {
+    const lowerBound = Number(rangeMatch[1]);
+    return Number.isFinite(lowerBound) ? lowerBound : null;
+  }
+
   const match = query.match(/(?:at least|min(?:imum)?|with)?\s*(\d{1,2})\+?\s*(?:years?|yrs?)(?:\s+of\s+experience)?/i);
   if (!match) {
     return null;
@@ -135,26 +89,86 @@ function extractMinYears(query: string) {
 }
 
 function extractSkillsFromQuery(query: string) {
-  const haystack = ` ${query.toLowerCase()} `;
-  const entries = Object.entries(SKILL_ALIASES).sort((left, right) => right[0].length - left[0].length);
-  const matches: string[] = [];
-
-  for (const [alias, canonical] of entries) {
-    const pattern = new RegExp(`(^|[^a-z0-9+#.])${escapePattern(alias)}([^a-z0-9+#.]|$)`, "i");
-    if (pattern.test(haystack)) {
-      matches.push(canonical);
-    }
-  }
-
-  return dedupe(matches);
+  return extractSkillsFromText(query);
 }
 
 function normalizeSkills(skills: string[] | null | undefined) {
-  return dedupe(
-    (skills ?? [])
-      .map((skill) => SKILL_ALIASES[normalizeAlias(skill)] ?? skill.trim())
-      .filter(Boolean),
-  );
+  return normalizeSkillList(skills ?? []);
+}
+
+export function buildSearchIntentConfig(query: string, filters: SearchFilters = {}) {
+  return {
+    schemaName: "search_intent",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        role: nullableEnum(
+          SEARCH_ROLE_VALUES,
+          "Requested role normalized to allowed_roles; otherwise null.",
+        ),
+        seniority: nullableEnum(
+          SEARCH_SENIORITY_VALUES,
+          "Requested seniority normalized to allowed_seniority; otherwise null.",
+        ),
+        min_years_experience: {
+          type: ["integer", "null"] as const,
+          minimum: 0,
+          description:
+            "Explicit minimum years of experience. For ranges, use the lower bound. Otherwise null.",
+        },
+        skills: {
+          type: "array",
+          items: { type: "string" },
+          uniqueItems: true,
+          description:
+            "Explicitly requested skills only. Normalize aliases and dedupe.",
+        },
+        location: {
+          type: ["string", "null"] as const,
+          description: "Explicit location only. Otherwise null.",
+        },
+      },
+      required: [
+        "role",
+        "seniority",
+        "min_years_experience",
+        "skills",
+        "location",
+      ],
+    },
+    systemPrompt: [
+      "Extract recruiter search intent and return only JSON that matches the schema.",
+      "Use query as the primary source of truth.",
+      "Use existing_filters only to interpret follow-up edits or preserve previously explicit constraints.",
+      "If query conflicts with existing_filters, query wins.",
+      "Do not invent constraints.",
+      "Normalize role and seniority to the allowed enums.",
+      "Set missing or uncertain scalar fields to null and skills to [].",
+      "Skills must be explicitly requested, normalized, and deduplicated.",
+      "Location must be explicitly stated in the query.",
+      "For years of experience, return only the minimum requested number.",
+      "Examples: '5+ years' -> 5, '3-5 years' -> 3.",
+      "Do not infer skills, location, or years from the role alone.",
+    ].join(" "),
+    userPrompt: JSON.stringify({
+      query,
+      existing_filters: filters,
+      allowed_roles: SEARCH_ROLE_VALUES,
+      allowed_seniority: SEARCH_SENIORITY_VALUES,
+    }),
+    temperature: 0,
+  };
+}
+
+export function resolveSearchFilters(query: string, requestFilters: SearchFilters = {}, llmIntent: SearchIntentPayload | null = null) {
+  return deriveSearchFilters(query, {
+    role: llmIntent?.role ?? requestFilters.role ?? null,
+    seniority: llmIntent?.seniority ?? requestFilters.seniority ?? null,
+    min_years_experience: llmIntent?.min_years_experience ?? requestFilters.min_years_experience ?? null,
+    location: llmIntent?.location ?? requestFilters.location ?? null,
+    skills: llmIntent?.skills?.length ? llmIntent.skills : (requestFilters.skills ?? []),
+  });
 }
 
 export function deriveSearchFilters(query: string, filters: SearchFilters = {}) {
@@ -165,9 +179,9 @@ export function deriveSearchFilters(query: string, filters: SearchFilters = {}) 
 
   return {
     role: filters.role || extractRole(query),
-    seniority: filters.seniority || extractSeniority(query),
+    seniority: normalizeSeniorityValue(filters.seniority) ?? extractSeniority(query),
     min_years_experience: minYears ?? extractMinYears(query),
-    location: filters.location || null,
+    location: filters.location?.trim() || null,
     skills: explicitSkills.length ? explicitSkills : extractSkillsFromQuery(query),
   };
 }

@@ -37,13 +37,14 @@ export type CandidateSearchResult = {
   risks: string[];
   recommendedRoles: string[];
   stage: string;
-  availability: string;
   avatarHue: number;
   matchNarrative: string;
 };
 
 export type CandidateDetail = CandidateSearchResult & {
   longSummary: string;
+  email?: string | null;
+  phone?: string | null;
   links: string[];
   education: string[];
   certifications: string[];
@@ -62,6 +63,19 @@ export type SearchFilters = {
   location?: string;
 };
 
+export type SearchFilterOptions = {
+  seniority: Array<{
+    value: string;
+    label: string;
+  }>;
+  skills: string[];
+};
+
+export type SearchQueryOptions = {
+  limit?: number;
+  offset?: number;
+};
+
 export type SearchResponse = {
   results: CandidateSearchResult[];
   nextCursor: number | null;
@@ -70,6 +84,129 @@ export type SearchResponse = {
     rankVersion: string;
     source: "mock" | "remote";
   };
+};
+
+export type ParsingFieldState = "parsed" | "partial" | "missing";
+
+export type ParsingFieldStatus = {
+  label: string;
+  state: ParsingFieldState;
+  detail: string;
+};
+
+export type ParsingDocumentSummary = {
+  documentId: string;
+  candidateId: string | null;
+  candidateName: string;
+  currentTitle: string;
+  originalFilename: string;
+  mimeType: string;
+  sourceType: string;
+  sourceUri: string;
+  uploadedAt: string;
+  parsedPercentage: number;
+  extractionConfidence: number;
+  rawTextLength: number;
+  status: string;
+  qualityBand: "healthy" | "review" | "critical";
+  parserVersion: string;
+  modelVersion: string;
+  promptVersion: string;
+  embeddingVersion: string;
+  warnings: string[];
+  missingFields: string[];
+  keyFindings: string[];
+  needsAttention: boolean;
+};
+
+export type ParsingOverview = {
+  overallParsedPercentage: number;
+  averageConfidence: number;
+  documentsCount: number;
+  completedCount: number;
+  needsReviewCount: number;
+  failedCount: number;
+  items: ParsingDocumentSummary[];
+};
+
+export type ParsingDocumentDetail = ParsingDocumentSummary & {
+  storagePath: string | null;
+  updatedAt: string;
+  location: string;
+  email: string;
+  phone: string;
+  seniority: string;
+  primaryRole: string;
+  yearsExperience: number;
+  headline: string;
+  summary: string;
+  links: string[];
+  skills: string[];
+  languages: string[];
+  certifications: string[];
+  education: string[];
+  projects: string[];
+  timeline: TimelineEntry[];
+  fieldCoverage: ParsingFieldStatus[];
+  parsedSections: string[];
+  parseWarnings: string[];
+  processingWarnings: string[];
+  errorCode: string | null;
+  errorMessage: string | null;
+  rawTextPreview: string;
+  optimizationHints: string[];
+};
+
+export type ParserProfileStatus = "draft" | "active" | "archived";
+
+export type ParserProfile = {
+  id: string;
+  tenantId: string;
+  name: string;
+  slug: string;
+  description: string;
+  status: ParserProfileStatus;
+  extractionProvider: string;
+  extractionModel: string;
+  parserVersion: string;
+  modelVersion: string;
+  promptVersion: string;
+  chunkVersion: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingVersion: string;
+  chunkingProfile: string;
+  ocrEnabled: boolean;
+  allowHeuristicFallback: boolean;
+  promptTemplate: string;
+  notes: string;
+  lastEvaluatedAt?: string | null;
+  avgParsePercentage?: number | null;
+  avgConfidence?: number | null;
+  documentsEvaluated: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ParserProfileInput = {
+  id?: string;
+  name: string;
+  slug: string;
+  description: string;
+  extractionProvider: string;
+  extractionModel: string;
+  parserVersion: string;
+  modelVersion: string;
+  promptVersion: string;
+  chunkVersion: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingVersion: string;
+  chunkingProfile: string;
+  ocrEnabled: boolean;
+  allowHeuristicFallback: boolean;
+  promptTemplate: string;
+  notes: string;
 };
 
 export type ComparisonItem = {

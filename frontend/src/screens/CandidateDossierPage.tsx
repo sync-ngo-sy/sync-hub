@@ -1,15 +1,103 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Mail, Phone } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
-import type { CandidateDetail } from "@/lib/contracts";
+import { Link, useLocation, useParams } from "react-router-dom";
+import type { CandidateDetail, MatchSignals } from "@/lib/contracts";
+import { useAuth } from "@/lib/auth";
 import { platformApi } from "@/lib/platformApi";
 import { Avatar, EmptyState, PageIntro, Panel, ScorePill, Tag } from "@/components/ui";
 
+type DossierLocationState = {
+  searchMatchScore?: number;
+  searchMatchSignals?: MatchSignals;
+  searchQuery?: string;
+};
+
+function toExternalHref(link: string) {
+  return /^https?:\/\//i.test(link) ? link : `https://${link}`;
+}
+
+function candidateFirstName(name: string) {
+  return name.trim().split(/\s+/)[0] || name;
+}
+
+function titleCaseWords(value: string) {
+  return value
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function recruiterDisplayName(email: string | null | undefined, metadata: Record<string, unknown>) {
+  const explicitName = [metadata.full_name, metadata.name, metadata.display_name, metadata.recruiter_name]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
+
+  if (explicitName) {
+    return explicitName;
+  }
+
+  const emailHandle = (email ?? "").split("@")[0]?.trim();
+  return emailHandle ? titleCaseWords(emailHandle) : "Recruiter";
+}
+
+function recruiterPhone(metadata: Record<string, unknown>, sessionPhone?: string | null) {
+  const candidates = [sessionPhone, metadata.phone, metadata.phone_number, metadata.mobile]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+
+  return candidates[0] ?? null;
+}
+
+function buildContactMailto(
+  candidate: CandidateDetail,
+  recruiter: { name: string; company: string; email: string | null; phone: string | null },
+  searchQuery?: string,
+) {
+  if (!candidate.email) {
+    return null;
+  }
+
+  const firstName = candidateFirstName(candidate.name);
+  const roleContext = searchQuery?.trim() || candidate.currentTitle || "a role on our team";
+  const subject = `Opportunity to discuss ${roleContext}`;
+  const body = [
+    `Dear ${firstName},`,
+    "",
+    `I hope you're doing well.`,
+    "",
+    `My name is ${recruiter.name}, and I'm reaching out from ${recruiter.company}.`,
+    "",
+    `I came across your profile while reviewing candidates for ${roleContext}, and your background stood out.`,
+    "",
+    "I would love to schedule a short conversation to introduce the opportunity and learn more about your current interests.",
+    "",
+    "If you are open to it, please let me know a suitable time to connect.",
+    "",
+    "Best regards,",
+    recruiter.name,
+    recruiter.company,
+    ...(recruiter.email ? [recruiter.email] : []),
+    ...(recruiter.phone ? [recruiter.phone] : []),
+  ].join("\n");
+
+  return `mailto:${candidate.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export function CandidateDossierPage() {
-  const { candidateId = "elena-rostova" } = useParams();
+  const { candidateId } = useParams();
+  const location = useLocation();
+  const { currentTenant, session, userEmail } = useAuth();
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null);
+  const routeState = (location.state ?? {}) as DossierLocationState;
+  const contextualMatchScore = typeof routeState.searchMatchScore === "number" ? routeState.searchMatchScore : null;
 
   useEffect(() => {
+    if (!candidateId) {
+      setCandidate(null);
+      return;
+    }
+
     let cancelled = false;
     platformApi.getCandidate(candidateId).then((nextCandidate) => {
       if (!cancelled) {
@@ -21,9 +109,22 @@ export function CandidateDossierPage() {
     };
   }, [candidateId]);
 
+  if (!candidateId) {
+    return <EmptyState title="Candidate not selected" detail="Open a dossier from search results to inspect a real candidate profile." />;
+  }
+
   if (!candidate) {
     return <EmptyState title="Loading dossier" detail="Fetching structured profile, summary, and evidence blocks." />;
   }
+
+  const userMetadata = (session?.user.user_metadata ?? {}) as Record<string, unknown>;
+  const recruiter = {
+    name: recruiterDisplayName(userEmail, userMetadata),
+    company: currentTenant?.name ?? "your team",
+    email: userEmail,
+    phone: recruiterPhone(userMetadata, session?.user.phone ?? null),
+  };
+  const contactMailto = buildContactMailto(candidate, recruiter, routeState.searchQuery);
 
   return (
     <div className="page-stack">
@@ -33,12 +134,14 @@ export function CandidateDossierPage() {
         description={candidate.headline}
         actions={
           <div className="skill-list">
-            <Link className="button button--secondary" to={`/compare?ids=${candidate.candidateId},marcus-thorne`}>
-              Compare
+            <Link className="button button--secondary" to="/search">
+              Back to Search
             </Link>
-            <button className="button button--primary" type="button">
-              Contact candidate
-            </button>
+            {contactMailto ? (
+              <a className="button button--primary" href={contactMailto}>
+                Contact candidate
+              </a>
+            ) : null}
           </div>
         }
       />
@@ -57,27 +160,30 @@ export function CandidateDossierPage() {
               <p>{candidate.location}</p>
               <div className="meta-list">
                 <span className="tag">{candidate.yearsExperience} years experience</span>
-                <span className="tag">{candidate.availability} availability</span>
               </div>
             </div>
           </div>
-          <ScorePill score={candidate.matchScore} label="Search fit" />
+          {contextualMatchScore !== null ? <ScorePill score={contextualMatchScore} label="Current search fit" /> : null}
         </div>
 
         <div className="meta-list">
-          <span className="tag">
-            <Mail size={14} />
-            recruiter@candidate-mail.mock
-          </span>
-          <span className="tag">
-            <Phone size={14} />
-            +971 55 000 0000
-          </span>
+          {contactMailto ? (
+            <a className="tag" href={contactMailto}>
+              <Mail size={14} />
+              {candidate.email}
+            </a>
+          ) : null}
+          {candidate.phone ? (
+            <a className="tag" href={`tel:${candidate.phone}`}>
+              <Phone size={14} />
+              {candidate.phone}
+            </a>
+          ) : null}
           {candidate.links.map((link) => (
-            <span key={link} className="tag">
+            <a key={link} className="tag" href={toExternalHref(link)} target="_blank" rel="noreferrer noopener">
               <ExternalLink size={14} />
               {link}
-            </span>
+            </a>
           ))}
         </div>
       </Panel>
@@ -86,6 +192,12 @@ export function CandidateDossierPage() {
         <div className="stack">
           <Panel className="timeline-card">
             <div className="stack">
+              {routeState.searchQuery ? (
+                <>
+                  <span className="eyebrow">Search context</span>
+                  <p className="muted">Opened from search: {routeState.searchQuery}</p>
+                </>
+              ) : null}
               <span className="eyebrow">AI summary</span>
               <h3>Executive synthesis</h3>
               <p>{candidate.longSummary}</p>

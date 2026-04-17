@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { defaultCompareIds } from "@/data/mockData";
 import type { ComparisonResponse } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { EmptyState, PageIntro, Panel, ProgressBar, Tag } from "@/components/ui";
 
 export function IntelligentComparisonPage() {
   const [searchParams] = useSearchParams();
-  const [requiredSkills, setRequiredSkills] = useState("Node.js, GraphQL");
+  const [requiredSkills, setRequiredSkills] = useState("");
   const [response, setResponse] = useState<ComparisonResponse | null>(null);
   const rawIds = searchParams.get("ids");
-  const candidateIds = rawIds ? rawIds.split(",").map((item) => item.trim()).filter(Boolean) : defaultCompareIds;
+  const candidateIds = rawIds ? rawIds.split(",").map((item) => item.trim()).filter(Boolean) : [];
 
   useEffect(() => {
+    if (candidateIds.length < 2) {
+      setResponse(null);
+      return;
+    }
+
     let cancelled = false;
     const skills = requiredSkills
       .split(",")
@@ -29,6 +33,20 @@ export function IntelligentComparisonPage() {
       cancelled = true;
     };
   }, [candidateIds, requiredSkills]);
+
+  if (candidateIds.length < 2) {
+    return (
+      <EmptyState
+        title="Select candidates to compare"
+        detail="Open the comparison view from search results after selecting at least two real candidates."
+        action={
+          <Link className="button button--primary" to="/search">
+            Back to search
+          </Link>
+        }
+      />
+    );
+  }
 
   if (!response) {
     return <EmptyState title="Preparing comparison" detail="Loading selected candidates and computing deterministic side-by-side scoring." />;
@@ -136,9 +154,11 @@ export function IntelligentComparisonPage() {
           <div className="stack">
             <h3>Decision support</h3>
             <p>The comparison API can return cached artifacts when they exist. This frontend also handles deterministic fallback payloads from the current Supabase function.</p>
-            <Link className="button button--primary" to={`/dossier/${response.recommendedCandidateId ?? defaultCompareIds[0]}`}>
-              Open recommended dossier
-            </Link>
+            {response.recommendedCandidateId ? (
+              <Link className="button button--primary" to={`/dossier/${response.recommendedCandidateId}`}>
+                Open recommended dossier
+              </Link>
+            ) : null}
           </div>
         </Panel>
       </div>

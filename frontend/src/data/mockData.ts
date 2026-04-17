@@ -8,7 +8,12 @@ import type {
   DataConnector,
   IndexingJob,
   IndexingWorkbench,
+  ParsingDocumentDetail,
+  ParsingOverview,
+  ParserProfile,
+  ParserProfileInput,
   SearchFilters,
+  SearchQueryOptions,
   SearchResponse,
   SystemHealth,
 } from "@/lib/contracts";
@@ -41,9 +46,10 @@ const candidates: CandidateDetail[] = [
     ],
     recommendedRoles: ["Backend Engineer", "Platform Engineer", "API Engineer"],
     stage: "Interview Loop",
-    availability: "30 days",
     avatarHue: 174,
     matchNarrative: "Exceptional structural fit with direct overlap on Node.js, GraphQL, and distributed backend operations.",
+    email: "elena.rostova@example.com",
+    phone: "+44 20 7946 0181",
     links: ["github.com/elenar", "linkedin.com/in/elenarostova"],
     education: ["BSc, Computer Science, University College London"],
     certifications: ["CKAD", "AWS Solutions Architect Associate"],
@@ -130,9 +136,10 @@ const candidates: CandidateDetail[] = [
     risks: ["Less evidence on retrieval systems or ranking logic", "Search-specific domain knowledge would need to ramp"],
     recommendedRoles: ["Backend Engineer", "Platform Engineer"],
     stage: "Shortlist",
-    availability: "45 days",
     avatarHue: 209,
     matchNarrative: "Strong backend architect with good overlap on APIs and infrastructure, slightly lighter direct search relevance.",
+    email: "marcus.thorne@example.com",
+    phone: "+49 30 9018 2040",
     links: ["github.com/mthorne", "linkedin.com/in/marcusthorne"],
     education: ["MSc, Distributed Systems, TU Berlin"],
     certifications: ["AWS Developer Associate"],
@@ -219,9 +226,10 @@ const candidates: CandidateDetail[] = [
     risks: ["Less evidence on high-scale distributed systems", "Would need support on deep infrastructure and SRE topics"],
     recommendedRoles: ["Full-Stack Engineer", "Product Engineer"],
     stage: "Screening",
-    availability: "Immediate",
     avatarHue: 332,
     matchNarrative: "Best fit if the role needs strong product delivery across search UX and backend APIs, not just platform depth.",
+    email: "layla.haddad@example.com",
+    phone: "+962 6 555 0199",
     links: ["github.com/laylah", "linkedin.com/in/laylahaddad"],
     education: ["BSc, Software Engineering, Princess Sumaya University"],
     certifications: ["Supabase Certified Developer"],
@@ -388,6 +396,283 @@ export const accessRoster: AccessRoster = {
   ],
 };
 
+const mockParsingDetails: ParsingDocumentDetail[] = candidates.slice(0, 6).map((candidate, index) => {
+  const parsedPercentage = [94, 88, 83, 74, 66, 58][index] ?? 72;
+  const extractionConfidence = [91, 86, 81, 72, 64, 52][index] ?? 70;
+  const parseWarnings =
+    index === 0
+      ? []
+      : index === 3
+        ? ["Experience section needed heuristic fallback."]
+        : index === 4
+          ? ["Header contact block was only partially parsed."]
+          : ["PDF layout created sparse section boundaries."];
+  const processingWarnings = index >= 4 ? ["Review parser output before bulk re-indexing."] : [];
+  const missingFields =
+    index === 0 ? [] : index === 4 ? ["phone", "projects"] : index === 5 ? ["email", "skills"] : ["projects"];
+  const status = index === 5 ? "partial_failed" : "completed";
+  const qualityBand = parsedPercentage >= 80 ? "healthy" : parsedPercentage >= 65 ? "review" : "critical";
+  const fieldCoverage = [
+    { label: "Document text", state: "parsed", detail: `${(2400 - index * 180).toLocaleString()} characters extracted from the document body.` },
+    { label: "Identity", state: "parsed", detail: `${candidate.name} · ${candidate.currentTitle}` },
+    { label: "Contact details", state: missingFields.includes("email") && missingFields.includes("phone") ? "missing" : missingFields.includes("email") || missingFields.includes("phone") ? "partial" : "parsed", detail: [candidate.email, candidate.phone].filter(Boolean).join(" · ") || "Contact data missing" },
+    { label: "Skills", state: candidate.topSkills.length >= 5 ? "parsed" : "partial", detail: `${candidate.topSkills.length} normalized skills extracted.` },
+    { label: "Experience timeline", state: candidate.timeline.length >= 2 ? "parsed" : "partial", detail: `${candidate.timeline.length} experience entries extracted.` },
+    { label: "Education", state: candidate.education.length ? "parsed" : "missing", detail: candidate.education[0] ?? "No education parsed." },
+    { label: "Projects", state: candidate.projects.length >= 2 ? "parsed" : candidate.projects.length ? "partial" : "missing", detail: `${candidate.projects.length} projects extracted.` },
+    { label: "Summary", state: candidate.longSummary ? "parsed" : "partial", detail: candidate.shortSummary },
+  ] as ParsingDocumentDetail["fieldCoverage"];
+
+  return {
+    documentId: `doc-${candidate.candidateId}`,
+    candidateId: candidate.candidateId,
+    candidateName: candidate.name,
+    currentTitle: candidate.currentTitle,
+    originalFilename: `${candidate.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
+    mimeType: "application/pdf",
+    sourceType: "folder",
+    sourceUri: `/mock/${candidate.candidateId}.pdf`,
+    uploadedAt: "2026-04-17T08:00:00.000Z",
+    parsedPercentage,
+    extractionConfidence,
+    rawTextLength: 2400 - index * 180,
+    status,
+    qualityBand,
+    parserVersion: "pdftotext-raw-v2",
+    modelVersion: index >= 4 ? "heuristic-fallback-v1" : "ollama-qwen2.5-3b-v1",
+    promptVersion: "structured-json-v2",
+    embeddingVersion: "ollama-nomic-embed-text-v1",
+    warnings: [...parseWarnings, ...processingWarnings],
+    missingFields,
+    keyFindings: [
+      `${candidate.timeline.length} roles parsed`,
+      `${candidate.topSkills.length} skills normalized`,
+      parseWarnings.length ? `${parseWarnings.length} parser warnings` : "No parser warnings",
+    ],
+    needsAttention: parsedPercentage < 75 || extractionConfidence < 65 || status !== "completed",
+    storagePath: `cv-originals/demo/${candidate.candidateId}.pdf`,
+    updatedAt: "2026-04-17T08:15:00.000Z",
+    location: candidate.location,
+    email: candidate.email ?? "",
+    phone: candidate.phone ?? "",
+    seniority: candidate.seniority,
+    primaryRole: candidate.primaryRole,
+    yearsExperience: candidate.yearsExperience,
+    headline: candidate.headline,
+    summary: candidate.longSummary,
+    links: candidate.links,
+    skills: candidate.topSkills,
+    languages: candidate.languages,
+    certifications: candidate.certifications,
+    education: candidate.education,
+    projects: candidate.projects,
+    timeline: candidate.timeline,
+    fieldCoverage,
+    parsedSections: ["Identity", "Summary", "Skills", "Experience", "Education", "Projects"],
+    parseWarnings,
+    processingWarnings,
+    errorCode: status === "partial_failed" ? "LOW_TEXT_COVERAGE" : null,
+    errorMessage: status === "partial_failed" ? "Document completed with low text coverage and sparse skills extraction." : null,
+    rawTextPreview: [
+      `${candidate.name}`,
+      `${candidate.currentTitle}`,
+      ...candidate.evidence.map((item) => item.excerpt),
+      ...candidate.projects,
+    ].join("\n\n"),
+    optimizationHints:
+      status === "partial_failed"
+        ? [
+            "Raw text coverage is low for this document. Add OCR fallback before trusting embeddings.",
+            "Contact and skills extraction need a deterministic header pass before the model run.",
+            "Use this document as a prompt-tuning regression case once the parser is improved.",
+          ]
+        : [
+            "This document is a stable baseline for parser quality comparisons.",
+            "If you tune prompts, compare the extracted skills and timeline against this output first.",
+          ],
+  };
+});
+
+export const parsingOverview: ParsingOverview = {
+  overallParsedPercentage: Math.round(mockParsingDetails.reduce((sum, item) => sum + item.parsedPercentage, 0) / mockParsingDetails.length),
+  averageConfidence: Math.round(mockParsingDetails.reduce((sum, item) => sum + item.extractionConfidence, 0) / mockParsingDetails.length),
+  documentsCount: mockParsingDetails.length,
+  completedCount: mockParsingDetails.filter((item) => item.status === "completed").length,
+  needsReviewCount: mockParsingDetails.filter((item) => item.needsAttention).length,
+  failedCount: mockParsingDetails.filter((item) => item.status === "failed" || item.status === "partial_failed").length,
+  items: [...mockParsingDetails]
+    .map((item) => ({
+      documentId: item.documentId,
+      candidateId: item.candidateId,
+      candidateName: item.candidateName,
+      currentTitle: item.currentTitle,
+      originalFilename: item.originalFilename,
+      mimeType: item.mimeType,
+      sourceType: item.sourceType,
+      sourceUri: item.sourceUri,
+      uploadedAt: item.uploadedAt,
+      parsedPercentage: item.parsedPercentage,
+      extractionConfidence: item.extractionConfidence,
+      rawTextLength: item.rawTextLength,
+      status: item.status,
+      qualityBand: item.qualityBand,
+      parserVersion: item.parserVersion,
+      modelVersion: item.modelVersion,
+      promptVersion: item.promptVersion,
+      embeddingVersion: item.embeddingVersion,
+      warnings: item.warnings,
+      missingFields: item.missingFields,
+      keyFindings: item.keyFindings,
+      needsAttention: item.needsAttention,
+    }))
+    .sort((left, right) => left.parsedPercentage - right.parsedPercentage),
+};
+
+export function getParsingDocument(documentId: string) {
+  return mockParsingDetails.find((item) => item.documentId === documentId) ?? mockParsingDetails[0];
+}
+
+let parserProfiles: ParserProfile[] = [
+  {
+    id: "profile-active-ollama-v2",
+    tenantId: "mock-tenant",
+    name: "Ollama Structured Extraction v2",
+    slug: "ollama-structured-v2",
+    description: "Primary production profile for clean digital PDFs with Ollama extraction and section-first chunking.",
+    status: "active",
+    extractionProvider: "openai-compatible",
+    extractionModel: "qwen2.5:3b",
+    parserVersion: "pdftotext-raw-v2",
+    modelVersion: "ollama-qwen2.5-3b-v2",
+    promptVersion: "structured-json-v2",
+    chunkVersion: "section-first-v2",
+    embeddingProvider: "ollama",
+    embeddingModel: "nomic-embed-text",
+    embeddingVersion: "ollama-nomic-embed-text-v1",
+    chunkingProfile: "section-first",
+    ocrEnabled: false,
+    allowHeuristicFallback: true,
+    promptTemplate: [
+      "You are extracting a recruiter-ready candidate profile from a CV.",
+      "Return valid JSON only.",
+      "Preserve evidence-backed skills and role history.",
+      "Do not invent dates, companies, or contact details that are not present in the source text.",
+    ].join("\n"),
+    notes: "Best baseline for the current sample corpus. Use this for most reprocessing until OCR coverage improves.",
+    lastEvaluatedAt: "2026-04-17T16:40:00.000Z",
+    avgParsePercentage: 84,
+    avgConfidence: 79,
+    documentsEvaluated: 10,
+    createdAt: "2026-04-17T15:20:00.000Z",
+    updatedAt: "2026-04-17T16:40:00.000Z",
+  },
+  {
+    id: "profile-ocr-draft-v1",
+    tenantId: "mock-tenant",
+    name: "OCR Rescue Draft",
+    slug: "ocr-rescue-draft",
+    description: "Draft profile for scanned or layout-heavy PDFs that need OCR before extraction.",
+    status: "draft",
+    extractionProvider: "openai-compatible",
+    extractionModel: "qwen2.5:3b",
+    parserVersion: "ocr-pipeline-v1",
+    modelVersion: "ollama-qwen2.5-3b-v2",
+    promptVersion: "structured-json-ocr-v1",
+    chunkVersion: "dense-experience-v1",
+    embeddingProvider: "ollama",
+    embeddingModel: "nomic-embed-text",
+    embeddingVersion: "ollama-nomic-embed-text-v1",
+    chunkingProfile: "dense-experience",
+    ocrEnabled: true,
+    allowHeuristicFallback: true,
+    promptTemplate: [
+      "You are extracting a candidate profile from OCR text.",
+      "Expect noisy line breaks.",
+      "Prioritize contact details, company names, role titles, dates, and normalized skills.",
+      "Return valid JSON only.",
+    ].join("\n"),
+    notes: "Needs evaluation on scanned CVs before activation.",
+    lastEvaluatedAt: "2026-04-17T15:55:00.000Z",
+    avgParsePercentage: 68,
+    avgConfidence: 61,
+    documentsEvaluated: 3,
+    createdAt: "2026-04-17T15:40:00.000Z",
+    updatedAt: "2026-04-17T15:55:00.000Z",
+  },
+];
+
+function slugifyProfile(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/g, "")
+    .replace(/-+$/g, "")
+    .slice(0, 48);
+}
+
+export function getParserProfiles() {
+  return [...parserProfiles].sort((left, right) => {
+    if (left.status === "active" && right.status !== "active") {
+      return -1;
+    }
+    if (left.status !== "active" && right.status === "active") {
+      return 1;
+    }
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+}
+
+export function saveParserProfile(input: ParserProfileInput) {
+  const now = new Date().toISOString();
+  const existing = input.id ? parserProfiles.find((profile) => profile.id === input.id) : null;
+  const nextProfile: ParserProfile = {
+    id: existing?.id ?? `profile-${slugifyProfile(input.slug || input.name)}-${Date.now()}`,
+    tenantId: existing?.tenantId ?? "mock-tenant",
+    status: existing?.status ?? "draft",
+    lastEvaluatedAt: existing?.lastEvaluatedAt ?? null,
+    avgParsePercentage: existing?.avgParsePercentage ?? null,
+    avgConfidence: existing?.avgConfidence ?? null,
+    documentsEvaluated: existing?.documentsEvaluated ?? 0,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    ...input,
+    slug: slugifyProfile(input.slug || input.name),
+  };
+
+  parserProfiles = existing
+    ? parserProfiles.map((profile) => (profile.id === existing.id ? nextProfile : profile))
+    : [nextProfile, ...parserProfiles];
+
+  return nextProfile;
+}
+
+export function publishParserProfile(profileId: string) {
+  const now = new Date().toISOString();
+  let published: ParserProfile | null = null;
+
+  parserProfiles = parserProfiles.map((profile) => {
+    if (profile.status === "archived") {
+      return profile;
+    }
+
+    const nextStatus: ParserProfile["status"] = profile.id === profileId ? "active" : "draft";
+    const nextProfile: ParserProfile = {
+      ...profile,
+      status: nextStatus,
+      updatedAt: profile.id === profileId ? now : profile.updatedAt,
+    };
+
+    if (profile.id === profileId) {
+      published = nextProfile;
+    }
+
+    return nextProfile;
+  });
+
+  return published ?? parserProfiles[0];
+}
+
 function tokenize(value: string) {
   return value
     .toLowerCase()
@@ -458,23 +743,25 @@ function calculateSearchResult(candidate: CandidateDetail, query: string, filter
     risks: candidate.risks,
     recommendedRoles: candidate.recommendedRoles,
     stage: candidate.stage,
-    availability: candidate.availability,
     avatarHue: candidate.avatarHue,
     matchNarrative: candidate.matchNarrative,
   };
 }
 
-export function searchCandidates(query: string, filters: SearchFilters): SearchResponse {
+export function searchCandidates(query: string, filters: SearchFilters, options: SearchQueryOptions = {}): SearchResponse {
+  const limit = Math.max(1, Math.min(50, Math.trunc(options.limit ?? 12)));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
   const results = candidates
     .map((candidate) => calculateSearchResult(candidate, query, filters))
     .filter((candidate): candidate is CandidateSearchResult => Boolean(candidate))
     .sort((left, right) => right.matchScore - left.matchScore);
+  const pagedResults = results.slice(offset, offset + limit);
 
   return {
-    results,
-    nextCursor: null,
+    results: pagedResults,
+    nextCursor: offset + limit < results.length ? offset + limit : null,
     meta: {
-      count: results.length,
+      count: pagedResults.length,
       rankVersion: "mock-v1",
       source: "mock",
     },
