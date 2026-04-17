@@ -1,0 +1,22 @@
+project_id = "cv-intelligence-platform"
+
+[api]
+enabled = true
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+major_version = 15
+
+[auth]
+enabled = true
+
+[functions.search]
+verify_jwt = true
+
+[functions.compare]
+verify_jwt = true
+
+[functions.ask]
+verify_jwt = true

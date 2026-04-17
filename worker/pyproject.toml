@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cv-intelligence-worker"
+version = "0.1.0"
+description = "Offline ingestion worker for the CV Intelligence Platform"
+requires-python = ">=3.9"
+readme = "../README.md"
+
+[project.scripts]
+cv-intelligence-worker = "cv_intelligence_worker.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
