@@ -29,6 +29,8 @@ coverage/
 
 # Supabase / local tool state
 .supabase/
+supabase/.branches/
+supabase/.temp/
 .vercel/
 
 # Logs and temp files

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -68,8 +69,13 @@ class SupabaseClient:
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.config.request_timeout_seconds):
-            return
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.request_timeout_seconds):
+                return
+        except urllib.error.HTTPError as exc:
+            if exc.code == 409:
+                return
+            raise
 
     def sync_bundle(self, bundle: ArtifactBundle) -> None:
         source_storage_path = f"{bundle.source.tenant_id}/{bundle.source.document_id}/{bundle.source.original_filename}"
@@ -196,7 +202,7 @@ class SupabaseClient:
             "error_message": bundle.processing_run.error_message,
             "metadata_json": bundle.processing_run.metadata,
         }
-        self.upsert("source_documents", [source_document], "id")
+        self.upsert("source_documents", [source_document], "tenant_id,document_sha256")
         self.upsert("candidates", [candidate], "id")
         self.upsert("candidate_profiles", [profile], "candidate_id")
         self.upsert("candidate_summaries", [summary], "candidate_id")
@@ -204,7 +210,7 @@ class SupabaseClient:
             self.upsert("candidate_skill_map", skill_rows, "id")
         if chunk_rows:
             self.upsert("candidate_chunks", chunk_rows, "id")
-        self.upsert("processing_runs", [processing_run], "id")
+        self.upsert("processing_runs", [processing_run], "tenant_id,input_hash")
 
     def sync_comparison_artifact(self, artifact: ComparisonArtifact, artifact_key: str, query: str = "") -> None:
         query_fingerprint = f"{query.lower().strip()}|{'|'.join(sorted(artifact.candidate_ids))}"

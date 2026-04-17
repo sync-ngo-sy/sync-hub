@@ -40,10 +40,12 @@ def json_dumps(value: object) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True)
 
 
-def dedupe_keep_order(values: Iterable[str]) -> list[str]:
+def dedupe_keep_order(values: Iterable[object]) -> list[str]:
     seen: set[str] = set()
     items: list[str] = []
     for raw in values:
+        if not isinstance(raw, str):
+            continue
         value = raw.strip()
         if not value:
             continue

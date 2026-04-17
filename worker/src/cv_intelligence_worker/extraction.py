@@ -365,58 +365,155 @@ def _extract_languages(lines: list[str]) -> list[str]:
     return dedupe_keep_order(languages)
 
 
+def _structured_prompt(document_text: DocumentText) -> dict[str, Any]:
+    return {
+        "task": "Extract a structured candidate profile from CV text. Return JSON only.",
+        "schema": {
+            "name": "string",
+            "current_title": "string",
+            "headline": "string",
+            "location": "string",
+            "email": "string",
+            "phone": "string",
+            "links": ["string"],
+            "years_experience": "number",
+            "seniority": "string",
+            "role_tags": ["string"],
+            "skills": ["string"],
+            "languages": ["string"],
+            "certifications": ["string"],
+            "experience": [
+                {
+                    "company": "string",
+                    "title": "string",
+                    "start_date": "string",
+                    "end_date": "string",
+                    "location": "string",
+                    "description": "string",
+                }
+            ],
+            "education": [
+                {
+                    "institution": "string",
+                    "degree": "string",
+                    "field": "string",
+                    "start_date": "string",
+                    "end_date": "string",
+                    "description": "string",
+                }
+            ],
+            "projects": [
+                {
+                    "name": "string",
+                    "description": "string",
+                    "technologies": ["string"],
+                }
+            ],
+            "summary": "string",
+        },
+        "cv_text": document_text.raw_text[:16000],
+    }
+
+
+def _parse_json_content(content: Any) -> dict[str, Any]:
+    if isinstance(content, list):
+        content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+    content = str(content).strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?", "", content).strip()
+        content = re.sub(r"```$", "", content).strip()
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError("structured extractor returned a non-object payload")
+    return parsed
+
+
+def _string_value(value: Any) -> str:
+    return compact_whitespace(value) if isinstance(value, str) else ""
+
+
+def _string_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return dedupe_keep_order(_string_value(item) for item in values)
+
+
+def _number_value(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        normalized = compact_whitespace(value)
+        if not normalized:
+            return 0.0
+        match = re.search(r"\d+(?:\.\d+)?", normalized)
+        if match:
+            return float(match.group(0))
+    return 0.0
+
+
+def _merge_extracted_profile(source: DocumentSource, document_text: DocumentText, extracted: dict[str, Any]) -> CandidateProfile:
+    profile = heuristic_extract_profile(source, document_text)
+    return normalize_profile(
+        replace(
+            profile,
+            name=_string_value(extracted.get("name")) or profile.name,
+            current_title=_string_value(extracted.get("current_title")) or profile.current_title,
+            headline=_string_value(extracted.get("headline")) or profile.headline,
+            location=_string_value(extracted.get("location")) or profile.location,
+            email=_string_value(extracted.get("email")) or profile.email,
+            phone=_string_value(extracted.get("phone")) or profile.phone,
+            links=_string_list(extracted.get("links")) or profile.links,
+            years_experience=_number_value(extracted.get("years_experience")) or profile.years_experience or 0,
+            seniority=_string_value(extracted.get("seniority")) or profile.seniority,
+            role_tags=_string_list(extracted.get("role_tags")) or profile.role_tags,
+            skills=_string_list(extracted.get("skills")) or profile.skills,
+            languages=_string_list(extracted.get("languages")) or profile.languages,
+            certifications=_string_list(extracted.get("certifications")) or profile.certifications,
+            experience=[
+                ExperienceEntry(
+                    company=_string_value(item.get("company")),
+                    title=_string_value(item.get("title")),
+                    start_date=_string_value(item.get("start_date")) or None,
+                    end_date=_string_value(item.get("end_date")) or None,
+                    description=_string_value(item.get("description")),
+                    location=_string_value(item.get("location")) or None,
+                )
+                for item in (extracted.get("experience") or [])
+                if isinstance(item, dict)
+            ] or profile.experience,
+            education=[
+                EducationEntry(
+                    institution=_string_value(item.get("institution")),
+                    degree=_string_value(item.get("degree")),
+                    field=_string_value(item.get("field")),
+                    start_date=_string_value(item.get("start_date")) or None,
+                    end_date=_string_value(item.get("end_date")) or None,
+                    description=_string_value(item.get("description")),
+                )
+                for item in (extracted.get("education") or [])
+                if isinstance(item, dict)
+            ] or profile.education,
+            projects=[
+                ProjectEntry(
+                    name=_string_value(item.get("name")),
+                    description=_string_value(item.get("description")),
+                    technologies=_string_list(item.get("technologies")),
+                )
+                for item in (extracted.get("projects") or [])
+                if isinstance(item, dict)
+            ] or profile.projects,
+            summary=_string_value(extracted.get("summary")) or profile.summary,
+            confidence=0.9,
+        )
+    )
+
+
 class OpenAICompatibleExtractor:
     def __init__(self, config: WorkerConfig) -> None:
         self.config = config
 
     def extract(self, source: DocumentSource, document_text: DocumentText) -> CandidateProfile:
-        prompt = {
-            "task": "Extract a structured candidate profile from CV text. Return JSON only.",
-            "schema": {
-                "name": "string",
-                "current_title": "string",
-                "headline": "string",
-                "location": "string",
-                "email": "string",
-                "phone": "string",
-                "links": ["string"],
-                "years_experience": "number",
-                "seniority": "string",
-                "role_tags": ["string"],
-                "skills": ["string"],
-                "languages": ["string"],
-                "certifications": ["string"],
-                "experience": [
-                    {
-                        "company": "string",
-                        "title": "string",
-                        "start_date": "string",
-                        "end_date": "string",
-                        "location": "string",
-                        "description": "string",
-                    }
-                ],
-                "education": [
-                    {
-                        "institution": "string",
-                        "degree": "string",
-                        "field": "string",
-                        "start_date": "string",
-                        "end_date": "string",
-                        "description": "string",
-                    }
-                ],
-                "projects": [
-                    {
-                        "name": "string",
-                        "description": "string",
-                        "technologies": ["string"],
-                    }
-                ],
-                "summary": "string",
-            },
-            "cv_text": document_text.raw_text[:16000],
-        }
+        prompt = _structured_prompt(document_text)
         payload = {
             "model": self.config.extraction_model,
             "messages": [
@@ -437,68 +534,41 @@ class OpenAICompatibleExtractor:
         )
         with urllib.request.urlopen(request, timeout=self.config.request_timeout_seconds) as response:
             body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        content = str(content).strip()
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?", "", content).strip()
-            content = re.sub(r"```$", "", content).strip()
-        extracted = json.loads(content)
-        profile = heuristic_extract_profile(source, document_text)
-        return normalize_profile(
-            replace(
-                profile,
-                name=extracted.get("name") or profile.name,
-                current_title=extracted.get("current_title") or profile.current_title,
-                headline=extracted.get("headline") or profile.headline,
-                location=extracted.get("location") or profile.location,
-                email=extracted.get("email") or profile.email,
-                phone=extracted.get("phone") or profile.phone,
-                links=dedupe_keep_order(extracted.get("links") or profile.links),
-                years_experience=float(extracted.get("years_experience") or profile.years_experience or 0),
-                seniority=extracted.get("seniority") or profile.seniority,
-                role_tags=dedupe_keep_order(extracted.get("role_tags") or profile.role_tags),
-                skills=dedupe_keep_order(extracted.get("skills") or profile.skills),
-                languages=dedupe_keep_order(extracted.get("languages") or profile.languages),
-                certifications=dedupe_keep_order(extracted.get("certifications") or profile.certifications),
-                experience=[
-                    ExperienceEntry(
-                        company=item.get("company", ""),
-                        title=item.get("title", ""),
-                        start_date=item.get("start_date"),
-                        end_date=item.get("end_date"),
-                        description=item.get("description", ""),
-                        location=item.get("location"),
-                    )
-                    for item in (extracted.get("experience") or [])
-                    if isinstance(item, dict)
-                ] or profile.experience,
-                education=[
-                    EducationEntry(
-                        institution=item.get("institution", ""),
-                        degree=item.get("degree", ""),
-                        field=item.get("field", ""),
-                        start_date=item.get("start_date"),
-                        end_date=item.get("end_date"),
-                        description=item.get("description", ""),
-                    )
-                    for item in (extracted.get("education") or [])
-                    if isinstance(item, dict)
-                ] or profile.education,
-                projects=[
-                    ProjectEntry(
-                        name=item.get("name", ""),
-                        description=item.get("description", ""),
-                        technologies=list(item.get("technologies", [])),
-                    )
-                    for item in (extracted.get("projects") or [])
-                    if isinstance(item, dict)
-                ] or profile.projects,
-                summary=extracted.get("summary") or profile.summary,
-                confidence=0.9,
-            )
+        extracted = _parse_json_content(body["choices"][0]["message"]["content"])
+        return _merge_extracted_profile(source, document_text, extracted)
+
+
+class OllamaExtractor:
+    def __init__(self, config: WorkerConfig) -> None:
+        self.config = config
+
+    def _base_url(self) -> str:
+        return self.config.model_base_url.rstrip("/").removesuffix("/v1")
+
+    def extract(self, source: DocumentSource, document_text: DocumentText) -> CandidateProfile:
+        prompt = _structured_prompt(document_text)
+        payload = {
+            "model": self.config.extraction_model,
+            "stream": False,
+            "format": prompt["schema"],
+            "options": {"temperature": 0},
+            "messages": [
+                {"role": "system", "content": "You are a CV parser. Return strict JSON only."},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+        }
+        request = urllib.request.Request(
+            f"{self._base_url()}/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
+        with urllib.request.urlopen(request, timeout=self.config.request_timeout_seconds) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        extracted = _parse_json_content(body["message"]["content"])
+        return _merge_extracted_profile(source, document_text, extracted)
 
 
 def heuristic_extract_profile(source: DocumentSource, document_text: DocumentText) -> CandidateProfile:
@@ -553,6 +623,9 @@ def heuristic_extract_profile(source: DocumentSource, document_text: DocumentTex
 def extract_candidate_profile(source: DocumentSource, document_text: DocumentText, config: WorkerConfig) -> CandidateProfile:
     if config.extraction_model:
         try:
+            provider = config.extraction_provider.lower()
+            if provider == "ollama":
+                return OllamaExtractor(config).extract(source, document_text)
             return OpenAICompatibleExtractor(config).extract(source, document_text)
         except (urllib.error.URLError, KeyError, ValueError, json.JSONDecodeError):
             if not config.allow_heuristic_fallback:
