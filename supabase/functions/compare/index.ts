@@ -2,6 +2,7 @@ import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 
 type DossierRow = {
+  tenant_id: string;
   candidate_id: string;
   name: string;
   current_title: string | null;
@@ -58,7 +59,7 @@ Deno.serve(async (req) => {
 
     const dossiers = await supabase
       .from("candidate_dossier_v1")
-      .select("candidate_id, name, current_title, years_experience, seniority, top_skills, short_summary, long_summary, strengths, risks, recommended_roles")
+      .select("tenant_id, candidate_id, name, current_title, years_experience, seniority, top_skills, short_summary, long_summary, strengths, risks, recommended_roles")
       .in("candidate_id", candidateIds);
 
     if (dossiers.error) {
@@ -80,6 +81,7 @@ Deno.serve(async (req) => {
         const matchedSkills = (row.top_skills ?? []).filter((skill) => overlap.includes(skill.toLowerCase()));
         const score = Number((Number(row.years_experience ?? 0) + matchedSkills.length * 0.4 + roleTerms.size * 0.25).toFixed(3));
         return {
+          tenant_id: row.tenant_id,
           candidate_id: row.candidate_id,
           name: row.name,
           current_title: row.current_title,

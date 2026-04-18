@@ -1,12 +1,16 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ArrowUp, BriefcaseBusiness, CheckCircle2, MapPin, Search, Sparkles } from "lucide-react";
+import { ArrowRight, ArrowUp, BriefcaseBusiness, Building2, CheckCircle2, FileText, MapPin, MessageSquareText, Search, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { Link } from "react-router-dom";
+import { PlatformScopeControl } from "@/components/PlatformScopeControl";
 import { FilterMultiSelect } from "@/components/FilterMultiSelect";
 import { defaultSearchQuery } from "@/data/mockData";
-import type { SearchFilterOptions, SearchFilters, SearchResponse } from "@/lib/contracts";
+import { buildChatHref } from "@/lib/chatAgent";
+import type { SearchFilterOptions, SearchFilters, SearchResponse, WorkspaceStats } from "@/lib/contracts";
+import { useAuth } from "@/lib/auth";
 import { platformApi } from "@/lib/platformApi";
+import { usePlatformScope } from "@/lib/platformScope";
 import { deriveSearchFilters, parseSkillText } from "@/lib/queryIntent";
-import { Avatar, EmptyState, PageIntro, Panel, ProgressBar, ScorePill, Tag } from "@/components/ui";
+import { Avatar, EmptyState, PageIntro, Panel, ProgressBar, ScorePill, StatCard, Tag } from "@/components/ui";
 
 type SearchRequest = {
   query: string;
@@ -25,6 +29,21 @@ type SearchSortOption =
 const PAGE_SIZE = 8;
 
 export function SearchDiscoveryPage() {
+  const { currentTenant } = useAuth();
+  const {
+    currentWorkspace,
+    isAllScope,
+    isPlatformAdmin,
+    resolvedTenantIds,
+    scopeMode,
+    setScopeMode,
+    setWorkspaceId,
+    workspaceOptions,
+  } = usePlatformScope();
+  const workspaceNameById = useMemo(
+    () => new Map(workspaceOptions.map((workspace) => [workspace.id, workspace.name])),
+    [workspaceOptions],
+  );
   const queryInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [seniority, setSeniority] = useState("");
@@ -33,6 +52,7 @@ export function SearchDiscoveryPage() {
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SearchSortOption>("best-match");
   const [filterOptions, setFilterOptions] = useState<SearchFilterOptions | null>(null);
+  const [workspaceStats, setWorkspaceStats] = useState<WorkspaceStats | null>(null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -41,6 +61,7 @@ export function SearchDiscoveryPage() {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const requestedOffsetsRef = useRef<Set<number>>(new Set());
   const hasExecutedSearch = request !== null;
+  const scopeKey = resolvedTenantIds.join("|");
   const sortedResults = useMemo(() => {
     const results = response?.results ?? [];
 
@@ -62,7 +83,7 @@ export function SearchDiscoveryPage() {
   useEffect(() => {
     let cancelled = false;
 
-    platformApi.getSearchFilterOptions().then((nextOptions) => {
+    platformApi.getSearchFilterOptions(resolvedTenantIds).then((nextOptions) => {
       if (!cancelled) {
         setFilterOptions(nextOptions);
       }
@@ -71,7 +92,21 @@ export function SearchDiscoveryPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [resolvedTenantIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    platformApi.getWorkspaceStats(resolvedTenantIds).then((nextStats) => {
+      if (!cancelled) {
+        setWorkspaceStats(nextStats);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedTenantIds]);
 
   useEffect(() => {
     if (!request) {
@@ -91,7 +126,7 @@ export function SearchDiscoveryPage() {
       .search(request.query, request.filters, {
         offset: request.offset,
         limit: request.limit,
-      })
+      }, resolvedTenantIds)
       .then((nextResponse) => {
         if (cancelled) {
           return;
@@ -133,7 +168,7 @@ export function SearchDiscoveryPage() {
     return () => {
       cancelled = true;
     };
-  }, [request]);
+  }, [request, resolvedTenantIds]);
 
   useEffect(() => {
     if (!response?.nextCursor || loadingInitial || loadingMore || error) {
@@ -170,6 +205,16 @@ export function SearchDiscoveryPage() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [loadingInitial, loadingMore, request, response]);
+
+  useEffect(() => {
+    if (!request) {
+      return;
+    }
+
+    requestedOffsetsRef.current = new Set([0]);
+    setResponse(null);
+    setRequest((current) => (current ? { ...current, offset: 0 } : current));
+  }, [scopeKey]);
 
   function handleExecute() {
     const normalizedQuery = query.trim();
@@ -212,6 +257,13 @@ export function SearchDiscoveryPage() {
           .map((candidate) => candidate.candidateId)
           .join(",")}`
       : null;
+  const topChatHref =
+    response && sortedResults.length
+      ? buildChatHref(
+          sortedResults.slice(0, Math.min(3, sortedResults.length)).map((candidate) => candidate.candidateId),
+          "Which candidate is the strongest overall fit and why?",
+        )
+      : null;
 
   return (
     <div className="page-stack">
@@ -224,16 +276,59 @@ export function SearchDiscoveryPage() {
             : undefined
         }
         actions={
-          hasExecutedSearch && topCompareHref ? (
-            <div className="skill-list">
-              <Link className="button button--primary" to={topCompareHref}>
-                Compare Top Matches
-                <ArrowRight size={16} />
-              </Link>
-            </div>
-          ) : undefined
+          <div className="stack" style={{ alignItems: "flex-end" }}>
+            <PlatformScopeControl
+              isPlatformAdmin={isPlatformAdmin}
+              scopeMode={scopeMode}
+              onChangeScopeMode={setScopeMode}
+              currentWorkspace={currentWorkspace}
+              workspaceOptions={workspaceOptions}
+              onChangeWorkspace={setWorkspaceId}
+            />
+            {hasExecutedSearch && (topCompareHref || topChatHref) ? (
+              <div className="skill-list">
+                {topChatHref ? (
+                  <Link className="button button--secondary" to={topChatHref}>
+                    Ask Agent
+                    <MessageSquareText size={16} />
+                  </Link>
+                ) : null}
+                {topCompareHref ? (
+                  <Link className="button button--primary" to={topCompareHref}>
+                    Compare Top Matches
+                    <ArrowRight size={16} />
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         }
       />
+
+      {workspaceStats ? (
+        <div className="stats-grid">
+          <StatCard
+            label="CV Pool"
+            value={workspaceStats.documentCount.toLocaleString()}
+            delta="indexed documents"
+            icon={<FileText size={16} />}
+          />
+          <StatCard
+            label="Candidate Profiles"
+            value={workspaceStats.candidateCount.toLocaleString()}
+            delta="searchable"
+            tone="secondary"
+            icon={<Users size={16} />}
+          />
+          <StatCard
+            label="Workspace"
+            value={isAllScope ? "All workspaces" : currentWorkspace?.name ?? currentTenant?.name ?? "Demo Workspace"}
+            delta={isAllScope ? `${workspaceOptions.length} workspaces` : currentWorkspace ? `${currentWorkspace.role} access` : "tenant-scoped pool"}
+            tone="tertiary"
+            icon={isAllScope ? <ShieldCheck size={16} /> : currentWorkspace ? <Building2 size={16} /> : <ShieldCheck size={16} />}
+          />
+        </div>
+      ) : null}
 
       <form
         className="hero-grid"
@@ -360,6 +455,7 @@ export function SearchDiscoveryPage() {
                         <h3>{candidate.name}</h3>
                         <p>{candidate.currentTitle}</p>
                         <div className="skill-list">
+                          {isAllScope && candidate.tenantId ? <Tag>{workspaceNameById.get(candidate.tenantId) ?? "Workspace"}</Tag> : null}
                           <Tag>{candidate.seniority}</Tag>
                           <Tag>{candidate.primaryRole}</Tag>
                           <Tag tone="success">{candidate.stage}</Tag>
@@ -419,6 +515,12 @@ export function SearchDiscoveryPage() {
                       }}
                     >
                       View Dossier
+                    </Link>
+                    <Link
+                      className="button button--secondary"
+                      to={buildChatHref([candidate.candidateId], "Why is this candidate a strong fit?")}
+                    >
+                      Ask Agent
                     </Link>
                     {partnerId ? (
                       <Link className="button button--primary" to={`/compare?ids=${candidate.candidateId},${partnerId}`}>

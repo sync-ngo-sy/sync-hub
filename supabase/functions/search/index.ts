@@ -40,6 +40,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const supabase = createAuthedClient(req);
     const query = String(body.q ?? "");
+    const tenantIds = asStringArray(body.tenant_ids);
     const requestFilters = (body.filters ?? {}) as Record<string, unknown>;
     let intentSource = "rule_based";
     let llmIntent: SearchIntentPayload | null = null;
@@ -79,6 +80,7 @@ Deno.serve(async (req) => {
       p_skills: filters.skills ?? [],
       p_embedding_version: queryEmbeddingPayload.embeddingVersion,
       p_rank_version: body.rank_version ?? "v1",
+      p_tenant_ids: tenantIds.length ? tenantIds : null,
     });
 
     if (error) {
@@ -93,6 +95,7 @@ Deno.serve(async (req) => {
         rank_version: body.rank_version ?? "v1",
         intent_source: intentSource,
         intent: filters,
+        tenant_ids: tenantIds,
         embedding_provider: queryEmbeddingPayload.provider,
         embedding_version: queryEmbeddingPayload.embeddingVersion,
       },

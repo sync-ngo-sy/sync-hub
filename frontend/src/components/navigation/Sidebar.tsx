@@ -1,4 +1,5 @@
 import {
+  Bot,
   X,
   FlaskConical,
   FileText,
@@ -13,6 +14,7 @@ import { cn } from "@/lib/cn";
 
 const productRoutes = [
   { to: "/search", label: "Search & Discovery", icon: Search },
+  { to: "/chat", label: "General Agent", icon: Bot },
   { to: "/compare", label: "Intelligent Comparison", icon: GitCompareArrows },
 ];
 
@@ -29,7 +31,7 @@ type SidebarProps = {
 
 export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
   const location = useLocation();
-  const { currentTenant, userEmail } = useAuth();
+  const { currentTenant, userEmail, isAdmin } = useAuth();
 
   return (
     <aside className={cn("sidebar", mobileOpen && "sidebar--open")}>
@@ -72,24 +74,26 @@ export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
         })}
       </div>
 
-      <div className="sidebar__group">
-        <span className="sidebar__heading">Operations</span>
-        {operationsRoutes.map((route) => {
-          const Icon = route.icon;
-          const active =
-            route.to === "/admin/parsing/lab"
-              ? location.pathname === route.to
-              : location.pathname === route.to ||
-                (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
+      {isAdmin ? (
+        <div className="sidebar__group">
+          <span className="sidebar__heading">Admin</span>
+          {operationsRoutes.map((route) => {
+            const Icon = route.icon;
+            const active =
+              route.to === "/admin/parsing/lab"
+                ? location.pathname === route.to
+                : location.pathname === route.to ||
+                  (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
 
-          return (
-            <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>
-              <Icon size={16} />
-              <span>{route.label}</span>
-            </Link>
-          );
-        })}
-      </div>
+            return (
+              <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>
+                <Icon size={16} />
+                <span>{route.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="sidebar__footer">
         <div className="session-chip">

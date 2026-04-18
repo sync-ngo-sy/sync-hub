@@ -21,6 +21,7 @@ export type TimelineEntry = {
 };
 
 export type CandidateSearchResult = {
+  tenantId?: string | null;
   candidateId: string;
   name: string;
   currentTitle: string;
@@ -86,6 +87,12 @@ export type SearchResponse = {
   };
 };
 
+export type WorkspaceStats = {
+  documentCount: number;
+  candidateCount: number;
+  companyCount: number;
+};
+
 export type ParsingFieldState = "parsed" | "partial" | "missing";
 
 export type ParsingFieldStatus = {
@@ -96,6 +103,7 @@ export type ParsingFieldStatus = {
 
 export type ParsingDocumentSummary = {
   documentId: string;
+  tenantId: string;
   candidateId: string | null;
   candidateName: string;
   currentTitle: string;
@@ -210,6 +218,7 @@ export type ParserProfileInput = {
 };
 
 export type ComparisonItem = {
+  tenantId?: string | null;
   candidateId: string;
   name: string;
   currentTitle: string;
@@ -248,6 +257,22 @@ export type AskResponse = {
   meta: {
     candidateCount: number;
     topK: number;
+    answerSource?: string;
+    scopeSource?: "explicit" | "retrieved" | "mock" | "empty_scope" | "workspace_stats";
+    resolvedCandidateIds?: string[];
+  };
+};
+
+export type AgentResponse = {
+  answer: string;
+  citations: EvidenceSnippet[];
+  contextBlocks: EvidenceSnippet[];
+  meta: {
+    candidateCount: number;
+    topK: number;
+    answerSource?: string;
+    scopeSource?: "explicit" | "retrieved" | "mock" | "empty_scope" | "workspace_stats" | "general_knowledge";
+    resolvedCandidateIds?: string[];
   };
 };
 

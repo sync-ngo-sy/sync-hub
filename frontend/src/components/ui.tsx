@@ -36,12 +36,16 @@ type StatCardProps = {
   value: string;
   delta?: string;
   tone?: "primary" | "secondary" | "tertiary";
+  icon?: ReactNode;
 };
 
-export function StatCard({ label, value, delta, tone = "primary" }: StatCardProps) {
+export function StatCard({ label, value, delta, tone = "primary", icon }: StatCardProps) {
   return (
     <Panel className={cn("stat-card", `stat-card--${tone}`)}>
-      <span className="stat-card__label">{label}</span>
+      <div className="stat-card__header">
+        <span className="stat-card__label">{label}</span>
+        {icon ? <span className="stat-card__icon">{icon}</span> : null}
+      </div>
       <div className="stat-card__value-row">
         <strong>{value}</strong>
         {delta ? <span className="stat-card__delta">{delta}</span> : null}

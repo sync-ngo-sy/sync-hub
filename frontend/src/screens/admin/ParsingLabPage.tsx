@@ -77,23 +77,31 @@ function toneForStatus(status: ParserProfile["status"]) {
 }
 
 export function ParsingLabPage() {
-  const { currentTenant, enabled, loading } = useAuth();
+  const { adminMemberships, currentTenant, enabled, isAdmin, loading } = useAuth();
   const [profiles, setProfiles] = useState<ParserProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [targetWorkspaceId, setTargetWorkspaceId] = useState<string | null>(null);
   const [form, setForm] = useState<ParserProfileInput>(createDefaultProfile());
   const [fetching, setFetching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const canEdit = currentTenant?.role === "owner" || currentTenant?.role === "admin";
+  const adminTenantIds = useMemo(() => adminMemberships.map((membership) => membership.id), [adminMemberships]);
+  const workspaceNameById = useMemo(
+    () => new Map(adminMemberships.map((membership) => [membership.id, membership.name])),
+    [adminMemberships],
+  );
+  const canEdit = adminTenantIds.length > 0;
 
   useEffect(() => {
     if (enabled && loading) {
       return;
     }
-    if (enabled && !currentTenant) {
+    if (enabled && !isAdmin) {
+      return;
+    }
+    if (!adminTenantIds.length) {
       return;
     }
 
@@ -102,7 +110,7 @@ export function ParsingLabPage() {
     setError(null);
 
     platformApi
-      .getParserProfiles(currentTenant?.id)
+      .getParserProfiles(adminTenantIds)
       .then((nextProfiles) => {
         if (!active) {
           return;
@@ -112,6 +120,10 @@ export function ParsingLabPage() {
         const selected = nextProfiles.find((profile) => profile.id === selectedId) ?? nextProfiles[0] ?? null;
         setSelectedId(selected?.id ?? null);
         setForm(createDefaultProfile(selected));
+        setTargetWorkspaceId(
+          selected?.tenantId ??
+            (currentTenant && adminTenantIds.includes(currentTenant.id) ? currentTenant.id : adminTenantIds[0] ?? null),
+        );
       })
       .catch((fetchError) => {
         if (active) {
@@ -127,35 +139,48 @@ export function ParsingLabPage() {
     return () => {
       active = false;
     };
-  }, [currentTenant?.id, enabled, loading]);
+  }, [adminTenantIds, currentTenant, enabled, isAdmin, loading, selectedId]);
 
   const activeProfile = useMemo(() => profiles.find((profile) => profile.status === "active") ?? null, [profiles]);
   const selectedProfile = useMemo(() => profiles.find((profile) => profile.id === selectedId) ?? null, [profiles, selectedId]);
+  const workspacesRepresented = useMemo(() => new Set(profiles.map((profile) => profile.tenantId)).size, [profiles]);
+  const resolvedWorkspaceId =
+    targetWorkspaceId ??
+    selectedProfile?.tenantId ??
+    activeProfile?.tenantId ??
+    (currentTenant && adminTenantIds.includes(currentTenant.id) ? currentTenant.id : adminTenantIds[0] ?? null);
+  const resolvedWorkspaceName = resolvedWorkspaceId ? workspaceNameById.get(resolvedWorkspaceId) ?? "Unknown workspace" : "No workspace";
 
   function handleSelectProfile(profile: ParserProfile) {
     setSelectedId(profile.id);
     setForm(createDefaultProfile(profile));
+    setTargetWorkspaceId(profile.tenantId);
     setNotice(null);
     setError(null);
   }
 
   function handleCreateDraft() {
+    const seed = selectedProfile ?? activeProfile ?? null;
+    const nextWorkspaceId =
+      seed?.tenantId ??
+      (currentTenant && adminTenantIds.includes(currentTenant.id) ? currentTenant.id : adminTenantIds[0] ?? null);
     setSelectedId(null);
-    setForm(createDefaultProfile(activeProfile));
+    setTargetWorkspaceId(nextWorkspaceId);
+    setForm(createDefaultProfile(seed));
     setForm((current) => ({
       ...current,
       id: undefined,
-      name: activeProfile ? `${activeProfile.name} Draft` : "New parser draft",
-      slug: activeProfile ? `${activeProfile.slug}-draft` : "new-parser-draft",
-      description: activeProfile?.description ?? "",
-      notes: activeProfile ? `Forked from active profile ${activeProfile.name}.` : "",
+      name: seed ? `${seed.name} Draft` : "New parser draft",
+      slug: seed ? `${seed.slug}-draft` : "new-parser-draft",
+      description: seed?.description ?? "",
+      notes: seed ? `Forked from ${seed.name} (${workspaceNameById.get(seed.tenantId) ?? "Unknown workspace"}).` : "",
     }));
     setNotice(null);
     setError(null);
   }
 
   async function handleSave() {
-    if (!currentTenant?.id || !canEdit) {
+    if (!resolvedWorkspaceId || !canEdit) {
       return;
     }
 
@@ -185,13 +210,14 @@ export function ParsingLabPage() {
     setNotice(null);
 
     try {
-      const saved = await platformApi.saveParserProfile(payload, currentTenant.id);
+      const saved = await platformApi.saveParserProfile(payload, resolvedWorkspaceId);
       const nextProfiles = profiles.some((profile) => profile.id === saved.id)
         ? profiles.map((profile) => (profile.id === saved.id ? saved : profile))
         : [saved, ...profiles];
       setProfiles(nextProfiles);
       setSelectedId(saved.id);
       setForm(createDefaultProfile(saved));
+      setTargetWorkspaceId(saved.tenantId);
       setNotice(`${saved.name} saved as ${saved.status}.`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save parser profile.");
@@ -201,7 +227,7 @@ export function ParsingLabPage() {
   }
 
   async function handlePublish() {
-    if (!currentTenant?.id || !canEdit || !selectedProfile?.id) {
+    if (!selectedProfile?.tenantId || !canEdit || !selectedProfile?.id) {
       return;
     }
 
@@ -210,9 +236,9 @@ export function ParsingLabPage() {
     setNotice(null);
 
     try {
-      const published = await platformApi.publishParserProfile(selectedProfile.id, currentTenant.id);
+      const published = await platformApi.publishParserProfile(selectedProfile.id, selectedProfile.tenantId);
       const nextProfiles = profiles.map((profile) => {
-        if (profile.status === "archived") {
+        if (profile.status === "archived" || profile.tenantId !== published.tenantId) {
           return profile;
         }
         if (profile.id === published.id) {
@@ -223,6 +249,7 @@ export function ParsingLabPage() {
       setProfiles(nextProfiles);
       setSelectedId(published.id);
       setForm(createDefaultProfile(published));
+      setTargetWorkspaceId(published.tenantId);
       setNotice(`${published.name} is now the active parser profile.`);
     } catch (publishError) {
       setError(publishError instanceof Error ? publishError.message : "Unable to publish parser profile.");
@@ -231,12 +258,12 @@ export function ParsingLabPage() {
     }
   }
 
-  if (enabled && !loading && !currentTenant) {
+  if (enabled && !loading && !isAdmin) {
     return (
       <div className="page-stack">
         <EmptyState
-          title="No workspace selected"
-          detail="Create or select a workspace before changing parser configuration."
+          title="Admin access required"
+          detail="Parsing Lab is restricted to platform admins."
           action={
             <Link className="button button--secondary" to="/search">
               Return to Search
@@ -252,7 +279,7 @@ export function ParsingLabPage() {
       <PageIntro
         eyebrow="Admin"
         title="Parsing lab"
-        description="Manage versioned parser profiles, prompt templates, and publish controls in one place. This is the safe path for prompt changes before you reprocess the larger CV corpus."
+        description="Manage versioned parser profiles, prompt templates, and publish controls in one place. Profiles stay workspace-specific, but this lab is available across the full platform."
         actions={
           <>
             <Link className="button button--secondary" to="/admin/parsing">
@@ -283,16 +310,20 @@ export function ParsingLabPage() {
           delta="across profiles"
           tone="tertiary"
         />
-        <StatCard label="Fine-tuning" value="Disabled" delta="use profiles first" />
+        <StatCard
+          label="Workspaces"
+          value={`${workspacesRepresented}`}
+          delta={`${adminMemberships.length} total on platform`}
+        />
       </div>
 
-      <div className="admin-grid">
+      <div className="page-stack">
         <Panel className="table-card">
           <div className="stack">
             <div className="signal-row">
               <div>
                 <h3>Versioned profiles</h3>
-                <p>Use profiles to change prompts and parser settings safely. One active profile should represent the worker default for a tenant.</p>
+                <p>Use profiles to change prompts and parser settings safely. One active profile should represent the worker default for each workspace.</p>
               </div>
               <Tag tone="primary">{profiles.length} profiles</Tag>
             </div>
@@ -310,6 +341,7 @@ export function ParsingLabPage() {
                       <strong>{profile.name}</strong>
                       <Tag tone={toneForStatus(profile.status)}>{profile.status}</Tag>
                     </div>
+                    <p>{workspaceNameById.get(profile.tenantId) ?? "Unknown workspace"}</p>
                     <p>{profile.description || "No description yet."}</p>
                     <div className="skill-list">
                       <Tag>{profile.extractionProvider}</Tag>
@@ -360,6 +392,12 @@ export function ParsingLabPage() {
                 {selectedProfile ? <Tag tone={toneForStatus(selectedProfile.status)}>{selectedProfile.status}</Tag> : null}
                 {canEdit ? <Tag tone="success">Admin write enabled</Tag> : <Tag tone="warning">Read-only</Tag>}
               </div>
+            </div>
+
+            <div className="evidence-card">
+              <span className="parsing-profile-grid__label">Workspace</span>
+              <strong>{resolvedWorkspaceName}</strong>
+              <p>{selectedProfile ? "This profile belongs to the selected workspace." : "New drafts will be created under this workspace."}</p>
             </div>
 
             <div className="parser-form-grid">
@@ -566,7 +604,7 @@ export function ParsingLabPage() {
                 <Wand2 size={16} />
                 <strong>Activation rule</strong>
               </div>
-              <p>Only one profile should be active per tenant. Save experimental changes as drafts, validate them against low-quality documents, then publish the one profile the worker should follow.</p>
+              <p>Only one profile should be active per workspace. Save experimental changes as drafts, validate them against low-quality documents, then publish the one profile the worker should follow for that workspace.</p>
             </div>
           </div>
         </Panel>

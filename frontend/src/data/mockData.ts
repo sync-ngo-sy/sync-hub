@@ -1,5 +1,6 @@
 import type {
   AccessRoster,
+  WorkspaceStats,
   AnalyticsSnapshot,
   AskResponse,
   CandidateDetail,
@@ -425,6 +426,7 @@ const mockParsingDetails: ParsingDocumentDetail[] = candidates.slice(0, 6).map((
 
   return {
     documentId: `doc-${candidate.candidateId}`,
+    tenantId: "mock-tenant",
     candidateId: candidate.candidateId,
     candidateName: candidate.name,
     currentTitle: candidate.currentTitle,
@@ -503,6 +505,7 @@ export const parsingOverview: ParsingOverview = {
   items: [...mockParsingDetails]
     .map((item) => ({
       documentId: item.documentId,
+      tenantId: item.tenantId,
       candidateId: item.candidateId,
       candidateName: item.candidateName,
       currentTitle: item.currentTitle,
@@ -814,8 +817,54 @@ export function compareCandidates(candidateIds: string[], requiredSkills: string
   };
 }
 
+export function getWorkspaceStats(): WorkspaceStats {
+  const companyCount = new Set(
+    candidates
+      .flatMap((candidate) => candidate.timeline.map((entry) => entry.employer.trim()))
+      .filter(Boolean),
+  ).size;
+
+  return {
+    documentCount: candidates.length,
+    candidateCount: candidates.length,
+    companyCount,
+  };
+}
+
+function isCorpusCountQuestion(question: string) {
+  const normalized = question.toLowerCase();
+  return /(how many|number of|count of|count)\b/.test(normalized) &&
+    /\b(cv|cvs|resume|resumes|candidate|candidates|profile|profiles)\b/.test(normalized);
+}
+
 export function askCandidates(question: string, candidateIds: string[]): AskResponse {
-  const selected = candidateIds.map((candidateId) => getCandidate(candidateId));
+  if (isCorpusCountQuestion(question) && candidateIds.length === 0) {
+    return {
+      intent: "workspace_stats",
+      facts: [
+        {
+          candidateId: "workspace",
+          candidateName: "Workspace",
+          fact: `There are ${candidates.length} CVs in the current demo corpus.`,
+        },
+      ],
+      citations: [],
+      contextBlocks: [],
+      extractiveAnswer: `There are ${candidates.length} CVs in the current demo corpus.`,
+      meta: {
+        candidateCount: candidates.length,
+        topK: 0,
+        answerSource: "mock",
+        scopeSource: "workspace_stats",
+        resolvedCandidateIds: [],
+      },
+    };
+  }
+
+  const resolvedIds = candidateIds.length
+    ? candidateIds
+    : searchCandidates(question, {}, { limit: 3, offset: 0 }).results.map((candidate) => candidate.candidateId);
+  const selected = resolvedIds.map((candidateId) => getCandidate(candidateId));
   const lowered = question.toLowerCase();
   const intent = lowered.includes("gap")
     ? "gaps"
@@ -857,6 +906,9 @@ export function askCandidates(question: string, candidateIds: string[]): AskResp
     meta: {
       candidateCount: selected.length,
       topK: 6,
+      answerSource: "mock",
+      scopeSource: candidateIds.length ? "explicit" : "mock",
+      resolvedCandidateIds: resolvedIds,
     },
   };
 }

@@ -11,6 +11,7 @@ type JsonRecord = Record<string, unknown>;
 
 export type ParsingSourceDocumentRow = {
   id: string;
+  tenant_id: string;
   candidate_id: string | null;
   source_type: string | null;
   original_filename: string;
@@ -23,6 +24,7 @@ export type ParsingSourceDocumentRow = {
 
 export type ParsingCandidateRow = {
   id: string;
+  tenant_id: string;
   name: string | null;
   headline: string | null;
   current_title: string | null;
@@ -39,6 +41,7 @@ export type ParsingCandidateRow = {
 };
 
 export type ParsingProfileRow = {
+  tenant_id: string;
   candidate_id: string;
   source_document_id: string;
   profile_json: unknown;
@@ -53,6 +56,7 @@ export type ParsingProfileRow = {
 };
 
 export type ParsingProcessingRunRow = {
+  tenant_id: string;
   source_document_id: string | null;
   status: string;
   parser_version: string | null;
@@ -396,6 +400,7 @@ function buildSummary(
   return {
     summary: {
       documentId: document.id,
+      tenantId: document.tenant_id,
       candidateId: document.candidate_id,
       candidateName: String(profile.name ?? candidate?.name ?? "Unassigned candidate").trim() || "Unassigned candidate",
       currentTitle: String(profile.current_title ?? candidate?.current_title ?? "").trim() || "Title not parsed",

@@ -1,5 +1,6 @@
 import type {
   AccessRoster,
+  AgentResponse,
   AnalyticsSnapshot,
   AskResponse,
   CandidateDetail,
@@ -15,6 +16,7 @@ import type {
   SearchQueryOptions,
   SearchResponse,
   SystemHealth,
+  WorkspaceStats,
 } from "@/lib/contracts";
 import {
   accessRoster,
@@ -27,6 +29,7 @@ import {
   getCandidate,
   getParserProfiles,
   getParsingDocument,
+  getWorkspaceStats as getMockWorkspaceStats,
   indexingWorkbench,
   parsingOverview,
   publishParserProfile,
@@ -49,15 +52,22 @@ import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
 type JsonRecord = Record<string, unknown>;
 
 type PlatformApi = {
-  search: (query: string, filters: SearchFilters, options?: SearchQueryOptions) => Promise<SearchResponse>;
-  getSearchFilterOptions: () => Promise<SearchFilterOptions>;
+  search: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchResponse>;
+  getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
+  getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;
   getCandidate: (candidateId: string) => Promise<CandidateDetail>;
   compare: (candidateIds: string[], requiredSkills?: string[]) => Promise<ComparisonResponse>;
   ask: (question: string, candidateIds: string[]) => Promise<AskResponse>;
+  agent: (
+    question: string,
+    candidateIds?: string[],
+    messages?: Array<{ role: "user" | "assistant"; content: string }>,
+    tenantIds?: string[],
+  ) => Promise<AgentResponse>;
   getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null) => Promise<string | null>;
-  getParsingOverview: (tenantId?: string) => Promise<ParsingOverview>;
-  getParsingDocument: (documentId: string, tenantId?: string) => Promise<ParsingDocumentDetail>;
-  getParserProfiles: (tenantId?: string) => Promise<ParserProfile[]>;
+  getParsingOverview: (tenantIds?: string[]) => Promise<ParsingOverview>;
+  getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;
+  getParserProfiles: (tenantIds?: string[]) => Promise<ParserProfile[]>;
   saveParserProfile: (profile: ParserProfileInput, tenantId?: string) => Promise<ParserProfile>;
   publishParserProfile: (profileId: string, tenantId?: string) => Promise<ParserProfile>;
   getAnalytics: () => Promise<AnalyticsSnapshot>;
@@ -104,6 +114,10 @@ type CandidateChunkRow = {
 type CandidateSearchFacetRow = {
   seniority: string | null;
   skills: string[] | null;
+};
+
+type CandidateTimelineRow = {
+  timeline_json: unknown;
 };
 
 type ParsingRemoteSnapshot = {
@@ -175,6 +189,16 @@ function dedupeSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
 }
 
+function countDistinctEmployers(rows: CandidateTimelineRow[]) {
+  return new Set(
+    rows.flatMap((row) =>
+      asArray(row.timeline_json)
+        .map((entry) => String(asRecord(entry).company ?? asRecord(entry).employer ?? "").trim())
+        .filter(Boolean)
+    ),
+  ).size;
+}
+
 function normalizeBackendMatchScore(rawScore: unknown) {
   const normalized = Math.max(0, Math.min(1, toNumber(rawScore)));
   return Math.round((1 - Math.exp(-6 * normalized)) * 100);
@@ -197,38 +221,61 @@ async function invokeFunction<T>(name: string, body: JsonRecord): Promise<T> {
   const { data, error } = await supabase.functions.invoke(name, { body });
 
   if (error) {
+    const response = typeof error === "object" && error !== null && "context" in error ? (error as { context?: Response }).context : null;
+    if (response instanceof Response) {
+      try {
+        const payload = await response.clone().json() as JsonRecord;
+        const detail = String(payload.details ?? payload.error ?? payload.message ?? response.statusText).trim();
+        throw new Error(detail || `Function ${name} failed with status ${response.status}.`);
+      } catch {
+        const text = await response.text().catch(() => "");
+        throw new Error(text || `Function ${name} failed with status ${response.status}.`);
+      }
+    }
+    if (error instanceof Error && error.name === "FunctionsFetchError") {
+      throw new Error("Supabase Edge Functions are unreachable. Start or redeploy the local functions runtime, then try again.");
+    }
     throw error;
   }
 
   return data as T;
 }
 
-async function fetchParsingSnapshot(tenantId: string): Promise<ParsingRemoteSnapshot> {
+async function fetchParsingSnapshot(tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
   if (!supabase) {
     throw new Error("Missing Supabase browser client configuration.");
+  }
+
+  if (!tenantIds.length) {
+    return {
+      documents: [],
+      candidates: [],
+      profiles: [],
+      runs: [],
+    };
   }
 
   const [documentsResult, candidatesResult, profilesResult, runsResult] = await Promise.all([
     supabase
       .from("source_documents")
-      .select("id, candidate_id, source_type, original_filename, mime_type, source_uri, storage_path, created_at, updated_at")
-      .eq("tenant_id", tenantId)
+      .select("id, tenant_id, candidate_id, source_type, original_filename, mime_type, source_uri, storage_path, created_at, updated_at")
+      .in("tenant_id", tenantIds)
       .order("created_at", { ascending: false })
       .limit(10000),
     supabase
       .from("candidates")
-      .select("id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, status")
-      .eq("tenant_id", tenantId)
+      .select("id, tenant_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, status")
+      .in("tenant_id", tenantIds)
       .limit(10000),
     supabase
       .from("candidate_profiles")
-      .select("candidate_id, source_document_id, profile_json, timeline_json, skill_matrix_json, raw_text, confidence, missing_fields, parse_warnings, created_at, updated_at")
-      .eq("tenant_id", tenantId)
+      .select("tenant_id, candidate_id, source_document_id, profile_json, timeline_json, skill_matrix_json, raw_text, confidence, missing_fields, parse_warnings, created_at, updated_at")
+      .in("tenant_id", tenantIds)
       .limit(10000),
     supabase
       .from("processing_runs")
-      .select("source_document_id, status, parser_version, model_version, prompt_version, chunk_version, embedding_version, warnings, error_code, error_message, created_at, updated_at, metadata_json")
-      .eq("tenant_id", tenantId)
+      .select("tenant_id, source_document_id, status, parser_version, model_version, prompt_version, chunk_version, embedding_version, warnings, error_code, error_message, created_at, updated_at, metadata_json")
+      .in("tenant_id", tenantIds)
       .order("created_at", { ascending: false })
       .limit(20000),
   ]);
@@ -268,6 +315,7 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
       const matchedFilters = asRecord(record.matched_filters);
 
       return {
+        tenantId: record.tenant_id ? String(record.tenant_id) : null,
         candidateId: String(record.candidate_id),
         name: String(record.name ?? "Unknown candidate"),
         currentTitle: String(record.current_title ?? "Candidate"),
@@ -351,6 +399,7 @@ function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
     items: rawItems.map((row) => {
       const record = asRecord(row);
       return {
+        tenantId: record.tenant_id ? String(record.tenant_id) : null,
         candidateId: String(record.candidate_id ?? record.candidateId),
         name: String(record.name ?? "Unknown candidate"),
         currentTitle: String(record.current_title ?? record.currentTitle ?? "Candidate"),
@@ -387,6 +436,24 @@ function mapRemoteAsk(payload: JsonRecord, candidateIds: string[]): AskResponse 
     meta: {
       candidateCount: toNumber(asRecord(payload.meta).candidate_count, candidateIds.length),
       topK: toNumber(asRecord(payload.meta).top_k, 6),
+      answerSource: String(asRecord(payload.meta).answer_source ?? "remote"),
+      scopeSource: String(asRecord(payload.meta).scope_source ?? (candidateIds.length ? "explicit" : "retrieved")) as AskResponse["meta"]["scopeSource"],
+      resolvedCandidateIds: toStringArray(asRecord(payload.meta).resolved_candidate_ids),
+    },
+  };
+}
+
+function mapRemoteAgent(payload: JsonRecord, candidateIds: string[]): AgentResponse {
+  return {
+    answer: String(payload.answer ?? payload.extractive_answer ?? ""),
+    citations: asArray(payload.citations).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    contextBlocks: asArray(payload.context_blocks).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    meta: {
+      candidateCount: toNumber(asRecord(payload.meta).candidate_count, candidateIds.length),
+      topK: toNumber(asRecord(payload.meta).top_k, 6),
+      answerSource: String(asRecord(payload.meta).answer_source ?? "remote"),
+      scopeSource: String(asRecord(payload.meta).scope_source ?? (candidateIds.length ? "explicit" : "retrieved")) as AgentResponse["meta"]["scopeSource"],
+      resolvedCandidateIds: toStringArray(asRecord(payload.meta).resolved_candidate_ids),
     },
   };
 }
@@ -514,13 +581,17 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
 
 function createMockApi(): PlatformApi {
   return {
-    async search(query, filters, options) {
+    async search(query, filters, options, _tenantIds) {
       await wait(180);
       return searchCandidates(query, filters, options);
     },
-    async getSearchFilterOptions() {
+    async getSearchFilterOptions(_tenantIds) {
       await wait(80);
       return createFallbackSearchFilterOptions();
+    },
+    async getWorkspaceStats(_tenantIds) {
+      await wait(80);
+      return getMockWorkspaceStats();
     },
     async getCandidate(candidateId) {
       await wait(120);
@@ -532,7 +603,23 @@ function createMockApi(): PlatformApi {
     },
     async ask(question, candidateIds) {
       await wait(130);
-      return askCandidates(question, candidateIds.length ? candidateIds : defaultIntelligenceIds);
+      return askCandidates(question, candidateIds);
+    },
+    async agent(question, candidateIds, _messages, _tenantIds) {
+      await wait(130);
+      const scoped = askCandidates(question, candidateIds ?? []);
+      return {
+        answer: scoped.extractiveAnswer,
+        citations: scoped.citations,
+        contextBlocks: scoped.contextBlocks,
+        meta: {
+          candidateCount: scoped.meta.candidateCount,
+          topK: scoped.meta.topK,
+          answerSource: scoped.meta.answerSource ?? "mock",
+          scopeSource: scoped.meta.scopeSource ?? ((candidateIds?.length ?? 0) > 0 ? "explicit" : "mock"),
+          resolvedCandidateIds: scoped.meta.resolvedCandidateIds ?? (candidateIds ?? []),
+        },
+      };
     },
     async getOriginalDocumentUrl(storagePath, sourceUri) {
       await wait(40);
@@ -541,15 +628,15 @@ function createMockApi(): PlatformApi {
       }
       return storagePath ? sourceUri ?? null : null;
     },
-    async getParsingOverview() {
+    async getParsingOverview(_tenantIds) {
       await wait(120);
       return parsingOverview;
     },
-    async getParsingDocument(documentId) {
+    async getParsingDocument(documentId, _tenantIds) {
       await wait(120);
       return getParsingDocument(documentId);
     },
-    async getParserProfiles() {
+    async getParserProfiles(_tenantIds) {
       await wait(120);
       return getParserProfiles();
     },
@@ -588,13 +675,14 @@ function createRemoteApi(): PlatformApi {
   const mock = createMockApi();
 
   return {
-    async search(query, filters, options) {
+    async search(query, filters, options, tenantIds) {
       try {
         const derivedFilters = deriveSearchFilters(query, filters);
         const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
         const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
         const payload = await invokeFunction<JsonRecord>("search", {
           q: query,
+          tenant_ids: tenantIds ?? [],
           filters: {
             role: derivedFilters.role ?? null,
             seniority: derivedFilters.seniority ?? null,
@@ -610,16 +698,22 @@ function createRemoteApi(): PlatformApi {
         return mock.search(query, filters, options);
       }
     },
-    async getSearchFilterOptions() {
+    async getSearchFilterOptions(tenantIds) {
       if (!supabase) {
         return mock.getSearchFilterOptions();
       }
 
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("candidate_search_rows")
           .select("seniority, skills")
           .limit(10000);
+
+        if (tenantIds?.length) {
+          query = query.in("tenant_id", tenantIds);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           throw error;
@@ -628,6 +722,37 @@ function createRemoteApi(): PlatformApi {
         return mapSearchFilterOptions((data ?? []) as CandidateSearchFacetRow[]);
       } catch {
         return mock.getSearchFilterOptions();
+      }
+    },
+    async getWorkspaceStats(tenantIds) {
+      if (!supabase || !tenantIds?.length) {
+        return mock.getWorkspaceStats();
+      }
+
+      try {
+        const [documentsResult, candidatesResult, timelineResult] = await Promise.all([
+          supabase.from("source_documents").select("id", { count: "exact", head: true }).in("tenant_id", tenantIds),
+          supabase.from("candidates").select("id", { count: "exact", head: true }).in("tenant_id", tenantIds),
+          supabase.from("candidate_profiles").select("timeline_json").in("tenant_id", tenantIds).limit(10000),
+        ]);
+
+        if (documentsResult.error) {
+          throw documentsResult.error;
+        }
+        if (candidatesResult.error) {
+          throw candidatesResult.error;
+        }
+        if (timelineResult.error) {
+          throw timelineResult.error;
+        }
+
+        return {
+          documentCount: documentsResult.count ?? 0,
+          candidateCount: candidatesResult.count ?? 0,
+          companyCount: countDistinctEmployers((timelineResult.data ?? []) as CandidateTimelineRow[]),
+        };
+      } catch {
+        return mock.getWorkspaceStats();
       }
     },
     async getCandidate(candidateId) {
@@ -690,6 +815,15 @@ function createRemoteApi(): PlatformApi {
         return mock.ask(question, candidateIds);
       }
     },
+    async agent(question, candidateIds = [], messages = [], tenantIds) {
+      const payload = await invokeFunction<JsonRecord>("agent", {
+        question,
+        candidate_ids: candidateIds,
+        messages,
+        tenant_ids: tenantIds ?? [],
+      });
+      return mapRemoteAgent(payload, candidateIds);
+    },
     async getOriginalDocumentUrl(storagePath, sourceUri) {
       if (supabase && storagePath) {
         try {
@@ -707,25 +841,25 @@ function createRemoteApi(): PlatformApi {
 
       return mock.getOriginalDocumentUrl(storagePath, sourceUri);
     },
-    async getParsingOverview(tenantId) {
-      if (!supabase || !tenantId) {
+    async getParsingOverview(tenantIds) {
+      if (!supabase || !tenantIds?.length) {
         return mock.getParsingOverview();
       }
 
       try {
-        const snapshot = await fetchParsingSnapshot(tenantId);
+        const snapshot = await fetchParsingSnapshot(tenantIds);
         return buildParsingOverview(snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
       } catch {
         return mock.getParsingOverview();
       }
     },
-    async getParsingDocument(documentId, tenantId) {
-      if (!supabase || !tenantId) {
+    async getParsingDocument(documentId, tenantIds) {
+      if (!supabase || !tenantIds?.length) {
         return mock.getParsingDocument(documentId);
       }
 
       try {
-        const snapshot = await fetchParsingSnapshot(tenantId);
+        const snapshot = await fetchParsingSnapshot(tenantIds);
         const detail = buildParsingDocumentDetail(documentId, snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
         if (!detail) {
           throw new Error(`Document ${documentId} was not found.`);
@@ -735,8 +869,8 @@ function createRemoteApi(): PlatformApi {
         return mock.getParsingDocument(documentId);
       }
     },
-    async getParserProfiles(tenantId) {
-      if (!supabase || !tenantId) {
+    async getParserProfiles(tenantIds) {
+      if (!supabase || !tenantIds?.length) {
         return mock.getParserProfiles();
       }
 
@@ -746,7 +880,7 @@ function createRemoteApi(): PlatformApi {
           .select(
             "id, tenant_id, name, slug, description, status, extraction_provider, extraction_model, parser_version, model_version, prompt_version, chunk_version, embedding_provider, embedding_model, embedding_version, chunking_profile, ocr_enabled, allow_heuristic_fallback, prompt_template, notes, last_evaluated_at, avg_parse_percentage, avg_confidence, documents_evaluated, created_at, updated_at",
           )
-          .eq("tenant_id", tenantId)
+          .in("tenant_id", tenantIds)
           .order("status", { ascending: true })
           .order("updated_at", { ascending: false });
 

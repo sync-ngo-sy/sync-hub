@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, FileWarning, FileText, ScanText } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { EmptyState, PageIntro, Panel, StatCard, Tag } from "@/components/ui";
@@ -38,11 +38,16 @@ function formatDateTime(value: string) {
 
 export function ParsingDetailPage() {
   const { documentId } = useParams();
-  const { currentTenant, enabled, loading } = useAuth();
+  const { adminMemberships, enabled, isAdmin, loading } = useAuth();
   const [detail, setDetail] = useState<ParsingDocumentDetail | null>(documentId ? getFallbackParsingDocument(documentId) : null);
   const [fetching, setFetching] = useState(false);
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adminTenantIds = useMemo(() => adminMemberships.map((membership) => membership.id), [adminMemberships]);
+  const workspaceNameById = useMemo(
+    () => new Map(adminMemberships.map((membership) => [membership.id, membership.name])),
+    [adminMemberships],
+  );
 
   useEffect(() => {
     if (!documentId) {
@@ -51,7 +56,7 @@ export function ParsingDetailPage() {
     if (enabled && loading) {
       return;
     }
-    if (enabled && !currentTenant) {
+    if (enabled && !isAdmin) {
       return;
     }
 
@@ -60,7 +65,7 @@ export function ParsingDetailPage() {
     setError(null);
 
     platformApi
-      .getParsingDocument(documentId, currentTenant?.id)
+      .getParsingDocument(documentId, adminTenantIds)
       .then((nextDetail) => {
         if (active) {
           setDetail(nextDetail);
@@ -80,7 +85,7 @@ export function ParsingDetailPage() {
     return () => {
       active = false;
     };
-  }, [currentTenant?.id, documentId, enabled, loading]);
+  }, [adminTenantIds, documentId, enabled, isAdmin, loading]);
 
   async function handleOpenOriginalCv() {
     if (!detail || openingOriginal) {
@@ -120,12 +125,12 @@ export function ParsingDetailPage() {
     );
   }
 
-  if (enabled && !loading && !currentTenant) {
+  if (enabled && !loading && !isAdmin) {
     return (
       <div className="page-stack">
         <EmptyState
-          title="No workspace selected"
-          detail="Create or select a workspace before reviewing parsing diagnostics."
+          title="Admin access required"
+          detail="Parsing diagnostics are restricted to platform admins."
           action={
             <Link className="button button--secondary" to="/search">
               Return to Search
@@ -151,7 +156,7 @@ export function ParsingDetailPage() {
       <div className="page-stack">
         <EmptyState
           title="Document not found"
-          detail="This document is not available in the current tenant snapshot."
+          detail="This document is not available in the admin workspace scope for the current user."
           action={
             <Link className="button button--secondary" to="/admin/parsing">
               Back to Parsing Overview
@@ -162,14 +167,15 @@ export function ParsingDetailPage() {
     );
   }
 
+  const workspaceName = detail ? workspaceNameById.get(detail.tenantId) ?? "Unknown workspace" : "Unknown workspace";
   const canOpenOriginal = Boolean(detail.storagePath || (detail.sourceUri && /^(https?:)?\/\//i.test(detail.sourceUri)));
 
   return (
     <div className="page-stack">
       <PageIntro
-        eyebrow="Admin"
+        eyebrow={`Admin · ${workspaceName}`}
         title={detail.originalFilename}
-        description="Inspect exactly what the parser extracted, how strong the field coverage is, and where to tune the parser before scaling up the corpus."
+        description="Inspect exactly what the parser extracted, how strong the field coverage is, and where to tune the parser before scaling up the platform corpus."
         actions={
           <>
             <button
@@ -372,6 +378,10 @@ export function ParsingDetailPage() {
                 <h3>Processing metadata</h3>
               </div>
               <div className="parsing-meta-list">
+                <div className="signal-row">
+                  <span>Workspace</span>
+                  <strong>{workspaceName}</strong>
+                </div>
                 <div className="signal-row">
                   <span>Uploaded</span>
                   <strong>{formatDateTime(detail.uploadedAt)}</strong>

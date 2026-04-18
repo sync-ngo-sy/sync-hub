@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Mail, Phone } from "lucide-react";
+import { Building2, ExternalLink, Mail, Phone } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
+import { buildChatHref } from "@/lib/chatAgent";
 import type { CandidateDetail, MatchSignals } from "@/lib/contracts";
 import { useAuth } from "@/lib/auth";
 import { platformApi } from "@/lib/platformApi";
@@ -125,6 +126,7 @@ export function CandidateDossierPage() {
     phone: recruiterPhone(userMetadata, session?.user.phone ?? null),
   };
   const contactMailto = buildContactMailto(candidate, recruiter, routeState.searchQuery);
+  const currentEmployer = candidate.timeline[0]?.employer?.trim() || null;
 
   return (
     <div className="page-stack">
@@ -136,6 +138,12 @@ export function CandidateDossierPage() {
           <div className="skill-list">
             <Link className="button button--secondary" to="/search">
               Back to Search
+            </Link>
+            <Link
+              className="button button--secondary"
+              to={buildChatHref([candidate.candidateId], routeState.searchQuery || "Why is this candidate a strong fit?")}
+            >
+              Ask Agent
             </Link>
             {contactMailto ? (
               <a className="button button--primary" href={contactMailto}>
@@ -159,6 +167,12 @@ export function CandidateDossierPage() {
               <h2>{candidate.currentTitle}</h2>
               <p>{candidate.location}</p>
               <div className="meta-list">
+                {currentEmployer ? (
+                  <span className="tag">
+                    <Building2 size={14} />
+                    {currentEmployer}
+                  </span>
+                ) : null}
                 <span className="tag">{candidate.yearsExperience} years experience</span>
               </div>
             </div>
@@ -216,7 +230,10 @@ export function CandidateDossierPage() {
                         {entry.start} - {entry.end}
                       </span>
                     </div>
-                    <p className="muted">{entry.employer}</p>
+                    <p className="muted timeline-entry__employer">
+                      <Building2 size={14} />
+                      {entry.employer}
+                    </p>
                     <p className="muted">{entry.scope}</p>
                     <ul className="bullet-list">
                       {entry.highlights.map((highlight) => (

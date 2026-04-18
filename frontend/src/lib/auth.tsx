@@ -19,6 +19,8 @@ type AuthContextValue = {
   session: Session | null;
   userEmail: string | null;
   memberships: TenantMembership[];
+  adminMemberships: TenantMembership[];
+  isAdmin: boolean;
   currentTenant: TenantMembership | null;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
@@ -39,6 +41,10 @@ type TenantRow = {
   id: string;
   slug: string;
   name: string;
+};
+
+type PlatformAdminRow = {
+  user_id: string;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -84,6 +90,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [memberships, setMemberships] = useState<TenantMembership[]>([]);
   const [currentTenant, setCurrentTenant] = useState<TenantMembership | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const refreshTenantState = useCallback(async () => {
@@ -92,6 +99,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setSession(null);
       setMemberships([]);
       setCurrentTenant(null);
+      setIsPlatformAdmin(false);
       return;
     }
 
@@ -111,25 +119,47 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!nextSession) {
       setMemberships([]);
       setCurrentTenant(null);
+      setIsPlatformAdmin(false);
       setAuthError(null);
       storeTenantId(null);
       setLoading(false);
       return;
     }
 
-    const membershipResult = await supabase
-      .from("tenant_memberships")
-      .select("tenant_id, role, status")
-      .eq("status", "active");
+    const [membershipResult, platformAdminResult] = await Promise.all([
+      supabase
+        .from("tenant_memberships")
+        .select("tenant_id, role, status")
+        .eq("status", "active"),
+      supabase
+        .from("platform_admins")
+        .select("user_id")
+        .eq("user_id", nextSession.user.id)
+        .maybeSingle(),
+    ]);
 
     if (membershipResult.error) {
       setAuthError(membershipResult.error.message);
       setLoading(false);
       return;
     }
+    const platformAdminQueryFailed =
+      platformAdminResult.error &&
+      !/platform_admins/i.test(platformAdminResult.error.message) &&
+      platformAdminResult.error.code !== "PGRST205";
+
+    if (platformAdminQueryFailed) {
+      setAuthError(platformAdminResult.error.message);
+      setLoading(false);
+      return;
+    }
 
     const membershipRows = (membershipResult.data ?? []) as MembershipRow[];
-    if (!membershipRows.length) {
+    const platformAdminRow = platformAdminResult.error ? null : (platformAdminResult.data as PlatformAdminRow | null);
+    const nextIsPlatformAdmin = Boolean(platformAdminRow?.user_id);
+    setIsPlatformAdmin(nextIsPlatformAdmin);
+
+    if (!membershipRows.length && !nextIsPlatformAdmin) {
       setMemberships([]);
       setCurrentTenant(null);
       setAuthError(null);
@@ -138,8 +168,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    const tenantIds = membershipRows.map((membership) => membership.tenant_id);
-    const tenantResult = await supabase.from("tenants").select("id, slug, name").in("id", tenantIds);
+    const tenantResult = nextIsPlatformAdmin
+      ? await supabase.from("tenants").select("id, slug, name").order("name")
+      : await supabase.from("tenants").select("id, slug, name").in("id", membershipRows.map((membership) => membership.tenant_id));
 
     if (tenantResult.error) {
       setAuthError(tenantResult.error.message);
@@ -149,7 +180,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const tenantRows = (tenantResult.data ?? []) as TenantRow[];
     const tenantMap = new Map(tenantRows.map((tenant) => [tenant.id, tenant]));
-    const merged = membershipRows
+    const mergedMemberships = membershipRows
       .map((membership) => {
         const tenant = tenantMap.get(membership.tenant_id);
         if (!tenant) {
@@ -165,6 +196,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
         } satisfies TenantMembership;
       })
       .filter((membership): membership is TenantMembership => Boolean(membership));
+
+    const merged = nextIsPlatformAdmin
+      ? [
+          ...mergedMemberships,
+          ...tenantRows
+            .filter((tenant) => !mergedMemberships.some((membership) => membership.id === tenant.id))
+            .map((tenant) => ({
+              id: tenant.id,
+              slug: tenant.slug,
+              name: tenant.name,
+              role: "platform-admin",
+              status: "active",
+            }) satisfies TenantMembership),
+        ].sort((left, right) => left.name.localeCompare(right.name))
+      : mergedMemberships;
 
     const nextTenant = resolveCurrentTenant(merged);
     setMemberships(merged);
@@ -295,6 +341,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       session,
       userEmail: session?.user.email ?? null,
       memberships,
+      adminMemberships: isPlatformAdmin ? memberships : [],
+      isAdmin: isPlatformAdmin,
       currentTenant,
       authError,
       signIn,
@@ -304,7 +352,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       selectTenant,
       refreshTenantState,
     }),
-    [authError, bootstrapTenant, currentTenant, loading, memberships, refreshTenantState, selectTenant, session, signIn, signOut, signUp],
+    [authError, bootstrapTenant, currentTenant, isPlatformAdmin, loading, memberships, refreshTenantState, selectTenant, session, signIn, signOut, signUp],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

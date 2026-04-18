@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { PlatformScopeControl } from "@/components/PlatformScopeControl";
+import { buildChatHref } from "@/lib/chatAgent";
 import type { ComparisonResponse } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
+import { usePlatformScope } from "@/lib/platformScope";
 import { EmptyState, PageIntro, Panel, ProgressBar, Tag } from "@/components/ui";
 
 export function IntelligentComparisonPage() {
+  const {
+    currentWorkspace,
+    isPlatformAdmin,
+    scopeMode,
+    setScopeMode,
+    setWorkspaceId,
+    workspaceOptions,
+  } = usePlatformScope();
   const [searchParams] = useSearchParams();
   const [requiredSkills, setRequiredSkills] = useState("");
   const [response, setResponse] = useState<ComparisonResponse | null>(null);
   const rawIds = searchParams.get("ids");
   const candidateIds = rawIds ? rawIds.split(",").map((item) => item.trim()).filter(Boolean) : [];
+  const workspaceNameById = new Map(workspaceOptions.map((workspace) => [workspace.id, workspace.name]));
 
   useEffect(() => {
     if (candidateIds.length < 2) {
@@ -58,12 +70,32 @@ export function IntelligentComparisonPage() {
         eyebrow="Bounded reasoning"
         title="Intelligent comparison"
         description="Compare shortlisted candidates side by side with explicit overlap, required-skill gaps, and grounded summary text. This view is designed for decision support, not open-ended chat."
-        actions={<Link className="button button--secondary" to="/search">Back to search</Link>}
+        actions={
+          <div className="stack" style={{ alignItems: "flex-end" }}>
+            <PlatformScopeControl
+              isPlatformAdmin={isPlatformAdmin}
+              scopeMode={scopeMode}
+              onChangeScopeMode={setScopeMode}
+              currentWorkspace={currentWorkspace}
+              workspaceOptions={workspaceOptions}
+              onChangeWorkspace={setWorkspaceId}
+            />
+            <div className="skill-list">
+              <Link className="button button--secondary" to="/search">
+                Back to search
+              </Link>
+              <Link className="button button--primary" to={buildChatHref(candidateIds, "Which candidate is the strongest overall fit and why?")}>
+                Open Chat Agent
+              </Link>
+            </div>
+          </div>
+        }
       />
 
       <Panel className="hero-panel">
         <div className="stack">
           <Tag tone="primary">{response.source}</Tag>
+          <Tag>{isPlatformAdmin ? "Scope preserved for follow-up search and agent work" : "Workspace comparison"}</Tag>
           <h2>Recommended candidate</h2>
           <p>
             {response.items.find((item) => item.candidateId === response.recommendedCandidateId)?.name ?? "No recommendation"} currently ranks first against the selected comparison frame.
@@ -85,6 +117,7 @@ export function IntelligentComparisonPage() {
                 <h3>{item.name}</h3>
                 <p>{item.currentTitle}</p>
                 <div className="skill-list">
+                  {item.tenantId ? <Tag>{workspaceNameById.get(item.tenantId) ?? "Workspace"}</Tag> : null}
                   <Tag tone="primary">{item.seniority}</Tag>
                   <Tag>{item.yearsExperience} years</Tag>
                 </div>
@@ -155,9 +188,14 @@ export function IntelligentComparisonPage() {
             <h3>Decision support</h3>
             <p>The comparison API can return cached artifacts when they exist. This frontend also handles deterministic fallback payloads from the current Supabase function.</p>
             {response.recommendedCandidateId ? (
-              <Link className="button button--primary" to={`/dossier/${response.recommendedCandidateId}`}>
-                Open recommended dossier
-              </Link>
+              <div className="skill-list">
+                <Link className="button button--primary" to={`/dossier/${response.recommendedCandidateId}`}>
+                  Open recommended dossier
+                </Link>
+                <Link className="button button--secondary" to={buildChatHref(candidateIds, "What are the main risks or gaps across this shortlist?")}>
+                  Ask Agent
+                </Link>
+              </div>
             ) : null}
           </div>
         </Panel>

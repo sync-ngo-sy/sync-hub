@@ -43,6 +43,10 @@ type AskSynthesis = {
   cited_chunk_ids: string[];
 };
 
+type SearchHitRow = {
+  candidate_id: string;
+};
+
 function inferIntent(question: string): SupportedIntent {
   const normalized = question.toLowerCase();
   if (normalized.includes("why")) return "why_matched";
@@ -161,14 +165,14 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const question = (body.question ?? "").trim();
-    const candidateIds = body.candidate_ids ?? [];
+    const requestedCandidateIds = Array.isArray(body.candidate_ids)
+      ? body.candidate_ids
+        .map((item: unknown) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean)
+      : [];
 
     if (!question) {
       return jsonResponse(400, { error: "question is required" });
-    }
-
-    if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
-      return jsonResponse(400, { error: "candidate_ids is required" });
     }
 
     const intent = inferIntent(question);
@@ -179,6 +183,55 @@ Deno.serve(async (req) => {
           embeddingVersion: typeof body.embedding_version === "string" ? body.embedding_version : null,
         }
       : await buildQueryEmbedding(question);
+
+    let candidateIds = requestedCandidateIds;
+    let scopeSource = requestedCandidateIds.length ? "explicit" : "retrieved";
+
+    if (!candidateIds.length) {
+      const { data: searchRows, error: searchError } = await supabase.rpc("search_candidates_v1", {
+        p_q: question,
+        p_query_embedding: questionEmbeddingPayload.embedding,
+        p_limit: body.candidate_limit ?? 4,
+        p_offset: 0,
+        p_role: null,
+        p_seniority: null,
+        p_min_years: null,
+        p_skills: [],
+        p_embedding_version: questionEmbeddingPayload.embeddingVersion,
+        p_rank_version: body.rank_version ?? "chat-v1",
+      });
+
+      if (searchError) {
+        return jsonResponse(400, { error: "candidate_scope_failed", details: searchError.message });
+      }
+
+      candidateIds = Array.from(
+        new Set(
+          ((searchRows ?? []) as SearchHitRow[])
+            .map((row) => row.candidate_id)
+            .filter(Boolean),
+        ),
+      );
+    }
+
+    if (!candidateIds.length) {
+      return jsonResponse(200, {
+        intent,
+        facts: [],
+        citations: [],
+        context_blocks: [],
+        extractive_answer:
+          "No grounded candidates were retrieved for this question yet. Try adding a role, skill, seniority, or location to narrow the corpus.",
+        meta: {
+          candidate_count: 0,
+          top_k: body.top_k ?? 12,
+          answer_source: "empty_scope",
+          embedding_version: questionEmbeddingPayload.embeddingVersion,
+          scope_source: scopeSource,
+          resolved_candidate_ids: [],
+        },
+      });
+    }
 
     const [dossiers, evidence] = await Promise.all([
       supabase
@@ -236,6 +289,8 @@ Deno.serve(async (req) => {
         top_k: body.top_k ?? 12,
         answer_source: answerSource,
         embedding_version: questionEmbeddingPayload.embeddingVersion,
+        scope_source: scopeSource,
+        resolved_candidate_ids: candidateIds,
       },
     });
   } catch (error) {

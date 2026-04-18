@@ -9,6 +9,11 @@ const routeMeta: Array<{ test: (path: string) => boolean; title: string; subtitl
     subtitle: "Hybrid retrieval over structured profiles and chunk-level evidence",
   },
   {
+    test: (path) => path === "/chat",
+    title: "General Agent",
+    subtitle: "Grounded recruiter Q&A over corpus-derived or explicitly scoped candidate sets",
+  },
+  {
     test: (path) => path.startsWith("/dossier"),
     title: "Candidate Dossier",
     subtitle: "Grounded profile view with timeline, skills, and supporting evidence",

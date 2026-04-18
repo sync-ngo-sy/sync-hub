@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { EmptyState, PageIntro, Panel, ScorePill, StatCard, Tag } from "@/components/ui";
@@ -35,16 +35,21 @@ function toneForQualityBand(band: ParsingOverview["items"][number]["qualityBand"
 }
 
 export function ParsingOverviewPage() {
-  const { currentTenant, enabled, loading } = useAuth();
+  const { adminMemberships, enabled, isAdmin, loading } = useAuth();
   const [overview, setOverview] = useState<ParsingOverview>(fallbackParsingOverview);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adminTenantIds = useMemo(() => adminMemberships.map((membership) => membership.id), [adminMemberships]);
+  const workspaceNameById = useMemo(
+    () => new Map(adminMemberships.map((membership) => [membership.id, membership.name])),
+    [adminMemberships],
+  );
 
   useEffect(() => {
     if (enabled && loading) {
       return;
     }
-    if (enabled && !currentTenant) {
+    if (enabled && !isAdmin) {
       return;
     }
 
@@ -53,7 +58,7 @@ export function ParsingOverviewPage() {
     setError(null);
 
     platformApi
-      .getParsingOverview(currentTenant?.id)
+      .getParsingOverview(adminTenantIds)
       .then((nextOverview) => {
         if (active) {
           setOverview(nextOverview);
@@ -73,14 +78,14 @@ export function ParsingOverviewPage() {
     return () => {
       active = false;
     };
-  }, [currentTenant?.id, enabled, loading]);
+  }, [adminTenantIds, enabled, isAdmin, loading]);
 
-  if (enabled && !loading && !currentTenant) {
+  if (enabled && !loading && !isAdmin) {
     return (
       <div className="page-stack">
         <EmptyState
-          title="No workspace selected"
-          detail="Create or select a workspace before reviewing parsing quality diagnostics."
+          title="Admin access required"
+          detail="Parsing quality is a platform-admin operations view across all workspaces."
           action={
             <Link className="button button--secondary" to="/search">
               Return to Search
@@ -101,7 +106,7 @@ export function ParsingOverviewPage() {
       <PageIntro
         eyebrow="Admin"
         title="Parsing quality"
-        description="Track how well each CV was parsed before it reaches search. This view surfaces field coverage, confidence, warnings, and the documents that need parser tuning before a larger ingest."
+        description="Track parsing quality across the full platform. This view surfaces field coverage, confidence, warnings, and the documents that need parser tuning before a larger ingest."
         actions={
           <>
             <ScorePill score={overview.overallParsedPercentage} label="Corpus parse" />
@@ -122,7 +127,11 @@ export function ParsingOverviewPage() {
         />
         <StatCard label="Average confidence" value={`${overview.averageConfidence}%`} delta="extraction" tone="secondary" />
         <StatCard label="Needs review" value={`${overview.needsReviewCount}`} delta="below threshold" tone="tertiary" />
-        <StatCard label="Completed runs" value={`${overview.completedCount}`} delta={`${overview.failedCount} failed`} />
+        <StatCard
+          label="Admin workspaces"
+          value={`${adminMemberships.length}`}
+          delta={fetching ? "Refreshing" : `${overview.failedCount} failed docs`}
+        />
       </div>
 
       {overview.documentsCount === 0 ? (
@@ -147,6 +156,7 @@ export function ParsingOverviewPage() {
                   <table>
                     <thead>
                       <tr>
+                        <th>Workspace</th>
                         <th>Document</th>
                         <th>Candidate</th>
                         <th>Parse</th>
@@ -159,6 +169,7 @@ export function ParsingOverviewPage() {
                     <tbody>
                       {overview.items.map((item) => (
                         <tr key={item.documentId}>
+                          <td>{workspaceNameById.get(item.tenantId) ?? "Unknown workspace"}</td>
                           <td>
                             <div className="parsing-table__file">
                               <strong>{item.originalFilename}</strong>
@@ -239,7 +250,7 @@ export function ParsingOverviewPage() {
                       <Link key={item.documentId} to={`/admin/parsing/${item.documentId}`} className="inline-cta">
                         <div>
                           <strong>{item.originalFilename}</strong>
-                          <p>{item.keyFindings.join(" · ")}</p>
+                          <p>{workspaceNameById.get(item.tenantId) ?? "Unknown workspace"} · {item.keyFindings.join(" · ")}</p>
                         </div>
                       </Link>
                     ))

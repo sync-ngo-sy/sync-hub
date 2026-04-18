@@ -16,6 +16,18 @@ export type StructuredGenerationResult<T> = {
   model: string;
 };
 
+export type TextGenerationRequest = {
+  systemPrompt: string;
+  userPrompt: string;
+  temperature?: number;
+};
+
+export type TextGenerationResult = {
+  text: string;
+  provider: LlmProvider;
+  model: string;
+};
+
 type LlmConfig =
   | {
       provider: "openai";
@@ -183,6 +195,159 @@ async function parseResponseBody(response: Response) {
     return text ? JSON.parse(text) as Record<string, unknown> : {};
   } catch {
     return { raw: text };
+  }
+}
+
+async function callOpenAiText(
+  config: Extract<LlmConfig, { provider: "openai" }>,
+  request: TextGenerationRequest,
+): Promise<TextGenerationResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/responses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        instructions: request.systemPrompt,
+        input: request.userPrompt,
+        temperature: request.temperature ?? 0.2,
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = await parseResponseBody(response);
+    if (!response.ok) {
+      throw new Error(`openai_error:${response.status}:${JSON.stringify(payload)}`);
+    }
+
+    const text = extractOpenAiText(payload)?.trim();
+    if (!text) {
+      throw new Error("openai_error:missing_output_text");
+    }
+
+    return {
+      text,
+      provider: "openai",
+      model: config.model,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callGeminiText(
+  config: Extract<LlmConfig, { provider: "gemini" }>,
+  request: TextGenerationRequest,
+): Promise<TextGenerationResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(
+      `${config.baseUrl.replace(/\/$/, "")}/models/${config.model}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `${request.systemPrompt}\n\n${request.userPrompt}`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: request.temperature ?? 0.2,
+          },
+        }),
+        signal: controller.signal,
+      },
+    );
+
+    const payload = await parseResponseBody(response);
+    if (!response.ok) {
+      throw new Error(`gemini_error:${response.status}:${JSON.stringify(payload)}`);
+    }
+
+    const text = extractGeminiText(payload)?.trim();
+    if (!text) {
+      throw new Error("gemini_error:missing_output_text");
+    }
+
+    return {
+      text,
+      provider: "gemini",
+      model: config.model,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function callOllamaText(
+  config: Extract<LlmConfig, { provider: "ollama" }>,
+  request: TextGenerationRequest,
+): Promise<TextGenerationResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+
+  try {
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: config.model,
+        stream: false,
+        options: {
+          temperature: request.temperature ?? 0.2,
+        },
+        messages: [
+          {
+            role: "system",
+            content: request.systemPrompt,
+          },
+          {
+            role: "user",
+            content: request.userPrompt,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = await parseResponseBody(response);
+    if (!response.ok) {
+      throw new Error(`ollama_error:${response.status}:${JSON.stringify(payload)}`);
+    }
+
+    const message = payload.message;
+    const text =
+      message && typeof message === "object" && typeof (message as { content?: unknown }).content === "string"
+        ? (message as { content: string }).content.trim()
+        : null;
+    if (!text) {
+      throw new Error("ollama_error:missing_output_text");
+    }
+
+    return {
+      text,
+      provider: "ollama",
+      model: config.model,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -355,4 +520,20 @@ export async function generateStructuredObject<T>(request: StructuredGenerationR
   }
 
   return callOllama<T>(config, request);
+}
+
+export async function generateText(request: TextGenerationRequest): Promise<TextGenerationResult | null> {
+  const config = resolveLlmConfig();
+  if (!config) {
+    return null;
+  }
+
+  if (config.provider === "openai") {
+    return callOpenAiText(config, request);
+  }
+  if (config.provider === "gemini") {
+    return callGeminiText(config, request);
+  }
+
+  return callOllamaText(config, request);
 }
