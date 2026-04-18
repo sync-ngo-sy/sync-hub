@@ -8,6 +8,7 @@ import { SearchDiscoveryPage } from "@/screens/SearchDiscoveryPage";
 import { ParsingDetailPage } from "@/screens/admin/ParsingDetailPage";
 import { ParsingLabPage } from "@/screens/admin/ParsingLabPage";
 import { ParsingOverviewPage } from "@/screens/admin/ParsingOverviewPage";
+import { PlatformAdminDashboardPage } from "@/screens/admin/PlatformAdminDashboardPage";
 
 export const router = createHashRouter([
   {
@@ -25,10 +26,12 @@ export const router = createHashRouter([
       { path: "search-config", element: <Navigate to="/search" replace /> },
       { path: "intelligence", element: <Navigate to="/chat" replace /> },
       { path: "analytics", element: <Navigate to="/search" replace /> },
+      { path: "admin", element: <PlatformAdminDashboardPage /> },
+      { path: "admin/dashboard", element: <PlatformAdminDashboardPage /> },
       { path: "admin/parsing/lab", element: <ParsingLabPage /> },
       { path: "admin/parsing", element: <ParsingOverviewPage /> },
       { path: "admin/parsing/:documentId", element: <ParsingDetailPage /> },
-      { path: "admin/*", element: <Navigate to="/admin/parsing" replace /> },
+      { path: "admin/*", element: <Navigate to="/admin" replace /> },
       {
         path: "*",
         element: (

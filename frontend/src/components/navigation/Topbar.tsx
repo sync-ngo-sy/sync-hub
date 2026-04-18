@@ -24,6 +24,11 @@ const routeMeta: Array<{ test: (path: string) => boolean; title: string; subtitl
     subtitle: "Side-by-side recommendation with grounded overlap and gaps",
   },
   {
+    test: (path) => path === "/admin" || path === "/admin/dashboard",
+    title: "Platform Dashboard",
+    subtitle: "Cross-workspace admin view for corpus volume, tenant coverage, and parser rollout health",
+  },
+  {
     test: (path) => path === "/admin/parsing",
     title: "Parsing Quality",
     subtitle: "Operational view of CV field coverage, confidence, and parser diagnostics",

@@ -5,6 +5,7 @@ import {
   FileText,
   GitCompareArrows,
   Home,
+  LayoutDashboard,
   Search,
   Workflow,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const productRoutes = [
 ];
 
 const operationsRoutes = [
+  { to: "/admin", label: "Platform Dashboard", icon: LayoutDashboard },
   { to: "/admin/parsing", label: "Parsing Quality", icon: FileText },
   { to: "/admin/parsing/lab", label: "Parsing Lab", icon: FlaskConical },
 ];
@@ -80,7 +82,9 @@ export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
           {operationsRoutes.map((route) => {
             const Icon = route.icon;
             const active =
-              route.to === "/admin/parsing/lab"
+              route.to === "/admin"
+                ? location.pathname === route.to || location.pathname === "/admin/dashboard"
+                : route.to === "/admin/parsing/lab"
                 ? location.pathname === route.to
                 : location.pathname === route.to ||
                   (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
