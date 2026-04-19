@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import {
   Bot,
+  ChevronDown,
   X,
   FlaskConical,
   FileText,
@@ -8,12 +10,11 @@ import {
   LayoutDashboard,
   Search,
   SlidersHorizontal,
-  Workflow,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
-import { TenantBadge } from "@/components/ui";
+import { SyncBrand, TenantBadge } from "@/components/ui";
 
 const productRoutes = [
   { to: "/search", label: "Search & Discovery", icon: Search },
@@ -37,19 +38,19 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
   const location = useLocation();
   const { currentTenant, userEmail, isAdmin } = useAuth();
+  const isAdminRoute = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
+  const [adminOpen, setAdminOpen] = useState(isAdminRoute);
+
+  useEffect(() => {
+    if (isAdminRoute) {
+      setAdminOpen(true);
+    }
+  }, [isAdminRoute]);
 
   return (
     <aside className={cn("sidebar", mobileOpen && "sidebar--open")}>
       <div className="sidebar__header">
-        <div className="brand-mark">
-          <div className="brand-mark__icon">
-            <Workflow size={20} strokeWidth={2.4} />
-          </div>
-          <div>
-            <strong>CV Intelligence</strong>
-            <span>Talent Intelligence Platform</span>
-          </div>
-        </div>
+        <SyncBrand />
         {isMobile ? (
           <button className="icon-button sidebar__close" onClick={onClose} aria-label="Close navigation" type="button">
             <X size={18} />
@@ -81,26 +82,38 @@ export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
 
       {isAdmin ? (
         <div className="sidebar__group">
-          <span className="sidebar__heading">Admin</span>
-          {operationsRoutes.map((route) => {
-            const Icon = route.icon;
-            const active =
-              route.to === "/admin"
-                ? location.pathname === route.to || location.pathname === "/admin/dashboard"
-                : route.to === "/admin/search-simulator"
-                ? location.pathname === route.to
-                : route.to === "/admin/parsing/lab"
-                ? location.pathname === route.to
-                : location.pathname === route.to ||
-                  (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
+          <button
+            className="sidebar__section-toggle"
+            type="button"
+            aria-expanded={adminOpen}
+            onClick={() => setAdminOpen((value) => !value)}
+          >
+            <span className="sidebar__heading">Admin</span>
+            <ChevronDown size={14} className={cn("sidebar__section-chevron", adminOpen && "sidebar__section-chevron--open")} />
+          </button>
+          {adminOpen ? (
+            <div className="sidebar__section-content">
+              {operationsRoutes.map((route) => {
+                const Icon = route.icon;
+                const active =
+                  route.to === "/admin"
+                    ? location.pathname === route.to || location.pathname === "/admin/dashboard"
+                    : route.to === "/admin/search-simulator"
+                    ? location.pathname === route.to
+                    : route.to === "/admin/parsing/lab"
+                    ? location.pathname === route.to
+                    : location.pathname === route.to ||
+                      (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
 
-            return (
-              <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>
-                <Icon size={16} />
-                <span>{route.label}</span>
-              </Link>
-            );
-          })}
+                return (
+                  <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>
+                    <Icon size={16} />
+                    <span>{route.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -111,7 +124,7 @@ export function Sidebar({ mobileOpen, isMobile, onClose }: SidebarProps) {
             iconUrl={currentTenant?.iconUrl}
             size="md"
           />
-          <div>
+          <div className="session-chip__copy">
             <strong>{currentTenant?.name ?? "AI Recruiter Bot"}</strong>
             <span>{currentTenant ? `${currentTenant.role} · ${userEmail ?? "active session"}` : "Active orchestration session"}</span>
           </div>

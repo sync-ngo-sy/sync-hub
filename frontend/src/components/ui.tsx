@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight, Building2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
+import syncLogo from "@/assets/logo-white2-scaled.png";
 
 type PanelProps = {
   children: ReactNode;
@@ -137,6 +138,20 @@ export function TenantBadge({ name, iconUrl, size = "md" }: TenantBadgeProps) {
   return (
     <div className={cn("tenant-badge", "tenant-badge--fallback", `tenant-badge--${size}`)}>
       <Building2 size={size === "sm" ? 14 : 18} />
+    </div>
+  );
+}
+
+type SyncBrandProps = {
+  subtitle?: string;
+  className?: string;
+};
+
+export function SyncBrand({ subtitle = "Talent Intelligence Platform", className }: SyncBrandProps) {
+  return (
+    <div className={cn("brand-mark", className)}>
+      <img className="brand-mark__logo" src={syncLogo} alt="Sync" />
+      <span className="brand-mark__subtitle">{subtitle}</span>
     </div>
   );
 }

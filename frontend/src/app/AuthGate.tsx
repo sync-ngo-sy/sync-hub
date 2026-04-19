@@ -1,7 +1,7 @@
 import type { FormEvent, ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { Building2, Loader2, LogOut, Mail, ShieldCheck, Sparkles, Workflow } from "lucide-react";
-import { Panel, Tag } from "@/components/ui";
+import { Building2, Loader2, LogOut, Mail, ShieldCheck, Sparkles } from "lucide-react";
+import { Panel, SyncBrand, Tag } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 
 type AuthGateProps = {
@@ -27,15 +27,7 @@ function AuthShell({
       <div className="ambient ambient--two" />
       <div className="auth-layout">
         <Panel className="auth-panel auth-panel--hero">
-          <div className="brand-mark">
-            <div className="brand-mark__icon">
-              <Workflow size={20} strokeWidth={2.4} />
-            </div>
-            <div>
-              <strong>CV Intelligence</strong>
-              <span>Talent Intelligence Platform</span>
-            </div>
-          </div>
+          <SyncBrand />
 
           <div className="stack">
             <Tag tone="primary">{eyebrow}</Tag>
