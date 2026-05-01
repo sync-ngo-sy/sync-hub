@@ -32,6 +32,8 @@ export type CandidateSearchResult = {
   primaryRole: string;
   topSkills: string[];
   matchScore: number;
+  backendMatchRate: number;
+  backendScoreRaw: number;
   matchSignals: MatchSignals;
   shortSummary: string;
   strengths: string[];
@@ -116,6 +118,7 @@ export type SearchDebugResult = {
   seniority: string;
   primaryRole: string;
   scoreRaw: number;
+  matchRate: number;
   displayedMatchScore: number;
   subscores: Record<string, number>;
   matchedFilters: Record<string, unknown>;

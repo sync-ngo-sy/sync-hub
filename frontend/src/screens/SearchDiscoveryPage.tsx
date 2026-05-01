@@ -335,7 +335,7 @@ export function SearchDiscoveryPage() {
         <Panel className="hero-panel">
           <div className="hero-panel__glow" />
           <div className="stack">
-            {hasExecutedSearch ? <Tag tone="primary">Rank version {response?.meta.rankVersion ?? "v1"}</Tag> : null}
+            {hasExecutedSearch ? <Tag tone="primary">Rank version {response?.meta.rankVersion ?? "v2-rate"}</Tag> : null}
             <h2>{hasExecutedSearch ? "Natural language search over dossiers, chunks, and profile signals." : "Start with a title, skill, or seniority."}</h2>
             {hasExecutedSearch ? (
               <p>
@@ -475,7 +475,7 @@ export function SearchDiscoveryPage() {
                         </div>
                       </div>
                     </div>
-                    <ScorePill score={candidate.matchScore} />
+                    <ScorePill score={candidate.backendMatchRate} label="Backend rate" />
                   </div>
 
                   <div className="meta-list">
@@ -490,6 +490,12 @@ export function SearchDiscoveryPage() {
                   </div>
 
                   <div className="signal-list">
+                    <div className="signal-row">
+                      <strong>Backend rank rate</strong>
+                      <span>{candidate.backendMatchRate}% · raw {candidate.backendScoreRaw.toFixed(4)}</span>
+                    </div>
+                    <ProgressBar value={candidate.backendMatchRate} />
+
                     <div className="signal-row">
                       <strong>Semantic alignment</strong>
                       <span>{Math.round(candidate.matchSignals.semantic * 100)}%</span>

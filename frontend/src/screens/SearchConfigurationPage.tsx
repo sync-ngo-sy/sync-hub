@@ -466,7 +466,7 @@ export function SearchConfigurationPage() {
                     <div className="simulator-overview-metric">
                       <span>Top result</span>
                       <strong>{topResult?.name ?? "No result"}</strong>
-                      <p>{topResult ? `${topResult.displayedMatchScore}% shown match · raw ${topResult.scoreRaw.toFixed(4)}` : "No candidate was returned."}</p>
+                      <p>{topResult ? `${topResult.matchRate}% backend rate · raw ${topResult.scoreRaw.toFixed(4)}` : "No candidate was returned."}</p>
                     </div>
                   </div>
                 </Panel>
@@ -500,8 +500,8 @@ export function SearchConfigurationPage() {
                   </div>
                   {topResult ? (
                     <div className="simulator-result-score simulator-result-score--spotlight">
-                      <strong>{topResult.displayedMatchScore}%</strong>
-                      <span>raw {topResult.scoreRaw.toFixed(4)}</span>
+                      <strong>{topResult.matchRate}%</strong>
+                      <span>backend rate · raw {topResult.scoreRaw.toFixed(4)}</span>
                     </div>
                   ) : null}
                 </div>
@@ -611,7 +611,7 @@ export function SearchConfigurationPage() {
                 <div>
                   <Tag tone="primary">Exact ranked rows</Tag>
                   <h2>{response.results.length} result(s) returned</h2>
-                  <p>These are the exact ranked items returned by `search_candidates_v1`, with the strongest reasons surfaced first.</p>
+                  <p>These are the exact ranked items returned by backend search ranking, with the strongest reasons surfaced first.</p>
                 </div>
               </div>
 
@@ -640,8 +640,8 @@ export function SearchConfigurationPage() {
                           </div>
                         </div>
                         <div className="simulator-result-score">
-                          <strong>{result.displayedMatchScore}%</strong>
-                          <span>raw {result.scoreRaw.toFixed(4)}</span>
+                          <strong>{result.matchRate}%</strong>
+                          <span>backend rate · raw {result.scoreRaw.toFixed(4)}</span>
                         </div>
                       </div>
                     </summary>

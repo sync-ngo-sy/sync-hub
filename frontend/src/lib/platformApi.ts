@@ -256,7 +256,7 @@ function buildSearchRpcPayload(
     p_min_years: filters.min_years_experience,
     p_skills: filters.skills,
     p_embedding_version: null,
-    p_rank_version: "v1",
+    p_rank_version: "v2-rate",
     p_tenant_ids: tenantIds?.length ? tenantIds : null,
     p_filter_role: filters.role,
     p_filter_seniority: filters.seniority,
@@ -278,7 +278,13 @@ async function runDirectSearchRpc(
   }
 
   const rpcPayload = buildSearchRpcPayload(query, filters, options, tenantIds);
-  const { data, error } = await supabase.rpc("search_candidates_v1", rpcPayload);
+  let { data, error } = await supabase.rpc("search_candidates_with_rate_v1", rpcPayload);
+
+  if (error && `${error.message}`.includes("search_candidates_with_rate_v1")) {
+    const fallback = await supabase.rpc("search_candidates_v1", rpcPayload);
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     throw error;
@@ -351,6 +357,37 @@ async function runDirectSearchDebugRpc(
 function normalizeBackendMatchScore(rawScore: unknown) {
   const normalized = Math.max(0, Math.min(1, toNumber(rawScore)));
   return Math.round((1 - Math.exp(-6 * normalized)) * 100);
+}
+
+function calibrateBackendMatchRate(rawScore: unknown, subscores: JsonRecord = {}) {
+  const retrievalSignal = Math.max(
+    toNumber(subscores.semantic_similarity),
+    Math.min(1, toNumber(subscores.max_chunk_rrf) * 40),
+    Math.min(1, toNumber(subscores.avg_top3_chunk_rrf) * 45),
+  );
+  const weightedSignal = Math.max(
+    Math.max(0, toNumber(rawScore)),
+    (0.5 * retrievalSignal)
+      + (0.14 * toNumber(subscores.role_match))
+      + (0.12 * toNumber(subscores.skill_match))
+      + (0.08 * toNumber(subscores.experience_match))
+      + (0.06 * toNumber(subscores.seniority_match))
+      + (0.07 * toNumber(subscores.name_match))
+      + (0.03 * toNumber(subscores.company_match)),
+  );
+
+  if (weightedSignal <= 0) {
+    return 0;
+  }
+  return Math.min(99, Math.max(1, Math.round((1 - Math.exp(-3.2 * weightedSignal)) * 100)));
+}
+
+function backendMatchRate(record: JsonRecord, subscores: JsonRecord) {
+  const backendRate = toNumber(record.match_rate, NaN);
+  if (Number.isFinite(backendRate) && backendRate >= 0) {
+    return Math.round(Math.max(0, Math.min(100, backendRate)));
+  }
+  return calibrateBackendMatchRate(record.score, subscores) || normalizeBackendMatchScore(record.score);
 }
 
 function mapEvidenceSnippet(payload: JsonRecord, fallbackIndex: number): CandidateDetail["evidence"][number] {
@@ -471,6 +508,8 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
       const record = asRecord(row);
       const subscores = asRecord(record.subscores);
       const matchedFilters = asRecord(record.matched_filters);
+      const rate = backendMatchRate(record, subscores);
+      const rawScore = toNumber(record.score_raw ?? record.score);
 
       return {
         tenantId: record.tenant_id ? String(record.tenant_id) : null,
@@ -483,7 +522,9 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
         seniority: String(record.seniority ?? "unknown"),
         primaryRole: String(record.primary_role ?? "generalist"),
         topSkills: toStringArray(matchedFilters.matched_skills),
-        matchScore: normalizeBackendMatchScore(record.score),
+        matchScore: rate,
+        backendMatchRate: rate,
+        backendScoreRaw: rawScore,
         matchSignals: {
           semantic: toNumber(subscores.semantic_similarity),
           skill: toNumber(subscores.skill_match),
@@ -495,13 +536,13 @@ function mapRemoteSearch(payload: JsonRecord): SearchResponse {
         recommendedRoles: [],
         stage: "Retrieved",
         avatarHue: hueFromId(String(record.candidate_id)),
-        matchNarrative: String(record.summary_short ?? "Live result from search_candidates_v1."),
+        matchNarrative: String(record.summary_short ?? "Live result from backend search ranking."),
       };
     }),
     nextCursor: typeof payload.next_cursor === "number" ? payload.next_cursor : null,
     meta: {
       count: toNumber(asRecord(payload.meta).count, rawResults.length),
-      rankVersion: String(asRecord(payload.meta).rank_version ?? "v1"),
+      rankVersion: String(asRecord(payload.meta).rank_version ?? "v2-rate"),
       source: "remote",
     },
   };
@@ -555,6 +596,7 @@ function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
     results: rawResults.map((row) => {
       const record = asRecord(row);
       const subscoresRecord = asRecord(record.subscores);
+      const rate = backendMatchRate(record, subscoresRecord);
       return {
         tenantId: record.tenant_id ? String(record.tenant_id) : null,
         candidateId: String(record.candidate_id),
@@ -564,8 +606,9 @@ function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
         yearsExperience: toNumber(record.years_experience),
         seniority: String(record.seniority ?? "unknown"),
         primaryRole: String(record.primary_role ?? "generalist"),
-        scoreRaw: toNumber(record.score),
-        displayedMatchScore: normalizeBackendMatchScore(record.score),
+        scoreRaw: toNumber(record.score_raw ?? record.score),
+        matchRate: rate,
+        displayedMatchScore: rate,
         subscores: Object.fromEntries(
           Object.entries(subscoresRecord).map(([key, value]) => [key, toNumber(value)]),
         ),
@@ -577,7 +620,7 @@ function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
     nextCursor: typeof payload.next_cursor === "number" ? payload.next_cursor : null,
     meta: {
       count: toNumber(meta.count, rawResults.length),
-      rankVersion: String(meta.rank_version ?? "v1"),
+      rankVersion: String(meta.rank_version ?? "v2-rate"),
       source: "remote",
     },
     rawResponse: payload,
@@ -724,7 +767,7 @@ function mapRemoteParserProfile(row: ParserProfileRow): ParserProfile {
     embeddingVersion: row.embedding_version,
     chunkingProfile: row.chunking_profile,
     ocrEnabled: Boolean(row.ocr_enabled),
-    allowHeuristicFallback: Boolean(row.allow_heuristic_fallback),
+    allowHeuristicFallback: false,
     promptTemplate: row.prompt_template,
     notes: row.notes ?? "",
     lastEvaluatedAt: row.last_evaluated_at,
@@ -785,6 +828,8 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
     primaryRole: row.primary_role ?? "generalist",
     topSkills: toStringArray(row.top_skills),
     matchScore: 0,
+    backendMatchRate: 0,
+    backendScoreRaw: 0,
     matchSignals: {
       semantic: 0,
       skill: Math.min(1, Math.max(0.3, toStringArray(row.top_skills).length / 10)),
@@ -893,8 +938,9 @@ function createMockApi(): PlatformApi {
           yearsExperience: candidate.yearsExperience,
           seniority: candidate.seniority,
           primaryRole: candidate.primaryRole,
-          scoreRaw: candidate.matchScore / 100,
-          displayedMatchScore: candidate.matchScore,
+          scoreRaw: candidate.backendScoreRaw,
+          matchRate: candidate.backendMatchRate,
+          displayedMatchScore: candidate.backendMatchRate,
           subscores: {
             semantic_similarity: candidate.matchSignals.semantic,
             skill_match: candidate.matchSignals.skill,
@@ -1288,7 +1334,7 @@ function createRemoteApi(): PlatformApi {
           embedding_version: profile.embeddingVersion,
           chunking_profile: profile.chunkingProfile,
           ocr_enabled: profile.ocrEnabled,
-          allow_heuristic_fallback: profile.allowHeuristicFallback,
+          allow_heuristic_fallback: false,
           prompt_template: profile.promptTemplate,
           notes: profile.notes,
         };

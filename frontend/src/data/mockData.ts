@@ -31,6 +31,8 @@ const candidates: CandidateDetail[] = [
     primaryRole: "backend",
     topSkills: ["Node.js", "GraphQL", "PostgreSQL", "Kafka", "Kubernetes", "Redis"],
     matchScore: 96,
+    backendMatchRate: 96,
+    backendScoreRaw: 0.96,
     matchSignals: { semantic: 0.94, skill: 0.97, experience: 0.9 },
     shortSummary:
       "Excellent fit for senior backend search. Strong evidence across API architecture, platform ownership, and operating GraphQL services at scale.",
@@ -124,6 +126,8 @@ const candidates: CandidateDetail[] = [
     primaryRole: "backend",
     topSkills: ["Node.js", "TypeScript", "GraphQL", "MySQL", "RabbitMQ", "Terraform"],
     matchScore: 92,
+    backendMatchRate: 92,
+    backendScoreRaw: 0.92,
     matchSignals: { semantic: 0.89, skill: 0.93, experience: 0.96 },
     shortSummary:
       "High-confidence backend candidate with strong Node.js depth and strong experience scaling API surfaces for complex domains.",
@@ -214,6 +218,8 @@ const candidates: CandidateDetail[] = [
     primaryRole: "fullstack",
     topSkills: ["Node.js", "React", "PostgreSQL", "Next.js", "GraphQL", "Supabase"],
     matchScore: 88,
+    backendMatchRate: 88,
+    backendScoreRaw: 0.88,
     matchSignals: { semantic: 0.86, skill: 0.84, experience: 0.82 },
     shortSummary:
       "Strong all-rounder with enough backend depth for product-facing search features and better frontend range than the top two candidates.",
@@ -404,7 +410,7 @@ const mockParsingDetails: ParsingDocumentDetail[] = candidates.slice(0, 6).map((
     index === 0
       ? []
       : index === 3
-        ? ["Experience section needed heuristic fallback."]
+        ? ["Experience section needed model-backed retry."]
         : index === 4
           ? ["Header contact block was only partially parsed."]
           : ["PDF layout created sparse section boundaries."];
@@ -441,7 +447,7 @@ const mockParsingDetails: ParsingDocumentDetail[] = candidates.slice(0, 6).map((
     status,
     qualityBand,
     parserVersion: "pdftotext-raw-v2",
-    modelVersion: index >= 4 ? "heuristic-fallback-v1" : "ollama-qwen3-30b-a3b-v1",
+    modelVersion: index >= 4 ? "gemini-2.5-flash-v1" : "ollama-qwen3-30b-a3b-v1",
     promptVersion: "structured-json-v2",
     embeddingVersion: "ollama-nomic-embed-text-v1",
     warnings: [...parseWarnings, ...processingWarnings],
@@ -554,7 +560,7 @@ let parserProfiles: ParserProfile[] = [
     embeddingVersion: "gemini-embedding-001-768-v1",
     chunkingProfile: "section-first",
     ocrEnabled: false,
-    allowHeuristicFallback: true,
+    allowHeuristicFallback: false,
     promptTemplate: [
       "You are extracting a recruiter-ready candidate profile from a CV.",
       "Return valid JSON only.",
@@ -587,7 +593,7 @@ let parserProfiles: ParserProfile[] = [
     embeddingVersion: "gemini-embedding-001-768-v1",
     chunkingProfile: "dense-experience",
     ocrEnabled: true,
-    allowHeuristicFallback: true,
+    allowHeuristicFallback: false,
     promptTemplate: [
       "You are extracting a candidate profile from OCR text.",
       "Expect noisy line breaks.",
@@ -752,6 +758,8 @@ function calculateSearchResult(candidate: CandidateDetail, query: string, filter
     primaryRole: candidate.primaryRole,
     topSkills: candidate.topSkills,
     matchScore: score,
+    backendMatchRate: score,
+    backendScoreRaw: score / 100,
     matchSignals: { semantic, skill: skillSignal, experience },
     shortSummary: candidate.shortSummary,
     strengths: candidate.strengths,
