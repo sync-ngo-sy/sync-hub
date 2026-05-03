@@ -45,6 +45,7 @@ function calibratedMatchRate(row: Record<string, unknown>) {
       + (0.08 * toFiniteNumber(subscores.experience_match))
       + (0.06 * toFiniteNumber(subscores.seniority_match))
       + (0.07 * toFiniteNumber(subscores.name_match))
+      + (0.07 * toFiniteNumber(subscores.contact_match))
       + (0.03 * toFiniteNumber(subscores.company_match)),
   );
 

@@ -103,6 +103,7 @@ function calibratedMatchRate(row: Record<string, unknown>) {
       + (0.08 * toFiniteNumber(subscores.experience_match))
       + (0.06 * toFiniteNumber(subscores.seniority_match))
       + (0.07 * toFiniteNumber(subscores.name_match))
+      + (0.07 * toFiniteNumber(subscores.contact_match))
       + (0.03 * toFiniteNumber(subscores.company_match)),
   );
 
@@ -157,6 +158,8 @@ type CandidateSearchRow = {
   tenant_id: string;
   candidate_id: string;
   name: string | null;
+  email: string | null;
+  phone: string | null;
   headline: string | null;
   current_title: string | null;
   location: string | null;
@@ -367,6 +370,70 @@ function companyMatchScore(row: CandidateSearchRow, companies: string[]) {
   return companies.some((company) => rowCompanies.includes(normalizeSearchText(company))) ? 1 : 0;
 }
 
+function queryTextMatchScore(query: string, value: unknown) {
+  const queryText = normalizeSearchText(query);
+  const candidateText = normalizeSearchText(value);
+  const queryTokens = tokenizeQuery(query);
+  if (!queryText || !candidateText) {
+    return 0;
+  }
+  if (queryText === candidateText) {
+    return 1;
+  }
+  if (candidateText.includes(queryText) || queryText.includes(candidateText)) {
+    return 0.92;
+  }
+  if (queryTokens.length >= 2 && queryTokens.every((token) => candidateText.includes(token))) {
+    return 0.88;
+  }
+  if (queryTokens.length === 1 && candidateText.includes(queryTokens[0])) {
+    return 0.72;
+  }
+  return 0;
+}
+
+function normalizeContactText(value: unknown) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9@.+]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function digitsOnly(value: unknown) {
+  return String(value ?? "").replace(/\D+/g, "");
+}
+
+function contactMatchScore(row: CandidateSearchRow, query: string) {
+  const queryText = normalizeContactText(query);
+  const queryCompact = queryText.replace(/\s+/g, "");
+  const email = normalizeContactText(row.email).replace(/\s+/g, "");
+  const phoneDigits = digitsOnly(row.phone);
+  const queryDigits = digitsOnly(query);
+  const queryTokens = queryText.split(" ").map((token) => token.trim()).filter((token) => token.length >= 4);
+
+  if (!queryText) {
+    return 0;
+  }
+  if (email && (queryCompact === email || email.includes(queryCompact) || queryCompact.includes(email))) {
+    return queryCompact === email ? 1 : 0.92;
+  }
+  if (
+    phoneDigits &&
+    queryDigits.length >= 5 &&
+    (phoneDigits === queryDigits || phoneDigits.includes(queryDigits) || queryDigits.includes(phoneDigits))
+  ) {
+    return phoneDigits === queryDigits ? 1 : 0.92;
+  }
+  if (email && queryTokens.some((token) => email.includes(token))) {
+    return 0.88;
+  }
+  if (phoneDigits && queryDigits.length >= 4 && phoneDigits.includes(queryDigits)) {
+    return 0.88;
+  }
+  return 0;
+}
+
 function rowPassesExplicitFilters(row: CandidateSearchRow, filters: SearchIntentPayload) {
   const filterLocation = normalizeLocationValue(filters.location) ?? null;
   const rowLocation = normalizeLocationValue(row.location) ?? null;
@@ -398,12 +465,15 @@ function rowPassesExplicitFilters(row: CandidateSearchRow, filters: SearchIntent
 function fastProfileScore(row: CandidateSearchRow, query: string, filters: SearchIntentPayload) {
   const tokens = tokenizeQuery(query);
   const name = normalizeSearchText(row.name);
+  const contact = normalizeSearchText(`${row.email ?? ""} ${row.phone ?? ""}`);
   const title = normalizeSearchText(row.current_title);
   const skillsText = normalizeSearchText(toStringArray(row.skills).join(" "));
   const companiesText = normalizeSearchText(toStringArray(row.companies).join(" "));
   const summary = normalizeSearchText(`${row.summary_short ?? ""} ${row.stored_short_summary ?? ""}`);
-  const haystack = `${name} ${title} ${skillsText} ${companiesText} ${summary} ${normalizeSearchText(row.location)}`;
+  const haystack = `${name} ${contact} ${title} ${skillsText} ${companiesText} ${summary} ${normalizeSearchText(row.location)}`;
   const tokenHits = tokens.filter((token) => haystack.includes(token)).length;
+  const nameScore = queryTextMatchScore(query, row.name);
+  const contactScore = contactMatchScore(row, query);
   const roleScore = roleMatchScore(row, filters.role);
   const titleScore = titleIntentScore(row, query, filters.role);
   const skillScore = skillMatchScore(row, filters.skills);
@@ -419,12 +489,15 @@ function fastProfileScore(row: CandidateSearchRow, query: string, filters: Searc
   let tokenScore = tokens.length ? tokenHits / tokens.length : 0.15;
   for (const token of tokens) {
     if (name.includes(token)) tokenScore += 0.2;
+    if (contact.includes(token)) tokenScore += 0.2;
     if (title.includes(token)) tokenScore += 0.15;
     if (skillsText.includes(token)) tokenScore += 0.1;
   }
 
   let weighted = Math.max(
     tokenScore * 0.34,
+    nameScore * 0.82,
+    contactScore * 0.82,
     titleScore * 0.82,
     roleScore * 0.76,
     skillScore * 0.62,
@@ -454,7 +527,7 @@ async function fetchCandidateSearchRows(
   for (let offset = 0; ; offset += SEARCH_REST_PAGE_SIZE) {
     let request = supabase
       .from("candidate_search_cache")
-      .select("tenant_id, candidate_id, name, headline, current_title, location, years_experience, seniority, primary_role, role_tags, skills, companies, summary_short, stored_short_summary")
+      .select("tenant_id, candidate_id, name, email, phone, headline, current_title, location, years_experience, seniority, primary_role, role_tags, skills, companies, summary_short, stored_short_summary")
       .range(offset, offset + SEARCH_REST_PAGE_SIZE - 1);
 
     if (tenantIds.length) {
@@ -474,7 +547,7 @@ async function fetchCandidateSearchRows(
   return rows;
 }
 
-function mapFastProfileResult(row: CandidateSearchRow, score: number, filters: SearchIntentPayload, rankVersion: string) {
+function mapFastProfileResult(row: CandidateSearchRow, score: number, query: string, filters: SearchIntentPayload, rankVersion: string) {
   const requiredSkills = normalizeSkillList(filters.skills).map(normalizeSearchText);
   const requiredCompanies = filters.companies.map(normalizeSearchText);
   const matchedSkills = filters.skills.length
@@ -484,7 +557,8 @@ function mapFastProfileResult(row: CandidateSearchRow, score: number, filters: S
     ? toStringArray(row.companies).filter((company) => requiredCompanies.includes(normalizeSearchText(company)))
     : [];
   const subscores = {
-    name_match: 0,
+    name_match: queryTextMatchScore(query, row.name),
+    contact_match: contactMatchScore(row, query),
     company_match: companyMatchScore(row, filters.companies),
     semantic_similarity: 0,
     role_match: roleMatchScore(row, filters.role),
@@ -586,7 +660,7 @@ async function runFastProfileSearch(
     }
   }
 
-  return scored.slice(offset, offset + limit).map((item) => mapFastProfileResult(item.row, item.score, filters, rankVersion));
+  return scored.slice(offset, offset + limit).map((item) => mapFastProfileResult(item.row, item.score, query, filters, rankVersion));
 }
 
 Deno.serve(async (req) => {
