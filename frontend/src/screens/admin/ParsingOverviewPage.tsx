@@ -37,10 +37,66 @@ function toneForQualityBand(band: ParsingOverview["items"][number]["qualityBand"
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
+function StatSkeletonGrid() {
+  return (
+    <div className="stats-grid" aria-hidden="true">
+      {["coverage", "confidence", "review", "workspace"].map((item) => (
+        <Panel key={item} className="stat-card stat-card--loading">
+          <div className="stat-card__header">
+            <span className="stat-card__skeleton stat-card__skeleton--label" />
+            <span className="stat-card__skeleton stat-card__skeleton--icon" />
+          </div>
+          <div className="stat-card__value-row">
+            <span className="stat-card__skeleton stat-card__skeleton--value" />
+            <span className="stat-card__skeleton stat-card__skeleton--delta" />
+          </div>
+        </Panel>
+      ))}
+    </div>
+  );
+}
+
+function ParsingOverviewSkeleton() {
+  return (
+    <div className="admin-grid" aria-busy="true" aria-label="Loading parsing diagnostics">
+      <Panel className="table-card parsing-skeleton-card">
+        <div className="stack">
+          <span className="stat-card__skeleton parsing-skeleton__title" />
+          <span className="stat-card__skeleton parsing-skeleton__subtitle" />
+          <div className="parsing-skeleton-table">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="parsing-skeleton-row">
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--workspace" />
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--document" />
+                <span className="stat-card__skeleton parsing-skeleton__cell" />
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--small" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="table-card parsing-skeleton-card">
+        <div className="stack">
+          <span className="stat-card__skeleton parsing-skeleton__title" />
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="parsing-skeleton-note">
+              <span className="stat-card__skeleton parsing-skeleton__subtitle" />
+              <span className="stat-card__skeleton parsing-skeleton__line" />
+              <span className="stat-card__skeleton parsing-skeleton__line parsing-skeleton__line--short" />
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 export function ParsingOverviewPage() {
   const { adminMemberships, enabled, isAdmin, loading } = useAuth();
   const [overview, setOverview] = useState<ParsingOverview>(fallbackParsingOverview);
   const [fetching, setFetching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewFilter, setReviewFilter] = useState<"all" | "needsReview">("all");
   const [pageSize, setPageSize] = useState(25);
@@ -64,7 +120,7 @@ export function ParsingOverviewPage() {
     setError(null);
 
     platformApi
-      .getParsingOverview(adminTenantIds)
+      .getParsingOverview(adminTenantIds, { pageSize, pageIndex, reviewFilter })
       .then((nextOverview) => {
         if (active) {
           setOverview(nextOverview);
@@ -77,6 +133,7 @@ export function ParsingOverviewPage() {
       })
       .finally(() => {
         if (active) {
+          setHasLoaded(true);
           setFetching(false);
         }
       });
@@ -84,24 +141,18 @@ export function ParsingOverviewPage() {
     return () => {
       active = false;
     };
-  }, [adminTenantIds, enabled, isAdmin, loading]);
+  }, [adminTenantIds, enabled, isAdmin, loading, pageIndex, pageSize, reviewFilter]);
 
-  const filteredItems = useMemo(
-    () => (reviewFilter === "needsReview" ? overview.items.filter((item) => item.needsAttention) : overview.items),
-    [overview.items, reviewFilter],
-  );
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const paginatedItems = overview.items;
+  const totalItems = overview.itemsTotalCount ?? overview.items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePageIndex = Math.min(pageIndex, totalPages - 1);
-  const paginatedItems = useMemo(
-    () => filteredItems.slice(safePageIndex * pageSize, safePageIndex * pageSize + pageSize),
-    [filteredItems, pageSize, safePageIndex],
-  );
-  const pageStart = filteredItems.length ? safePageIndex * pageSize + 1 : 0;
-  const pageEnd = Math.min(filteredItems.length, safePageIndex * pageSize + pageSize);
+  const pageStart = totalItems ? safePageIndex * pageSize + 1 : 0;
+  const pageEnd = totalItems ? Math.min(totalItems, pageStart + paginatedItems.length - 1) : 0;
 
   useEffect(() => {
     setPageIndex(0);
-  }, [pageSize, reviewFilter, overview.items]);
+  }, [pageSize, reviewFilter]);
 
   useEffect(() => {
     setPageIndex((current) => Math.min(current, totalPages - 1));
@@ -123,9 +174,9 @@ export function ParsingOverviewPage() {
     );
   }
 
-  const documentsWithWarnings = overview.items.filter((item) => item.warnings.length > 0).length;
-  const missingContact = overview.items.filter((item) => item.missingFields.includes("email") || item.missingFields.includes("phone")).length;
-  const lowCoverage = overview.items.filter((item) => item.parsedPercentage < 70).length;
+  const documentsWithWarnings = overview.documentsWithWarnings ?? overview.items.filter((item) => item.warnings.length > 0).length;
+  const missingContact = overview.missingContactCount ?? overview.items.filter((item) => item.missingFields.includes("email") || item.missingFields.includes("phone")).length;
+  const lowCoverage = overview.lowCoverageCount ?? overview.items.filter((item) => item.parsedPercentage < 70).length;
   const reviewQueue = overview.items.filter((item) => item.needsAttention).slice(0, 5);
   const filteredLabel = reviewFilter === "needsReview" ? "needs review" : "documents";
 
@@ -147,7 +198,14 @@ export function ParsingOverviewPage() {
 
       {error ? <div className="status-banner">{error}</div> : null}
 
-      <div className="stats-grid">
+      {fetching && !hasLoaded ? (
+        <>
+          <StatSkeletonGrid />
+          <ParsingOverviewSkeleton />
+        </>
+      ) : (
+        <>
+          <div className="stats-grid">
         <StatCard
           label="Corpus parse coverage"
           value={`${overview.overallParsedPercentage}%`}
@@ -179,7 +237,7 @@ export function ParsingOverviewPage() {
                   </div>
                   <div className="skill-list">
                     <Tag tone="primary">{overview.documentsCount} total</Tag>
-                    {reviewFilter === "needsReview" ? <Tag tone="warning">{filteredItems.length} need review</Tag> : null}
+                    {reviewFilter === "needsReview" ? <Tag tone="warning">{totalItems} need review</Tag> : null}
                   </div>
                 </div>
 
@@ -213,7 +271,7 @@ export function ParsingOverviewPage() {
                   </label>
                 </div>
 
-                {filteredItems.length ? (
+                {paginatedItems.length ? (
                   <>
                     <div className="parsing-table">
                       <table>
@@ -248,7 +306,7 @@ export function ParsingOverviewPage() {
                               <td>
                                 <div className="parsing-table__score">
                                   <strong>{item.parsedPercentage}%</strong>
-                                  <span>{item.rawTextLength.toLocaleString()} chars</span>
+                                  <span>{item.rawTextLength ? `${item.rawTextLength.toLocaleString()} chars` : "text indexed"}</span>
                                 </div>
                               </td>
                               <td>{item.extractionConfidence}%</td>
@@ -272,7 +330,7 @@ export function ParsingOverviewPage() {
 
                     <div className="parsing-pagination">
                       <span>
-                        Showing {pageStart}-{pageEnd} of {filteredItems.length} {filteredLabel}
+                        Showing {pageStart}-{pageEnd} of {totalItems} {filteredLabel}
                       </span>
                       <div className="pagination-actions">
                         <button
@@ -384,6 +442,8 @@ export function ParsingOverviewPage() {
               </div>
             </Panel>
           </div>
+        </>
+      )}
         </>
       )}
     </div>

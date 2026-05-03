@@ -226,9 +226,23 @@ async function getCandidateDetail(supabase: ReturnType<typeof createAuthedClient
   };
 }
 
-async function getParsingOverview(supabase: ReturnType<typeof createAuthedClient>, tenantIds: string[]) {
-  const { data, error } = await supabase.rpc("parsing_overview_snapshot_v1", {
+function asInteger(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+async function getParsingOverview(supabase: ReturnType<typeof createAuthedClient>, tenantIds: string[], body: JsonRecord) {
+  const limit = asInteger(body.limit, 100, 0, 500);
+  const offset = asInteger(body.offset, 0, 0, 100000);
+  const needsReviewOnly = body.needs_review_only === true;
+  const { data, error } = await supabase.rpc("parsing_overview_page_v1", {
     p_tenant_ids: tenantIds.length ? tenantIds : null,
+    p_limit: limit,
+    p_offset: offset,
+    p_needs_review_only: needsReviewOnly,
   });
   if (error) {
     throw error;
@@ -429,7 +443,7 @@ Deno.serve(async (req) => {
       case "candidate_detail":
         return jsonResponse(200, await getCandidateDetail(supabase, asString(body.candidate_id) ?? ""));
       case "parsing_overview":
-        return jsonResponse(200, await getParsingOverview(supabase, tenantIds));
+        return jsonResponse(200, await getParsingOverview(supabase, tenantIds, body));
       case "parsing_document":
         return jsonResponse(200, await getParsingDocument(supabase, asString(body.document_id) ?? "", tenantIds));
       case "parser_profiles":

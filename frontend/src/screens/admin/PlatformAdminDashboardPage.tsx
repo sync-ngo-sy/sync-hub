@@ -51,12 +51,68 @@ const emptyWorkspaceStats: WorkspaceStats = {
   companyCount: 0,
 };
 
+function StatSkeletonGrid() {
+  return (
+    <div className="stats-grid" aria-hidden="true">
+      {["candidates", "workspaces", "cv-pool", "profiles"].map((item) => (
+        <Panel key={item} className="stat-card stat-card--loading">
+          <div className="stat-card__header">
+            <span className="stat-card__skeleton stat-card__skeleton--label" />
+            <span className="stat-card__skeleton stat-card__skeleton--icon" />
+          </div>
+          <div className="stat-card__value-row">
+            <span className="stat-card__skeleton stat-card__skeleton--value" />
+            <span className="stat-card__skeleton stat-card__skeleton--delta" />
+          </div>
+        </Panel>
+      ))}
+    </div>
+  );
+}
+
+function AdminDashboardSkeleton() {
+  return (
+    <div className="admin-grid" aria-busy="true" aria-label="Loading admin dashboard">
+      <Panel className="table-card parsing-skeleton-card">
+        <div className="stack">
+          <span className="stat-card__skeleton parsing-skeleton__title" />
+          <span className="stat-card__skeleton parsing-skeleton__subtitle" />
+          <div className="parsing-skeleton-table">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="parsing-skeleton-row">
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--workspace" />
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--small" />
+                <span className="stat-card__skeleton parsing-skeleton__cell parsing-skeleton__cell--small" />
+                <span className="stat-card__skeleton parsing-skeleton__cell" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="table-card parsing-skeleton-card">
+        <div className="stack">
+          <span className="stat-card__skeleton parsing-skeleton__title" />
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="parsing-skeleton-note">
+              <span className="stat-card__skeleton parsing-skeleton__subtitle" />
+              <span className="stat-card__skeleton parsing-skeleton__line" />
+              <span className="stat-card__skeleton parsing-skeleton__line parsing-skeleton__line--short" />
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 export function PlatformAdminDashboardPage() {
   const { adminMemberships, enabled, isAdmin, loading } = useAuth();
   const [workspaceStats, setWorkspaceStats] = useState<WorkspaceStats>(emptyWorkspaceStats);
   const [overview, setOverview] = useState<ParsingOverview>(emptyOverview);
   const [profiles, setProfiles] = useState<ParserProfile[]>([]);
   const [fetching, setFetching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const adminTenantIds = useMemo(() => adminMemberships.map((membership) => membership.id), [adminMemberships]);
 
@@ -72,26 +128,40 @@ export function PlatformAdminDashboardPage() {
     setFetching(true);
     setError(null);
 
-    Promise.all([
+    Promise.allSettled([
       platformApi.getWorkspaceStats(adminTenantIds),
-      platformApi.getParsingOverview(adminTenantIds),
+      platformApi.getParsingOverview(adminTenantIds, { pageSize: 0 }),
       platformApi.getParserProfiles(adminTenantIds),
     ])
-      .then(([nextWorkspaceStats, nextOverview, nextProfiles]) => {
+      .then(([workspaceStatsResult, overviewResult, profilesResult]) => {
         if (!active) {
           return;
         }
-        setWorkspaceStats(nextWorkspaceStats);
-        setOverview(nextOverview);
-        setProfiles(nextProfiles);
-      })
-      .catch((fetchError) => {
-        if (active) {
-          setError(fetchError instanceof Error ? fetchError.message : "Unable to load admin dashboard.");
+
+        const errors: string[] = [];
+        if (workspaceStatsResult.status === "fulfilled") {
+          setWorkspaceStats(workspaceStatsResult.value);
+        } else {
+          errors.push(`Workspace stats: ${workspaceStatsResult.reason instanceof Error ? workspaceStatsResult.reason.message : String(workspaceStatsResult.reason)}`);
         }
+
+        if (overviewResult.status === "fulfilled") {
+          setOverview(overviewResult.value);
+        } else {
+          errors.push(`Parsing diagnostics: ${overviewResult.reason instanceof Error ? overviewResult.reason.message : String(overviewResult.reason)}`);
+        }
+
+        if (profilesResult.status === "fulfilled") {
+          setProfiles(profilesResult.value);
+        } else {
+          errors.push(`Parser profiles: ${profilesResult.reason instanceof Error ? profilesResult.reason.message : String(profilesResult.reason)}`);
+        }
+
+        setError(errors.length ? errors.join(" ") : null);
       })
       .finally(() => {
         if (active) {
+          setHasLoaded(true);
           setFetching(false);
         }
       });
@@ -108,6 +178,34 @@ export function PlatformAdminDashboardPage() {
         continue;
       }
       activeProfilesByTenant.set(profile.tenantId, (activeProfilesByTenant.get(profile.tenantId) ?? 0) + 1);
+    }
+
+    if (overview.workspaceRollups?.length) {
+      const rollupByTenant = new Map(overview.workspaceRollups.map((rollup) => [rollup.tenantId, rollup]));
+      return adminMemberships
+        .map((membership) => {
+          const rollup = rollupByTenant.get(membership.id);
+
+          return {
+            tenantId: membership.id,
+            name: membership.name,
+            candidates: rollup?.candidates ?? 0,
+            documents: rollup?.documents ?? 0,
+            averageParse: rollup?.averageParse ?? 0,
+            needsReview: rollup?.needsReview ?? 0,
+            failed: rollup?.failed ?? 0,
+            activeProfiles: activeProfilesByTenant.get(membership.id) ?? 0,
+          };
+        })
+        .sort((left, right) => {
+          if (right.documents !== left.documents) {
+            return right.documents - left.documents;
+          }
+          if (right.needsReview !== left.needsReview) {
+            return right.needsReview - left.needsReview;
+          }
+          return left.name.localeCompare(right.name);
+        });
     }
 
     const aggregates = new Map<
@@ -168,12 +266,12 @@ export function PlatformAdminDashboardPage() {
         }
         return left.name.localeCompare(right.name);
       });
-  }, [adminMemberships, overview.items, profiles]);
+  }, [adminMemberships, overview.items, overview.workspaceRollups, profiles]);
 
   const activeProfiles = profiles.filter((profile) => profile.status === "active").length;
   const draftProfiles = profiles.filter((profile) => profile.status === "draft").length;
-  const documentsWithWarnings = overview.items.filter((item) => item.warnings.length > 0).length;
-  const missingContact = overview.items.filter((item) => item.missingFields.includes("email") || item.missingFields.includes("phone")).length;
+  const documentsWithWarnings = overview.documentsWithWarnings ?? overview.items.filter((item) => item.warnings.length > 0).length;
+  const missingContact = overview.missingContactCount ?? overview.items.filter((item) => item.missingFields.includes("email") || item.missingFields.includes("phone")).length;
   const topWorkspace = workspaceRows.find((item) => item.documents > 0) ?? null;
 
   if (enabled && !loading && !isAdmin) {
@@ -212,6 +310,14 @@ export function PlatformAdminDashboardPage() {
 
       {error ? <div className="status-banner">{error}</div> : null}
 
+      {fetching && !hasLoaded ? (
+        <>
+          <StatSkeletonGrid />
+          <StatSkeletonGrid />
+          <AdminDashboardSkeleton />
+        </>
+      ) : (
+        <>
       <div className="stats-grid">
         <StatCard
           label="Total candidates"
@@ -353,6 +459,8 @@ export function PlatformAdminDashboardPage() {
           </div>
         </Panel>
       </div>
+        </>
+      )}
     </div>
   );
 }

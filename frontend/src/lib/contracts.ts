@@ -211,6 +211,20 @@ export type ParsingOverview = {
   completedCount: number;
   needsReviewCount: number;
   failedCount: number;
+  documentsWithWarnings?: number;
+  missingContactCount?: number;
+  lowCoverageCount?: number;
+  itemsTotalCount?: number;
+  pageLimit?: number;
+  pageOffset?: number;
+  workspaceRollups?: Array<{
+    tenantId: string;
+    candidates: number;
+    documents: number;
+    averageParse: number;
+    needsReview: number;
+    failed: number;
+  }>;
   items: ParsingDocumentSummary[];
 };
 

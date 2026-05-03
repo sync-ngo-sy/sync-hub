@@ -69,7 +69,7 @@ type PlatformApi = {
     tenantIds?: string[],
   ) => Promise<AgentResponse>;
   getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null) => Promise<string | null>;
-  getParsingOverview: (tenantIds?: string[]) => Promise<ParsingOverview>;
+  getParsingOverview: (tenantIds?: string[], options?: ParsingOverviewOptions) => Promise<ParsingOverview>;
   getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;
   getParserProfiles: (tenantIds?: string[]) => Promise<ParserProfile[]>;
   saveParserProfile: (profile: ParserProfileInput, tenantId?: string) => Promise<ParserProfile>;
@@ -79,6 +79,12 @@ type PlatformApi = {
   getDataConnectors: () => Promise<DataConnector[]>;
   getIndexingWorkbench: () => Promise<IndexingWorkbench>;
   getAccessRoster: () => Promise<AccessRoster>;
+};
+
+type ParsingOverviewOptions = {
+  pageSize?: number;
+  pageIndex?: number;
+  reviewFilter?: "all" | "needsReview";
 };
 
 type CandidateDossierRow = {
@@ -283,6 +289,82 @@ async function fetchParsingOverviewSnapshotRpc(tenantIds: string[]): Promise<Par
     profiles: asArray(payload.profiles) as ParsingProfileRow[],
     runs: asArray(payload.runs) as ParsingProcessingRunRow[],
   };
+}
+
+function mapRemoteParsingSummary(row: JsonRecord): ParsingOverview["items"][number] {
+  const qualityBand = String(row.qualityBand ?? "critical");
+  return {
+    documentId: String(row.documentId ?? ""),
+    tenantId: String(row.tenantId ?? ""),
+    candidateId: typeof row.candidateId === "string" ? row.candidateId : null,
+    candidateName: String(row.candidateName ?? "Unassigned candidate"),
+    currentTitle: String(row.currentTitle ?? "Title not parsed"),
+    originalFilename: String(row.originalFilename ?? "Unknown file"),
+    mimeType: String(row.mimeType ?? "application/pdf"),
+    sourceType: String(row.sourceType ?? "upload"),
+    sourceUri: String(row.sourceUri ?? ""),
+    uploadedAt: String(row.uploadedAt ?? ""),
+    parsedPercentage: toNumber(row.parsedPercentage),
+    extractionConfidence: toNumber(row.extractionConfidence),
+    rawTextLength: toNumber(row.rawTextLength),
+    status: String(row.status ?? "queued"),
+    qualityBand: (qualityBand === "healthy" || qualityBand === "review" || qualityBand === "critical" ? qualityBand : "critical") as ParsingOverview["items"][number]["qualityBand"],
+    parserVersion: String(row.parserVersion ?? "unknown"),
+    modelVersion: String(row.modelVersion ?? "unknown"),
+    promptVersion: String(row.promptVersion ?? "unknown"),
+    embeddingVersion: String(row.embeddingVersion ?? "unknown"),
+    warnings: toStringArray(row.warnings),
+    missingFields: toStringArray(row.missingFields),
+    keyFindings: toStringArray(row.keyFindings),
+    needsAttention: Boolean(row.needsAttention),
+  };
+}
+
+function mapRemoteWorkspaceRollup(row: JsonRecord) {
+  return {
+    tenantId: String(row.tenantId ?? ""),
+    candidates: toNumber(row.candidates),
+    documents: toNumber(row.documents),
+    averageParse: toNumber(row.averageParse),
+    needsReview: toNumber(row.needsReview),
+    failed: toNumber(row.failed),
+  };
+}
+
+async function fetchParsingOverviewRpc(tenantIds: string[], options: ParsingOverviewOptions = {}): Promise<ParsingOverview> {
+  const pageSize = Math.max(0, Math.min(500, Math.trunc(options.pageSize ?? 100)));
+  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
+  const payload = await invokePlatform<JsonRecord>("parsing_overview", {
+    tenant_ids: tenantIds,
+    limit: pageSize,
+    offset: pageIndex * pageSize,
+    needs_review_only: options.reviewFilter === "needsReview",
+  });
+  if (Array.isArray(payload.items)) {
+    return {
+      overallParsedPercentage: toNumber(payload.overallParsedPercentage),
+      averageConfidence: toNumber(payload.averageConfidence),
+      documentsCount: toNumber(payload.documentsCount),
+      completedCount: toNumber(payload.completedCount),
+      needsReviewCount: toNumber(payload.needsReviewCount),
+      failedCount: toNumber(payload.failedCount),
+      documentsWithWarnings: toNumber(payload.documentsWithWarnings),
+      missingContactCount: toNumber(payload.missingContactCount),
+      lowCoverageCount: toNumber(payload.lowCoverageCount),
+      itemsTotalCount: toNumber(payload.itemsTotalCount),
+      pageLimit: toNumber(payload.pageLimit),
+      pageOffset: toNumber(payload.pageOffset),
+      workspaceRollups: asArray(payload.workspaceRollups).map((item) => mapRemoteWorkspaceRollup(asRecord(item))),
+      items: asArray(payload.items).map((item) => mapRemoteParsingSummary(asRecord(item))),
+    };
+  }
+
+  return buildParsingOverview(
+    asArray(payload.documents) as ParsingSourceDocumentRow[],
+    asArray(payload.candidates) as ParsingCandidateRow[],
+    asArray(payload.profiles) as ParsingProfileRow[],
+    asArray(payload.runs) as ParsingProcessingRunRow[],
+  );
 }
 
 function normalizeSearchText(value: unknown) {
@@ -1498,14 +1580,13 @@ function createRemoteApi(): PlatformApi {
 
       return mock.getOriginalDocumentUrl(storagePath, sourceUri);
     },
-    async getParsingOverview(tenantIds) {
+    async getParsingOverview(tenantIds, options) {
       if (!supabase || !tenantIds?.length) {
         return mock.getParsingOverview();
       }
 
       try {
-        const snapshot = await fetchParsingSnapshot(tenantIds);
-        return buildParsingOverview(snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
+        return fetchParsingOverviewRpc(tenantIds, options);
       } catch (error) {
         throw new Error(`Unable to load live parsing diagnostics: ${errorMessage(error)}`);
       }

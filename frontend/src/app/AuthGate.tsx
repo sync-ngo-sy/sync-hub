@@ -256,7 +256,7 @@ function TenantSetupScreen() {
 }
 
 export function AuthGate({ children }: AuthGateProps) {
-  const { enabled, loading, memberships, session } = useAuth();
+  const { enabled, isAdmin, loading, memberships, session } = useAuth();
 
   if (!enabled) {
     return <>{children}</>;
@@ -270,7 +270,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return <SignInScreen />;
   }
 
-  if (!memberships.length) {
+  if (!memberships.length && !isAdmin) {
     return <TenantSetupScreen />;
   }
 
