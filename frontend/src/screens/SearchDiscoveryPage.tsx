@@ -55,6 +55,7 @@ export function SearchDiscoveryPage() {
   const [sortBy, setSortBy] = useState<SearchSortOption>("best-match");
   const [filterOptions, setFilterOptions] = useState<SearchFilterOptions | null>(null);
   const [workspaceStats, setWorkspaceStats] = useState<WorkspaceStats | null>(null);
+  const [loadingWorkspaceStats, setLoadingWorkspaceStats] = useState(true);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -99,16 +100,31 @@ export function SearchDiscoveryPage() {
   useEffect(() => {
     let cancelled = false;
 
-    platformApi.getWorkspaceStats(resolvedTenantIds).then((nextStats) => {
-      if (!cancelled) {
-        setWorkspaceStats(nextStats);
-      }
-    });
+    setWorkspaceStats(null);
+    setLoadingWorkspaceStats(true);
+
+    platformApi
+      .getWorkspaceStats(resolvedTenantIds)
+      .then((nextStats) => {
+        if (!cancelled) {
+          setWorkspaceStats(nextStats);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspaceStats(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingWorkspaceStats(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [resolvedTenantIds]);
+  }, [scopeKey]);
 
   useEffect(() => {
     if (!request) {
@@ -300,7 +316,22 @@ export function SearchDiscoveryPage() {
         }
       />
 
-      {workspaceStats ? (
+      {loadingWorkspaceStats ? (
+        <div className="stats-grid" aria-busy="true" aria-label="Loading workspace statistics">
+          {["cv-pool", "candidate-profiles", "workspace"].map((item) => (
+            <Panel key={item} className="stat-card stat-card--loading">
+              <div className="stat-card__header">
+                <span className="stat-card__skeleton stat-card__skeleton--label" />
+                <span className="stat-card__skeleton stat-card__skeleton--icon" />
+              </div>
+              <div className="stat-card__value-row">
+                <span className="stat-card__skeleton stat-card__skeleton--value" />
+                <span className="stat-card__skeleton stat-card__skeleton--delta" />
+              </div>
+            </Panel>
+          ))}
+        </div>
+      ) : workspaceStats ? (
         <div className="stats-grid">
           <StatCard
             label="CV Pool"
