@@ -180,6 +180,12 @@ class WorkerConfig:
     device_id: str = field(default_factory=lambda: _env_any("CVI_DEVICE_ID", "CV_WORKER_DEVICE_ID"))
     allow_heuristic_fallback: bool = field(default_factory=lambda: _bool_env("CV_ALLOW_HEURISTIC_FALLBACK", "CVI_ALLOW_HEURISTIC_FALLBACK", default=False))
     delete_synced_bundles: bool = field(default_factory=lambda: _bool_env("CV_DELETE_SYNCED_BUNDLES", "CVI_DELETE_SYNCED_BUNDLES", default=True))
+    manatal_api_token: str = field(default_factory=lambda: _env_any("MANATAL_API_TOKEN", "CV_MANATAL_API_TOKEN", "CVI_MANATAL_API_TOKEN"))
+    manatal_api_base_url: str = field(default_factory=lambda: _env_any("MANATAL_API_BASE_URL", "CV_MANATAL_API_BASE_URL", default="https://api.manatal.com/open/v3"))
+    manatal_page_size: int = field(default_factory=lambda: _int_env("MANATAL_PAGE_SIZE", "CV_MANATAL_PAGE_SIZE", default="100"))
+    manatal_lookback_hours: int = field(default_factory=lambda: _int_env("MANATAL_LOOKBACK_HOURS", "CV_MANATAL_LOOKBACK_HOURS", default="24"))
+    manatal_download_dir: str = field(default_factory=lambda: _env_any("MANATAL_DOWNLOAD_DIR", "CV_MANATAL_DOWNLOAD_DIR", default="./tmp/manatal_downloads"))
+    manatal_sync_state_table: str = field(default_factory=lambda: _env_any("MANATAL_SYNC_STATE_TABLE", "CV_MANATAL_SYNC_STATE_TABLE", default="manatal_candidate_sync"))
 
     def cache_path(self) -> Path:
         path = Path(self.cache_dir)

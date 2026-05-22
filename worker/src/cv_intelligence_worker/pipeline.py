@@ -13,7 +13,7 @@ from .discovery import discover_documents
 from .embeddings import build_embedder
 from .extraction import extract_candidate_profile
 from .parsing import parse_document
-from .schema import ArtifactBundle, CandidateProfile, ProcessingRun, candidate_profile_from_dict
+from .schema import ArtifactBundle, CandidateProfile, DocumentSource, ProcessingRun, candidate_profile_from_dict
 from .store import LocalArtifactStore
 from .supabase import SupabaseClient
 from .utils import sha256_text
@@ -101,18 +101,14 @@ class IngestionPipeline:
         bundle_path = self.store.save_bundle(bundle)
         return bundle, bundle_path
 
-    def ingest_paths(
+    def _ingest_discovered_sources(
         self,
-        inputs: list[str] | None = None,
-        tenant_id: str | None = None,
+        discovered_sources: list[DocumentSource],
+        tenant: str,
         uploaded_by: str = "",
         sync_to_supabase: bool = True,
         progress: Callable[[str], None] | None = None,
     ) -> IngestionResult:
-        tenant = tenant_id or self.config.tenant_id
-        if not tenant:
-            raise ValueError("tenant_id is required via argument or CV_WORKER_TENANT_ID")
-        paths = inputs or [self.config.source_dir]
         ingestion_run_id = str(uuid4())
         bundles: list[ArtifactBundle] = []
         failures: list[dict[str, str]] = []
@@ -121,7 +117,6 @@ class IngestionPipeline:
         pending_sync: list[tuple[ArtifactBundle, Path]] = []
         run_database_limit_warned = False
         run_storage_limit_warned = False
-        discovered_sources = discover_documents(paths, tenant, ingestion_run_id, uploaded_by=uploaded_by or self.config.uploaded_by)
         total_discovered = len(discovered_sources)
         sources, duplicate_source_count = self._dedupe_sources(discovered_sources) if self.config.dedupe_source_documents else (discovered_sources, 0)
         concurrency = max(1, self.config.ingest_concurrency)
@@ -223,6 +218,47 @@ class IngestionPipeline:
             failures=failures,
             warnings=warnings,
             sync_stats=sync_stats,
+        )
+
+    def ingest_sources(
+        self,
+        sources: list[DocumentSource],
+        tenant_id: str | None = None,
+        uploaded_by: str = "",
+        sync_to_supabase: bool = True,
+        progress: Callable[[str], None] | None = None,
+    ) -> IngestionResult:
+        tenant = tenant_id or self.config.tenant_id
+        if not tenant:
+            raise ValueError("tenant_id is required via argument or CV_WORKER_TENANT_ID")
+        return self._ingest_discovered_sources(
+            sources,
+            tenant,
+            uploaded_by=uploaded_by,
+            sync_to_supabase=sync_to_supabase,
+            progress=progress,
+        )
+
+    def ingest_paths(
+        self,
+        inputs: list[str] | None = None,
+        tenant_id: str | None = None,
+        uploaded_by: str = "",
+        sync_to_supabase: bool = True,
+        progress: Callable[[str], None] | None = None,
+    ) -> IngestionResult:
+        tenant = tenant_id or self.config.tenant_id
+        if not tenant:
+            raise ValueError("tenant_id is required via argument or CV_WORKER_TENANT_ID")
+        paths = inputs or [self.config.source_dir]
+        ingestion_run_id = str(uuid4())
+        discovered_sources = discover_documents(paths, tenant, ingestion_run_id, uploaded_by=uploaded_by or self.config.uploaded_by)
+        return self._ingest_discovered_sources(
+            discovered_sources,
+            tenant,
+            uploaded_by=uploaded_by,
+            sync_to_supabase=sync_to_supabase,
+            progress=progress,
         )
 
     def compare_candidates(self, tenant_id: str, candidate_ids: list[str], query: str = "", sync_to_supabase: bool = True):

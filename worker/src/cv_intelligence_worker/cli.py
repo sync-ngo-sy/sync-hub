@@ -8,6 +8,7 @@ from typing import Sequence
 
 from .config import WorkerConfig
 from .discovery import discover_documents
+from .manatal import ManatalSync
 from .pipeline import IngestionPipeline
 from .schema import dataclass_to_dict
 
@@ -34,6 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
     compare = subparsers.add_parser("compare", help="Build a cached comparison artifact from local bundles", parents=[common])
     compare.add_argument("--candidate-id", dest="candidate_ids", action="append", required=True, help="Candidate ID to include; pass multiple times")
     compare.add_argument("--query", default="", help="Optional job query to evaluate gaps against")
+
+    manatal = subparsers.add_parser("manatal-sync", help="Fetch unsynced candidate resumes from Manatal and ingest them", parents=[common])
+    manatal.add_argument("--updated-since", default="", help="Fetch candidates updated at or after this ISO timestamp")
+    manatal.add_argument("--lookback-hours", type=int, default=None, help="Fallback lookback window when --updated-since and --candidate-id are omitted")
+    manatal.add_argument("--candidate-id", dest="candidate_ids", action="append", help="Specific Manatal candidate ID to sync; pass multiple times")
+    manatal.add_argument("--pending", action="store_true", help="Sync candidate IDs queued by the Manatal webhook receiver")
+    manatal.add_argument("--queue-only", action="store_true", help="Queue matching Manatal candidate IDs without downloading or parsing resumes")
+    manatal.add_argument("--limit", type=int, default=0, help="Maximum candidates to inspect")
+    manatal.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
 
     return parser
 
@@ -109,6 +119,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
         print(_json_output(payload, pretty=args.pretty))
         return 0
+
+    if args.command == "manatal-sync":
+        if args.lookback_hours is not None:
+            config = replace(config, manatal_lookback_hours=args.lookback_hours)
+        tenant_id = args.tenant_id or config.tenant_id
+        config = replace(config, tenant_id=tenant_id)
+        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
+        result = ManatalSync(config).sync(
+            updated_since=args.updated_since,
+            candidate_ids=args.candidate_ids or [],
+            pending=args.pending,
+            queue_only=args.queue_only,
+            limit=args.limit,
+            sync_to_supabase=not args.no_sync,
+            uploaded_by=args.uploaded_by,
+            progress=progress,
+        )
+        payload = {
+            "fetched_candidates": result.fetched_candidates,
+            "queued_candidates": result.queued_candidates,
+            "skipped_candidates": result.skipped_candidates,
+            "downloaded_resumes": result.downloaded_resumes,
+            "synced_resumes": result.synced_resumes,
+            "failures": result.failures,
+            "ingestion": None if result.ingestion_result is None else {
+                "ingestion_run_id": result.ingestion_result.ingestion_run_id,
+                "discovered": result.ingestion_result.total_discovered,
+                "processed": len(result.ingestion_result.bundles),
+                "warnings": result.ingestion_result.warnings,
+                "sync_stats": result.ingestion_result.sync_stats,
+            },
+        }
+        print(_json_output(payload, pretty=args.pretty))
+        return 0 if not result.failures else 2
 
     parser.error(f"unsupported command: {args.command}")
     return 1

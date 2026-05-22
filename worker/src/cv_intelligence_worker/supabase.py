@@ -180,6 +180,46 @@ class SupabaseClient:
                 rows.extend(item for item in result if isinstance(item, dict))
         return rows
 
+    def manatal_sync_states(self, tenant_id: str, manatal_candidate_ids: list[str]) -> dict[str, dict[str, Any]]:
+        rows = self._select_in(
+            self.config.manatal_sync_state_table,
+            tenant_id,
+            "manatal_candidate_id",
+            manatal_candidate_ids,
+            "tenant_id,manatal_candidate_id,manatal_updated_at,manatal_full_name,manatal_email,resume_url,resume_sha256,source_document_id,sync_status,last_synced_at,error_message,metadata_json",
+        )
+        return {
+            str(row.get("manatal_candidate_id")): row
+            for row in rows
+            if row.get("manatal_candidate_id")
+        }
+
+    def upsert_manatal_sync_states(self, rows: list[dict[str, Any]]) -> int:
+        return self.upsert_many(
+            self.config.manatal_sync_state_table,
+            rows,
+            "tenant_id,manatal_candidate_id",
+        )
+
+    def pending_manatal_candidate_ids(self, tenant_id: str, limit: int = 100) -> list[str]:
+        query = urllib.parse.urlencode(
+            {
+                "tenant_id": f"eq.{tenant_id}",
+                "sync_status": "in.(pending,failed)",
+                "select": "manatal_candidate_id",
+                "order": "updated_at.asc",
+                "limit": str(max(1, limit)),
+            }
+        )
+        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
+        if not isinstance(result, list):
+            return []
+        return [
+            str(row.get("manatal_candidate_id"))
+            for row in result
+            if isinstance(row, dict) and row.get("manatal_candidate_id")
+        ]
+
     def _count_table(self, table: str, tenant_id: str | None = None) -> int:
         query_args = {"select": "id", "limit": "1"}
         if tenant_id:
@@ -458,7 +498,7 @@ class SupabaseClient:
             seen_skill_slugs.add(skill_slug)
             skill_rows.append(
                 {
-                    "id": stable_uuid(bundle.profile.tenant_id, candidate_id, skill),
+                    "id": stable_uuid(bundle.profile.tenant_id, candidate_id, skill_slug),
                     "tenant_id": bundle.profile.tenant_id,
                     "candidate_id": candidate_id,
                     "skill_slug": skill_slug,

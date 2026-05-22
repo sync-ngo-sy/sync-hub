@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.agent]
 verify_jwt = true
+
+[functions.manatal-webhook]
+verify_jwt = false

@@ -1,0 +1,31 @@
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+artifact_registry_repository = "cv-intelligence"
+worker_image_name            = "cv-worker"
+worker_image_tag             = "latest"
+worker_job_name              = "cv-worker-ingest"
+worker_args                  = ["ingest", "--pretty"]
+
+cv_bucket_name = "your-cv-source-bucket"
+cv_source_dir  = "/mnt/cvs/demo"
+
+worker_env = {
+  SUPABASE_URL            = "https://your-project.supabase.co"
+  CV_WORKER_TENANT_ID     = "00000000-0000-0000-0000-000000000000"
+  CV_WORKER_UPLOADED_BY   = "gcp-cloud-run-job"
+  CV_INGEST_CONCURRENCY   = "4"
+  CV_BATCH_SIZE           = "8"
+  CV_SUPABASE_BATCH_SIZE  = "50"
+}
+
+worker_secret_env = {
+  SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key"
+  GEMINI_API_KEY            = "gemini-api-key"
+  CV_MODEL_API_KEY          = "gemini-api-key"
+  MANATAL_API_TOKEN         = "manatal-api-token"
+}
+
+enable_scheduler     = false
+scheduler_cron       = "0 2 * * *"
+scheduler_time_zone  = "Asia/Dubai"
