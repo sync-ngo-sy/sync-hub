@@ -8,6 +8,7 @@ from typing import Sequence
 
 from .config import WorkerConfig
 from .discovery import discover_documents
+from .gcs_originals import ManatalOriginalsBackfill
 from .manatal import ManatalSync
 from .pipeline import IngestionPipeline
 from .schema import dataclass_to_dict
@@ -44,6 +45,20 @@ def build_parser() -> argparse.ArgumentParser:
     manatal.add_argument("--queue-only", action="store_true", help="Queue matching Manatal candidate IDs without downloading or parsing resumes")
     manatal.add_argument("--limit", type=int, default=0, help="Maximum candidates to inspect")
     manatal.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
+
+    gcs_originals = subparsers.add_parser(
+        "manatal-originals-to-gcs",
+        help="Backfill original Manatal resumes into a private GCS bucket",
+        parents=[common],
+    )
+    gcs_originals.add_argument("--bucket", default="", help="Target GCS bucket name")
+    gcs_originals.add_argument("--limit", type=int, default=0, help="Maximum source documents to inspect")
+    gcs_originals.add_argument("--page-size", type=int, default=100, help="Supabase rows to scan per page")
+    gcs_originals.add_argument("--offset", type=int, default=0, help="Initial Supabase offset")
+    gcs_originals.add_argument("--apply", action="store_true", help="Upload files and update source_documents")
+    gcs_originals.add_argument("--force", action="store_true", help="Reprocess rows that already have storage_path")
+    gcs_originals.add_argument("--update-source-uri", action="store_true", help="Replace source_uri with gs:// URL after upload")
+    gcs_originals.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
 
     return parser
 
@@ -153,6 +168,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
         print(_json_output(payload, pretty=args.pretty))
         return 0 if not result.failures else 2
+
+    if args.command == "manatal-originals-to-gcs":
+        tenant_id = args.tenant_id or config.tenant_id
+        config = replace(config, tenant_id=tenant_id)
+        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
+        result = ManatalOriginalsBackfill(config).run(
+            bucket=args.bucket or config.gcs_originals_bucket,
+            limit=args.limit,
+            page_size=args.page_size,
+            offset=args.offset,
+            apply=args.apply,
+            force=args.force,
+            update_source_uri=args.update_source_uri,
+            progress=progress,
+        )
+        payload = {
+            "processed": result.processed,
+            "uploaded": result.uploaded,
+            "skipped": result.skipped,
+            "missing_source": result.missing_source,
+            "failed": result.failed,
+            "failures": result.failures,
+            "dry_run": result.dry_run,
+        }
+        print(_json_output(payload, pretty=args.pretty))
+        return 0 if not result.failed else 2
 
     parser.error(f"unsupported command: {args.command}")
     return 1

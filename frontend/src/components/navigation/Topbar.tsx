@@ -34,6 +34,11 @@ const routeMeta: Array<{ test: (path: string) => boolean; title: string; subtitl
     subtitle: "Active Supabase health findings and acknowledgement state",
   },
   {
+    test: (path) => path === "/admin/manatal-sync",
+    title: "Manatal Sync Status",
+    subtitle: "Queue state, GCS original coverage, and recent Manatal ingestion activity",
+  },
+  {
     test: (path) => path === "/admin/search-simulator",
     title: "Search Simulator",
     subtitle: "Live search-debug trace with exact request payloads, intent resolution, embeddings, and raw ranked rows",

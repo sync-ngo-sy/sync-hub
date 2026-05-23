@@ -72,6 +72,7 @@ class SupabaseClientTests(unittest.TestCase):
                 tenant_id="tenant-1",
                 supabase_url="https://example.supabase.co",
                 supabase_anon_key="anon",
+                sync_originals_to_storage=True,
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
             pipeline = IngestionPipeline(config)

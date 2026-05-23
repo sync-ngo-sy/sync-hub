@@ -186,6 +186,7 @@ class WorkerConfig:
     manatal_lookback_hours: int = field(default_factory=lambda: _int_env("MANATAL_LOOKBACK_HOURS", "CV_MANATAL_LOOKBACK_HOURS", default="24"))
     manatal_download_dir: str = field(default_factory=lambda: _env_any("MANATAL_DOWNLOAD_DIR", "CV_MANATAL_DOWNLOAD_DIR", default="./tmp/manatal_downloads"))
     manatal_sync_state_table: str = field(default_factory=lambda: _env_any("MANATAL_SYNC_STATE_TABLE", "CV_MANATAL_SYNC_STATE_TABLE", default="manatal_candidate_sync"))
+    gcs_originals_bucket: str = field(default_factory=lambda: _env_any("GCS_ORIGINALS_BUCKET", "CV_GCS_BUCKET", "CV_BUCKET_NAME"))
 
     def cache_path(self) -> Path:
         path = Path(self.cache_dir)

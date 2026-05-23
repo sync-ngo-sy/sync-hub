@@ -99,6 +99,64 @@ export SCHEDULER_CRON="*/15 * * * *"
 
 The script enables required APIs, creates Artifact Registry if needed, creates or checks required secrets, builds the Docker image with Cloud Build, deploys a Cloud Run Job, and optionally creates a Cloud Scheduler trigger.
 
+## Create The Private CV Bucket
+
+Use a private GCS bucket for raw CV PDFs instead of public links or per-user Google Drive sharing. The standard path is Terraform: it owns the bucket, service accounts, IAM, Cloud Run Job, and optional Scheduler. The bucket should not be granted to app users directly; the UI should go through an authenticated backend endpoint that checks tenant membership and returns a short-lived signed URL.
+
+```bash
+cd infra/gcp/terraform
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars
+terraform init
+terraform plan
+terraform apply
+```
+
+For `example-gcp-project`, use values like:
+
+```hcl
+project_id         = "example-gcp-project"
+region             = "us-central1"
+cv_bucket_name     = "example-cv-originals"
+cv_bucket_location = "us-central1"
+```
+
+The Terraform config creates or manages:
+
+1. A bucket with uniform bucket-level access, public access prevention, Standard storage, labels, and soft delete.
+2. The worker service account and bucket read access so Cloud Run Jobs can mount the bucket.
+3. A `cv-document-signer` service account with read access and self `roles/iam.serviceAccountTokenCreator`, ready for a future signed-URL service.
+
+If a resource was first created manually or with `gcloud`, import it before applying Terraform. That makes Terraform the source of truth instead of trying to create duplicates. For the current `example-gcp-project` project, import the resources we already created before running `terraform apply`:
+
+```bash
+cd infra/gcp/terraform
+
+terraform import 'google_storage_bucket.cv_originals[0]' example-cv-originals
+terraform import 'google_artifact_registry_repository.worker[0]' \
+  projects/example-gcp-project/locations/us-central1/repositories/cv-intelligence
+terraform import google_service_account.worker \
+  projects/example-gcp-project/serviceAccounts/cv-worker@example-gcp-project.iam.gserviceaccount.com
+terraform import 'google_service_account.document_signer[0]' \
+  projects/example-gcp-project/serviceAccounts/cv-document-signer@example-gcp-project.iam.gserviceaccount.com
+terraform import google_cloud_run_v2_job.worker_ingest \
+  projects/example-gcp-project/locations/us-central1/jobs/cv-worker-manatal-sync
+```
+
+Then run:
+
+```bash
+terraform plan
+terraform apply
+```
+
+For the worker deployment, pass the same bucket name:
+
+```bash
+export CV_BUCKET_NAME="example-cv-originals"
+./infra/gcp/deploy-worker-gcloud.sh
+```
+
 ## Upload CVs To GCS
 
 Use one folder per tenant if the bucket is shared:
@@ -108,6 +166,39 @@ gcloud storage cp --recursive ./workspaces/demo gs://YOUR_CV_BUCKET/demo
 ```
 
 The default Terraform example mounts the bucket at `/mnt/cvs` and sets `CV_SOURCE_DIR=/mnt/cvs/demo`.
+
+## Migrate Manatal Originals To GCS
+
+For existing indexed candidates, prefer Manatal as the source of original CV files when `public.manatal_candidate_sync.source_document_id` is available. Start with a dry run:
+
+```bash
+cv-intelligence-worker manatal-originals-to-gcs \
+  --bucket example-cv-originals \
+  --limit 10 \
+  --pretty
+```
+
+After reviewing the dry run, apply a small pilot:
+
+```bash
+cv-intelligence-worker manatal-originals-to-gcs \
+  --bucket example-cv-originals \
+  --limit 10 \
+  --apply \
+  --pretty
+```
+
+When the protected frontend flow is validated, use `--update-source-uri` to replace Drive URLs with `gs://` URIs. The worker keeps the old URL under `metadata_json.previous_source_uri`.
+
+The protected UI open flow requires these Supabase Edge Function secrets:
+
+```bash
+supabase secrets set \
+  GCS_ORIGINALS_BUCKET='example-cv-originals' \
+  GCS_SIGNED_URL_EXPIRES_SECONDS='600'
+```
+
+`GCS_SIGNED_URL_SERVICE_ACCOUNT_JSON` is also required if the Supabase Edge Function signs URLs directly. For stricter production key hygiene, put the signer behind a small GCP Cloud Run service and let it sign with its attached service account instead of creating a long-lived key.
 
 ## Sync New CVs From Manatal
 

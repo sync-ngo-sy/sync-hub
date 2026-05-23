@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from .config import WorkerConfig
 from .discovery import compute_sha256, guess_mime_type, stable_document_id
+from .gcs_storage import GcsJsonClient
 from .pipeline import IngestionPipeline, IngestionResult
 from .schema import DocumentSource
 from .supabase import SupabaseClient
@@ -91,11 +92,24 @@ def _extract_url_from_payload(payload: Any) -> str:
         return payload
     if not isinstance(payload, dict):
         return ""
-    for key in ("resume", "resume_url", "file", "file_url", "url", "download_url"):
+    for key in ("resume", "resume_file", "resume_url", "file", "file_url", "url", "download_url"):
         value = payload.get(key)
         if isinstance(value, str) and value.startswith(("http://", "https://")):
             return value
     return ""
+
+
+def _redact_url_for_error(value: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.query:
+        return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    return value
+
+
+def _redact_error_content(value: str) -> str:
+    redacted = re.sub(r"Token\s+[A-Za-z0-9._-]+", "Token [redacted]", value)
+    redacted = re.sub(r"([?&](?:Signature|X-Amz-Signature|Expires|X-Amz-Credential|X-Amz-Security-Token)=)[^&<\s]+", r"\1[redacted]", redacted)
+    return redacted
 
 
 class ManatalClient:
@@ -115,17 +129,22 @@ class ManatalClient:
             headers.update(extra)
         return headers
 
+    def _is_manatal_api_url(self, url: str) -> bool:
+        return urllib.parse.urlsplit(url).netloc == urllib.parse.urlsplit(self.base_url).netloc
+
     def _request(self, path_or_url: str, query: dict[str, str] | None = None) -> tuple[bytes, dict[str, str]]:
         url = path_or_url if path_or_url.startswith(("http://", "https://")) else f"{self.base_url}{path_or_url}"
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
-        request = urllib.request.Request(url, headers=self._headers(), method="GET")
+        headers = self._headers() if self._is_manatal_api_url(url) else {"User-Agent": self.config.user_agent}
+        request = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
                 return response.read(), dict(response.headers.items())
         except urllib.error.HTTPError as exc:
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Manatal GET {url} failed ({exc.code}): {content or exc.reason}") from exc
+            content = _redact_error_content(exc.read().decode("utf-8", errors="replace"))
+            safe_url = _redact_url_for_error(url)
+            raise RuntimeError(f"Manatal GET {safe_url} failed ({exc.code}): {content or exc.reason}") from exc
 
     def _json(self, path: str, query: dict[str, str] | None = None) -> Any:
         body, _headers = self._request(path, query)
@@ -249,7 +268,7 @@ class ManatalSync:
             "manatal_created_at": resume.candidate.created_at,
             "manatal_current_company": resume.candidate.current_company,
             "manatal_current_position": resume.candidate.current_position,
-            "manatal_resume_url": resume.resume_url,
+            "manatal_resume_url": _redact_url_for_error(resume.resume_url),
         }
         return DocumentSource(
             tenant_id=self.config.tenant_id,
@@ -264,16 +283,23 @@ class ManatalSync:
             metadata=metadata,
         )
 
-    def _sync_state_row(self, resume: ManatalResumeDownload, source: DocumentSource, status: str, error_message: str = "") -> dict[str, Any]:
+    def _sync_state_row(
+        self,
+        resume: ManatalResumeDownload,
+        source: DocumentSource,
+        status: str,
+        error_message: str = "",
+        source_document_id: str = "",
+    ) -> dict[str, Any]:
         return {
             "tenant_id": self.config.tenant_id,
             "manatal_candidate_id": resume.candidate.id,
             "manatal_updated_at": resume.candidate.updated_at or None,
             "manatal_full_name": resume.candidate.full_name,
             "manatal_email": resume.candidate.email,
-            "resume_url": resume.resume_url,
+            "resume_url": _redact_url_for_error(resume.resume_url),
             "resume_sha256": resume.sha256,
-            "source_document_id": source.document_id,
+            "source_document_id": source_document_id or source.document_id,
             "sync_status": status,
             "last_synced_at": _isoformat(_utc_now()) if status == "synced" else None,
             "error_message": error_message,
@@ -317,7 +343,7 @@ class ManatalSync:
             "manatal_updated_at": resume.candidate.updated_at or state.get("manatal_updated_at") or None,
             "manatal_full_name": resume.candidate.full_name or str(state.get("manatal_full_name") or ""),
             "manatal_email": resume.candidate.email or str(state.get("manatal_email") or ""),
-            "resume_url": resume.resume_url or str(state.get("resume_url") or ""),
+            "resume_url": _redact_url_for_error(resume.resume_url) or str(state.get("resume_url") or ""),
             "resume_sha256": resume.sha256,
             "source_document_id": state.get("source_document_id"),
             "sync_status": "synced",
@@ -325,6 +351,33 @@ class ManatalSync:
             "error_message": "",
             "metadata_json": metadata,
         }
+
+    def _sync_original_to_gcs(self, resume: ManatalResumeDownload, source: DocumentSource, source_document_id: str) -> str:
+        bucket = self.config.gcs_originals_bucket
+        if not bucket or not self.supabase:
+            return ""
+        object_name = f"{source.tenant_id}/{source_document_id}/{source.original_filename}"
+        GcsJsonClient(self.config).upload_file(bucket, object_name, resume.path, resume.mime_type or source.mime_type)
+        metadata = {
+            **source.metadata,
+            "manatal_resume_url": _redact_url_for_error(resume.resume_url),
+            "gcs_bucket": bucket,
+            "gcs_object": object_name,
+            "migrated_to_gcs_from": "manatal-sync",
+            "migrated_to_gcs_at": _isoformat(_utc_now()),
+        }
+        query = urllib.parse.urlencode({"id": f"eq.{source_document_id}"})
+        self.supabase._request(
+            "PATCH",
+            f"/rest/v1/source_documents?{query}",
+            data={
+                "source_uri": f"gs://{bucket}/{object_name}",
+                "storage_path": object_name,
+                "metadata_json": metadata,
+            },
+            headers={"Prefer": "return=minimal"},
+        )
+        return object_name
 
     def sync(
         self,
@@ -433,7 +486,19 @@ class ManatalSync:
             failed_source_paths = {failure["source_path"]: failure["error"] for failure in ingestion_result.failures}
             for resume, source in zip(resumes, sources):
                 error = failed_source_paths.get(source.source_path, "")
-                state_rows.append(self._sync_state_row(resume, source, "failed" if error else "synced", error))
+                source_document_id = source.document_id
+                if not error and self.supabase:
+                    source_document_id = self.supabase.resolve_source_document_id(
+                        self.config.tenant_id,
+                        source.document_sha256,
+                        source.document_id,
+                    )
+                    if self.config.gcs_originals_bucket:
+                        try:
+                            self._sync_original_to_gcs(resume, source, source_document_id)
+                        except Exception as exc:  # noqa: BLE001
+                            error = str(exc)
+                state_rows.append(self._sync_state_row(resume, source, "failed" if error else "synced", error, source_document_id))
         if sync_to_supabase and self.supabase and state_rows:
             self.supabase.upsert_manatal_sync_states(state_rows)
 

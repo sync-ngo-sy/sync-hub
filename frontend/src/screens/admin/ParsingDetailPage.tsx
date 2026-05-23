@@ -168,7 +168,7 @@ export function ParsingDetailPage() {
     setError(null);
 
     try {
-      const documentUrl = await platformApi.getOriginalDocumentUrl(detail.storagePath, detail.sourceUri);
+      const documentUrl = await platformApi.getOriginalDocumentUrl(detail.storagePath, detail.sourceUri, { documentId: detail.documentId });
       if (!documentUrl) {
         throw new Error("The original CV is not available from browser-accessible storage yet.");
       }

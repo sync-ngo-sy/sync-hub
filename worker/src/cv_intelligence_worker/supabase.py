@@ -205,7 +205,7 @@ class SupabaseClient:
         query = urllib.parse.urlencode(
             {
                 "tenant_id": f"eq.{tenant_id}",
-                "sync_status": "in.(pending,failed)",
+                "sync_status": "eq.pending",
                 "select": "manatal_candidate_id",
                 "order": "updated_at.asc",
                 "limit": str(max(1, limit)),

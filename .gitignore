@@ -7,6 +7,7 @@
 __pycache__/
 *.py[cod]
 *.so
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -33,8 +34,16 @@ supabase/.branches/
 supabase/.temp/
 .vercel/
 
+# Terraform local state
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
 # Logs and temp files
 *.log
+.tools/
 tmp/cv_intelligence_worker/
 tmp/
 temp/

@@ -7,7 +7,7 @@ name = "cv-intelligence-worker"
 version = "0.1.0"
 description = "Offline ingestion worker for the CV Intelligence Platform"
 requires-python = ">=3.9"
-readme = "../README.md"
+readme = { text = "Offline ingestion worker for the CV Intelligence Platform.", content-type = "text/markdown" }
 
 [project.scripts]
 cv-intelligence-worker = "cv_intelligence_worker.cli:main"

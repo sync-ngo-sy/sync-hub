@@ -52,6 +52,7 @@ export type CandidateDetail = CandidateSearchResult & {
   sourceUri?: string | null;
   storagePath?: string | null;
   cvUrl?: string | null;
+  manatalCandidateId?: string | null;
   links: string[];
   education: string[];
   certifications: string[];
@@ -211,6 +212,43 @@ export type WorkspaceStats = {
   documentCount: number;
   candidateCount: number;
   companyCount: number;
+};
+
+export type ManatalSyncStatus = {
+  generatedAt: string;
+  totals: {
+    sourceDocuments: number;
+    gcsOriginals: number;
+    driveOriginals: number;
+    manatalRows: number;
+    mappedManatalRows: number;
+    syncedRows: number;
+    pendingRows: number;
+    failedRows: number;
+    skippedRows: number;
+  };
+  coverage: {
+    gcsOriginalsPercent: number;
+    manatalSyncedPercent: number;
+    mappedRowsPercent: number;
+  };
+  lastSyncedAt: string | null;
+  lastFailure: {
+    manatalCandidateId: string;
+    candidateName: string;
+    errorMessage: string;
+    updatedAt: string | null;
+  } | null;
+  recentRows: Array<{
+    manatalCandidateId: string;
+    candidateName: string;
+    email: string | null;
+    syncStatus: string;
+    lastSyncedAt: string | null;
+    updatedAt: string | null;
+    sourceDocumentId: string | null;
+    errorMessage: string | null;
+  }>;
 };
 
 export type ParsingFieldState = "parsed" | "partial" | "missing";

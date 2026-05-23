@@ -9,6 +9,7 @@ import type {
   ComparisonResponse,
   DataConnector,
   IndexingWorkbench,
+  ManatalSyncStatus,
   OpsAlert,
   ParsingDocumentDetail,
   ParsingOverview,
@@ -63,6 +64,8 @@ type PlatformApi = {
   searchDebug: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchDebugResponse>;
   getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
   getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;
+  getManatalSyncStatus: (tenantIds?: string[]) => Promise<ManatalSyncStatus>;
+  getManatalCandidateId: (candidateId: string) => Promise<string | null>;
   getCandidate: (candidateId: string) => Promise<CandidateDetail>;
   compare: (candidateIds: string[], requiredSkills?: string[]) => Promise<ComparisonResponse>;
   ask: (question: string, candidateIds: string[]) => Promise<AskResponse>;
@@ -72,7 +75,7 @@ type PlatformApi = {
     messages?: Array<{ role: "user" | "assistant"; content: string }>,
     tenantIds?: string[],
   ) => Promise<AgentResponse>;
-  getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null) => Promise<string | null>;
+  getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null, context?: OriginalDocumentUrlContext) => Promise<string | null>;
   getShortlist: (tenantIds?: string[]) => Promise<CandidateShortlistItem[]>;
   saveShortlistItem: (item: CandidateShortlistInput) => Promise<CandidateShortlistItem>;
   removeShortlistItem: (candidateId: string, tenantId?: string | null) => Promise<void>;
@@ -91,6 +94,13 @@ type PlatformApi = {
   getAccessRoster: () => Promise<AccessRoster>;
 };
 
+type OriginalDocumentUrlContext = {
+  candidateId?: string | null;
+  documentId?: string | null;
+  tenantId?: string | null;
+  tenantIds?: string[];
+};
+
 type ParsingOverviewOptions = {
   pageSize?: number;
   pageIndex?: number;
@@ -100,6 +110,7 @@ type ParsingOverviewOptions = {
 
 type CandidateDossierRow = {
   candidate_id: string;
+  source_document_id?: string | null;
   name: string;
   headline: string | null;
   current_title: string | null;
@@ -123,6 +134,7 @@ type CandidateDossierRow = {
   mime_type: string | null;
   storage_path: string | null;
   source_uri: string | null;
+  manatal_candidate_id?: string | null;
   confidence: number | null;
 };
 
@@ -931,12 +943,217 @@ async function fetchParsingDocumentSnapshot(documentId: string, tenantIds: strin
   };
 }
 
+async function countRemoteRows(table: string, tenantIds: string[], apply?: (query: any) => any): Promise<number> {
+  if (!supabase) {
+    return 0;
+  }
+  let query: any = supabase.from(table).select("*", { count: "exact", head: true });
+  if (tenantIds.length) {
+    query = query.in("tenant_id", tenantIds);
+  }
+  if (apply) {
+    query = apply(query);
+  }
+  const { count, error } = await query;
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
+}
+
+function percent(numerator: number, denominator: number) {
+  if (!denominator) {
+    return 0;
+  }
+  return Math.round((numerator / denominator) * 100);
+}
+
+function mapManatalSyncRow(row: JsonRecord): ManatalSyncStatus["recentRows"][number] {
+  return {
+    manatalCandidateId: String(row.manatal_candidate_id ?? ""),
+    candidateName: String(row.manatal_full_name ?? "Unknown candidate"),
+    email: typeof row.manatal_email === "string" && row.manatal_email ? row.manatal_email : null,
+    syncStatus: String(row.sync_status ?? "unknown"),
+    lastSyncedAt: typeof row.last_synced_at === "string" ? row.last_synced_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+    sourceDocumentId: typeof row.source_document_id === "string" ? row.source_document_id : null,
+    errorMessage: typeof row.error_message === "string" && row.error_message ? row.error_message : null,
+  };
+}
+
+async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<ManatalSyncStatus> {
+  if (!supabase || !tenantIds.length) {
+    return createMockApi().getManatalSyncStatus(tenantIds);
+  }
+
+  const [
+    sourceDocuments,
+    gcsOriginals,
+    driveOriginals,
+    manatalRows,
+    mappedManatalRows,
+    syncedRows,
+    pendingRows,
+    failedRows,
+    skippedRows,
+  ] = await Promise.all([
+    countRemoteRows("source_documents", tenantIds),
+    countRemoteRows("source_documents", tenantIds, (query) => query.like("source_uri", "gs://%")),
+    countRemoteRows("source_documents", tenantIds, (query) => query.ilike("source_uri", "%drive.google.com%")),
+    countRemoteRows("manatal_candidate_sync", tenantIds),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.not("source_document_id", "is", null)),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "synced")),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "pending")),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "failed")),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "skipped")),
+  ]);
+
+  const recentResult = await supabase
+    .from("manatal_candidate_sync")
+    .select("manatal_candidate_id, manatal_full_name, manatal_email, sync_status, last_synced_at, updated_at, source_document_id, error_message")
+    .in("tenant_id", tenantIds)
+    .order("updated_at", { ascending: false })
+    .limit(12);
+  if (recentResult.error) {
+    throw recentResult.error;
+  }
+
+  const lastSyncedResult = await supabase
+    .from("manatal_candidate_sync")
+    .select("last_synced_at")
+    .in("tenant_id", tenantIds)
+    .eq("sync_status", "synced")
+    .not("last_synced_at", "is", null)
+    .order("last_synced_at", { ascending: false })
+    .limit(1);
+  if (lastSyncedResult.error) {
+    throw lastSyncedResult.error;
+  }
+
+  const lastFailureResult = await supabase
+    .from("manatal_candidate_sync")
+    .select("manatal_candidate_id, manatal_full_name, error_message, updated_at")
+    .in("tenant_id", tenantIds)
+    .eq("sync_status", "failed")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (lastFailureResult.error) {
+    throw lastFailureResult.error;
+  }
+
+  const lastSynced = asRecord(asArray(lastSyncedResult.data)[0]);
+  const lastFailure = asRecord(asArray(lastFailureResult.data)[0]);
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      sourceDocuments,
+      gcsOriginals,
+      driveOriginals,
+      manatalRows,
+      mappedManatalRows,
+      syncedRows,
+      pendingRows,
+      failedRows,
+      skippedRows,
+    },
+    coverage: {
+      gcsOriginalsPercent: percent(gcsOriginals, sourceDocuments),
+      manatalSyncedPercent: percent(syncedRows, manatalRows),
+      mappedRowsPercent: percent(mappedManatalRows, manatalRows),
+    },
+    lastSyncedAt: typeof lastSynced.last_synced_at === "string" ? lastSynced.last_synced_at : null,
+    lastFailure: lastFailure.manatal_candidate_id
+      ? {
+          manatalCandidateId: String(lastFailure.manatal_candidate_id),
+          candidateName: String(lastFailure.manatal_full_name ?? "Unknown candidate"),
+          errorMessage: String(lastFailure.error_message ?? ""),
+          updatedAt: typeof lastFailure.updated_at === "string" ? lastFailure.updated_at : null,
+        }
+      : null,
+    recentRows: asArray(recentResult.data).map((row) => mapManatalSyncRow(asRecord(row))),
+  };
+}
+
 function isBrowserOpenableSource(sourceUri?: string | null) {
   return Boolean(sourceUri && /^(https?:)?\/\//i.test(sourceUri));
 }
 
+function isGcsSource(sourceUri?: string | null) {
+  return Boolean(sourceUri && sourceUri.startsWith("gs://"));
+}
+
 function buildCandidateCvUrl(sourceUri?: string | null) {
   return isBrowserOpenableSource(sourceUri) ? sourceUri ?? null : null;
+}
+
+async function fetchCandidateDetailDirect(candidateId: string): Promise<CandidateDetail> {
+  if (!supabase) {
+    return createMockApi().getCandidate(candidateId);
+  }
+
+  const [dossier, chunks] = await Promise.all([
+    supabase
+      .from("candidate_dossier_v1")
+      .select(
+        "candidate_id, source_document_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, short_summary, long_summary, strengths, risks, recommended_roles, timeline_json, profile_json, original_filename, mime_type, storage_path, source_uri, confidence",
+      )
+      .eq("candidate_id", candidateId)
+      .maybeSingle(),
+    supabase
+      .from("candidate_chunks")
+      .select("id, chunk_type, text")
+      .eq("candidate_id", candidateId)
+      .eq("is_active", true)
+      .order("chunk_index", { ascending: true })
+      .limit(6),
+  ]);
+
+  if (dossier.error) {
+    throw dossier.error;
+  }
+  if (!dossier.data) {
+    throw new Error(`Candidate ${candidateId} was not found.`);
+  }
+  if (chunks.error) {
+    throw chunks.error;
+  }
+
+  return mapRemoteCandidate(
+    { ...(asRecord(dossier.data) as CandidateDossierRow), manatal_candidate_id: await fetchManatalCandidateIdByCandidateId(candidateId) },
+    asArray(chunks.data) as CandidateChunkRow[],
+  );
+}
+
+async function fetchManatalCandidateIdByCandidateId(candidateId: string): Promise<string | null> {
+  if (!supabase) {
+    return null;
+  }
+
+  const dossierResult = await supabase
+    .from("candidate_dossier_v1")
+    .select("source_document_id")
+    .eq("candidate_id", candidateId)
+    .maybeSingle();
+  if (dossierResult.error) {
+    throw dossierResult.error;
+  }
+
+  const sourceDocumentId = typeof dossierResult.data?.source_document_id === "string" ? dossierResult.data.source_document_id : "";
+  if (!sourceDocumentId) {
+    return null;
+  }
+
+  const syncResult = await supabase
+    .from("manatal_candidate_sync")
+    .select("manatal_candidate_id")
+    .eq("source_document_id", sourceDocumentId)
+    .limit(1);
+  if (syncResult.error) {
+    throw syncResult.error;
+  }
+
+  const row = asRecord(asArray(syncResult.data)[0]);
+  return typeof row.manatal_candidate_id === "string" ? row.manatal_candidate_id : null;
 }
 
 function mapRemoteSearch(payload: JsonRecord): SearchResponse {
@@ -1363,6 +1580,7 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
     sourceUri: row.source_uri,
     storagePath: row.storage_path,
     cvUrl,
+    manatalCandidateId: row.manatal_candidate_id ?? null,
     links: toStringArray(row.links),
     education,
     certifications: toStringArray(profile.certifications),
@@ -1493,6 +1711,52 @@ function createMockApi(): PlatformApi {
       await wait(80);
       return getMockWorkspaceStats();
     },
+    async getManatalSyncStatus(_tenantIds) {
+      await wait(90);
+      const generatedAt = new Date().toISOString();
+      return {
+        generatedAt,
+        totals: {
+          sourceDocuments: 2074,
+          gcsOriginals: 1447,
+          driveOriginals: 627,
+          manatalRows: 3171,
+          mappedManatalRows: 1581,
+          syncedRows: 1447,
+          pendingRows: 1590,
+          failedRows: 1,
+          skippedRows: 120,
+        },
+        coverage: {
+          gcsOriginalsPercent: 70,
+          manatalSyncedPercent: 46,
+          mappedRowsPercent: 50,
+        },
+        lastSyncedAt: generatedAt,
+        lastFailure: {
+          manatalCandidateId: "145496734",
+          candidateName: "Deleted Manatal candidate",
+          errorMessage: "No Candidate matches the given query.",
+          updatedAt: generatedAt,
+        },
+        recentRows: [
+          {
+            manatalCandidateId: "141886959",
+            candidateName: "Abdalrahmaan Mohammad Alsayed",
+            email: "candidate@example.com",
+            syncStatus: "synced",
+            lastSyncedAt: generatedAt,
+            updatedAt: generatedAt,
+            sourceDocumentId: "1b21c0a0-792a-5291-ae8e-529f1350f79d",
+            errorMessage: null,
+          },
+        ],
+      };
+    },
+    async getManatalCandidateId(_candidateId) {
+      await wait(40);
+      return null;
+    },
     async getCandidate(candidateId) {
       await wait(120);
       return getCandidate(candidateId);
@@ -1521,12 +1785,12 @@ function createMockApi(): PlatformApi {
         },
       };
     },
-    async getOriginalDocumentUrl(storagePath, sourceUri) {
+    async getOriginalDocumentUrl(storagePath, sourceUri, _context) {
       await wait(40);
       if (isBrowserOpenableSource(sourceUri)) {
         return sourceUri ?? null;
       }
-      return storagePath ? sourceUri ?? null : null;
+      return null;
     },
     async getShortlist(tenantIds) {
       await wait(60);
@@ -1694,6 +1958,24 @@ function createRemoteApi(): PlatformApi {
         return createEmptyWorkspaceStats();
       }
     },
+    async getManatalSyncStatus(tenantIds) {
+      if (!supabase || !tenantIds?.length) {
+        return mock.getManatalSyncStatus(tenantIds);
+      }
+
+      try {
+        return await invokePlatform<ManatalSyncStatus>("manatal_sync_status", { tenant_ids: tenantIds });
+      } catch {
+        return fetchManatalSyncStatusDirect(tenantIds);
+      }
+    },
+    async getManatalCandidateId(candidateId) {
+      try {
+        return await fetchManatalCandidateIdByCandidateId(candidateId);
+      } catch {
+        return null;
+      }
+    },
     async getCandidate(candidateId) {
       if (!supabase) {
         return mock.getCandidate(candidateId);
@@ -1703,7 +1985,7 @@ function createRemoteApi(): PlatformApi {
         const payload = await invokePlatform<JsonRecord>("candidate_detail", { candidate_id: candidateId });
         return mapRemoteCandidate(asRecord(payload.dossier) as CandidateDossierRow, asArray(payload.chunks) as CandidateChunkRow[]);
       } catch {
-        return mock.getCandidate(candidateId);
+        return fetchCandidateDetailDirect(candidateId);
       }
     },
     async compare(candidateIds, requiredSkills) {
@@ -1737,8 +2019,30 @@ function createRemoteApi(): PlatformApi {
       });
       return mapRemoteAgent(payload, candidateIds);
     },
-    async getOriginalDocumentUrl(storagePath, sourceUri) {
-      if (supabase && storagePath) {
+    async getOriginalDocumentUrl(storagePath, sourceUri, context) {
+      if (supabase && (context?.candidateId || context?.documentId)) {
+        try {
+          const payload = await invokePlatform<JsonRecord>("original_document_url", {
+            candidate_id: context.candidateId ?? undefined,
+            document_id: context.documentId ?? undefined,
+            tenant_id: context.tenantId ?? undefined,
+            tenant_ids: context.tenantIds ?? [],
+          });
+          const url = typeof payload.url === "string" ? payload.url : null;
+          if (url) {
+            return url;
+          }
+        } catch {
+          if (isBrowserOpenableSource(sourceUri)) {
+            return sourceUri ?? null;
+          }
+          if (isGcsSource(sourceUri)) {
+            throw new Error("This original CV is private in GCS, but signed URL access is not configured yet.");
+          }
+        }
+      }
+
+      if (supabase && storagePath && !isGcsSource(sourceUri)) {
         try {
           const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, 60 * 10);
           if (error) {
@@ -1748,7 +2052,10 @@ function createRemoteApi(): PlatformApi {
             return data.signedUrl;
           }
         } catch {
-          return mock.getOriginalDocumentUrl(storagePath, sourceUri);
+          if (isBrowserOpenableSource(sourceUri)) {
+            return sourceUri ?? null;
+          }
+          return null;
         }
       }
 

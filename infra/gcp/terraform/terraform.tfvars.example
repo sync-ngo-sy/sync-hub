@@ -7,8 +7,9 @@ worker_image_tag             = "latest"
 worker_job_name              = "cv-worker-ingest"
 worker_args                  = ["ingest", "--pretty"]
 
-cv_bucket_name = "your-cv-source-bucket"
-cv_source_dir  = "/mnt/cvs/demo"
+cv_bucket_name     = "your-cv-source-bucket"
+cv_bucket_location = "us-central1"
+cv_source_dir      = "/mnt/cvs/demo"
 
 worker_env = {
   SUPABASE_URL            = "https://your-project.supabase.co"

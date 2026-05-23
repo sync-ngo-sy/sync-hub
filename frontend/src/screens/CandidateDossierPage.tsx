@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, ExternalLink, FileText, Mail, Phone } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
@@ -16,6 +17,14 @@ type DossierLocationState = {
 
 function toExternalHref(link: string) {
   return /^https?:\/\//i.test(link) ? link : `https://${link}`;
+}
+
+function buildManatalCandidateUrl(manatalCandidateId?: string | null) {
+  if (!manatalCandidateId) {
+    return null;
+  }
+  const baseUrl = (import.meta.env.VITE_MANATAL_APP_BASE_URL?.trim() || "https://app.manatal.com/candidates").replace(/\/+$/, "");
+  return `${baseUrl}/${encodeURIComponent(manatalCandidateId)}`;
 }
 
 function candidateFirstName(name: string) {
@@ -177,7 +186,7 @@ function DossierSkeleton() {
 export function CandidateDossierPage() {
   const { candidateId } = useParams();
   const location = useLocation();
-  const { currentTenant, session, userEmail } = useAuth();
+  const { currentTenant, isAdmin, session, userEmail } = useAuth();
   const routeState = (location.state ?? {}) as DossierLocationState;
   const contextualMatchScore = typeof routeState.searchMatchScore === "number" ? routeState.searchMatchScore : null;
   const candidateQuery = useQuery({
@@ -189,6 +198,14 @@ export function CandidateDossierPage() {
     refetchOnMount: false,
   });
   const candidate = candidateQuery.data ?? null;
+  const manatalCandidateIdQuery = useQuery({
+    queryKey: ["candidate-manatal-id", candidateId],
+    queryFn: () => platformApi.getManatalCandidateId(candidateId as string),
+    enabled: Boolean(candidateId && isAdmin),
+    staleTime: 10 * 60 * 1000,
+  });
+  const [openingOriginal, setOpeningOriginal] = useState(false);
+  const [openOriginalError, setOpenOriginalError] = useState<string | null>(null);
 
   if (!candidateId) {
     return <EmptyState title="Candidate not selected" detail="Open a dossier from search results to inspect a real candidate profile." />;
@@ -221,6 +238,33 @@ export function CandidateDossierPage() {
   };
   const contactMailto = buildContactMailto(candidate, recruiter, routeState.searchQuery);
   const currentEmployer = candidate.timeline[0]?.employer?.trim() || null;
+  const canOpenOriginal = Boolean(candidate.storagePath || candidate.sourceUri || candidate.cvUrl);
+  const manatalCandidateId = candidate.manatalCandidateId ?? manatalCandidateIdQuery.data ?? null;
+  const manatalUrl = isAdmin ? buildManatalCandidateUrl(manatalCandidateId) : null;
+
+  async function handleOpenOriginalCv() {
+    if (!candidate || openingOriginal) {
+      return;
+    }
+
+    setOpeningOriginal(true);
+    setOpenOriginalError(null);
+
+    try {
+      const documentUrl = await platformApi.getOriginalDocumentUrl(candidate.storagePath, candidate.sourceUri ?? candidate.cvUrl, {
+        candidateId: candidate.candidateId,
+        tenantId: currentTenant?.id,
+      });
+      if (!documentUrl) {
+        throw new Error("The original CV is not available from browser-accessible storage yet.");
+      }
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setOpenOriginalError(error instanceof Error ? error.message : "Unable to open the original CV.");
+    } finally {
+      setOpeningOriginal(false);
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -239,10 +283,16 @@ export function CandidateDossierPage() {
             >
               Ask Agent
             </Link>
-            {candidate.cvUrl ? (
-              <a className="button button--secondary" href={candidate.cvUrl} target="_blank" rel="noreferrer noopener">
+            {canOpenOriginal ? (
+              <button className="button button--secondary" type="button" onClick={() => void handleOpenOriginalCv()} disabled={openingOriginal}>
                 <FileText size={16} />
-                Open CV
+                {openingOriginal ? "Opening..." : "Open CV"}
+              </button>
+            ) : null}
+            {manatalUrl ? (
+              <a className="button button--secondary" href={manatalUrl} target="_blank" rel="noreferrer noopener">
+                <ExternalLink size={16} />
+                Open in Manatal
               </a>
             ) : null}
             {contactMailto ? (
@@ -253,6 +303,7 @@ export function CandidateDossierPage() {
           </div>
         }
       />
+      {openOriginalError ? <p className="form-error">{openOriginalError}</p> : null}
 
       <Panel className="candidate-card">
         <div className="candidate-profile__header">
@@ -293,10 +344,16 @@ export function CandidateDossierPage() {
               {candidate.phone}
             </a>
           ) : null}
-          {candidate.cvUrl ? (
-            <a className="tag" href={candidate.cvUrl} target="_blank" rel="noreferrer noopener">
+          {canOpenOriginal ? (
+            <button className="tag" type="button" onClick={() => void handleOpenOriginalCv()} disabled={openingOriginal}>
               <FileText size={14} />
               {candidate.originalFilename ?? "Original CV"}
+            </button>
+          ) : null}
+          {manatalUrl ? (
+            <a className="tag" href={manatalUrl} target="_blank" rel="noreferrer noopener">
+              <ExternalLink size={14} />
+              Manatal {manatalCandidateId}
             </a>
           ) : null}
           {candidate.links.map((link) => (

@@ -654,6 +654,31 @@ export function SearchDiscoveryPage() {
     }
   }
 
+  async function handleOpenShortlistCv(item: CandidateShortlistItem) {
+    const key = `cv:${shortlistKey(item.tenantId, item.candidateId)}`;
+    setShortlistError(null);
+    setShortlistPendingKeys((current) => new Set(current).add(key));
+
+    try {
+      const documentUrl = await platformApi.getOriginalDocumentUrl(null, item.cvUrl, {
+        candidateId: item.candidateId,
+        tenantId: item.tenantId,
+      });
+      if (!documentUrl) {
+        throw new Error("The original CV is not available from browser-accessible storage yet.");
+      }
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
+    } catch (nextError) {
+      setShortlistError(`Could not open CV: ${String(nextError)}`);
+    } finally {
+      setShortlistPendingKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   async function handleClearShortlist() {
     if (!shortlistItems.length) {
       return;
@@ -979,6 +1004,7 @@ export function SearchDiscoveryPage() {
                   {shortlistItems.map((item) => {
                     const key = shortlistKey(item.tenantId, item.candidateId);
                     const removing = shortlistPendingKeys.has(key);
+                    const openingCv = shortlistPendingKeys.has(`cv:${key}`);
                     return (
                       <article key={key} className="shortlist-drawer-card">
                         <div className="shortlist-drawer-card__header">
@@ -1020,10 +1046,10 @@ export function SearchDiscoveryPage() {
                             View
                           </Link>
                           {item.cvUrl ? (
-                            <a className="button button--secondary button--compact" href={item.cvUrl} target="_blank" rel="noreferrer">
+                            <button className="button button--secondary button--compact" type="button" onClick={() => void handleOpenShortlistCv(item)} disabled={openingCv}>
                               <FileText size={14} />
-                              CV
-                            </a>
+                              {openingCv ? "Opening..." : "CV"}
+                            </button>
                           ) : null}
                           <button
                             className="button button--secondary button--compact"

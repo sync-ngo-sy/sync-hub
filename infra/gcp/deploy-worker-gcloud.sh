@@ -19,6 +19,7 @@ WORKER_PARALLELISM="${WORKER_PARALLELISM:-1}"
 WORKER_MAX_RETRIES="${WORKER_MAX_RETRIES:-1}"
 
 CV_BUCKET_NAME="${CV_BUCKET_NAME:-}"
+GCS_ORIGINALS_BUCKET="${GCS_ORIGINALS_BUCKET:-$CV_BUCKET_NAME}"
 CV_SOURCE_DIR="${CV_SOURCE_DIR:-/mnt/cvs/demo}"
 
 SUPABASE_URL="${SUPABASE_URL:-}"
@@ -28,6 +29,10 @@ SUPABASE_SECRET_NAME="${SUPABASE_SECRET_NAME:-supabase-service-role-key}"
 GEMINI_SECRET_NAME="${GEMINI_SECRET_NAME:-gemini-api-key}"
 MODEL_SECRET_NAME="${MODEL_SECRET_NAME:-$GEMINI_SECRET_NAME}"
 MANATAL_SECRET_NAME="${MANATAL_SECRET_NAME:-manatal-api-token}"
+SUPABASE_SECRET_VERSION="${SUPABASE_SECRET_VERSION:-latest}"
+GEMINI_SECRET_VERSION="${GEMINI_SECRET_VERSION:-latest}"
+MODEL_SECRET_VERSION="${MODEL_SECRET_VERSION:-$GEMINI_SECRET_VERSION}"
+MANATAL_SECRET_VERSION="${MANATAL_SECRET_VERSION:-latest}"
 
 ENABLE_SCHEDULER="${ENABLE_SCHEDULER:-false}"
 SCHEDULER_NAME="${SCHEDULER_NAME:-cv-worker-manatal-sync-schedule}"
@@ -36,6 +41,7 @@ SCHEDULER_TIME_ZONE="${SCHEDULER_TIME_ZONE:-Asia/Dubai}"
 SCHEDULER_SA_NAME="${SCHEDULER_SA_NAME:-cv-worker-scheduler}"
 
 EXECUTE_NOW="${EXECUTE_NOW:-false}"
+ENABLE_SERVICES="${ENABLE_SERVICES:-true}"
 
 if [[ -z "$PROJECT_ID" ]]; then
   echo "Set GCP_PROJECT_ID or configure a default gcloud project." >&2
@@ -79,6 +85,14 @@ require_secret() {
     --project "$PROJECT_ID" \
     --replication-policy=automatic \
     --data-file=-
+}
+
+needs_manatal_api() {
+  [[ "$WORKER_ARGS" == *"manatal-"* ]]
+}
+
+needs_bucket_write() {
+  [[ "$WORKER_ARGS" == *"manatal-originals-to-gcs"* ]]
 }
 
 ensure_service_account() {
@@ -131,14 +145,16 @@ echo "Image: ${IMAGE_URI}"
 echo "Job: ${WORKER_JOB_NAME}"
 echo "Args: ${WORKER_ARGS}"
 
-gcloud services enable \
-  artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com \
-  run.googleapis.com \
-  secretmanager.googleapis.com \
-  storage.googleapis.com \
-  cloudscheduler.googleapis.com \
-  --project "$PROJECT_ID"
+if [[ "$ENABLE_SERVICES" == "true" ]]; then
+  gcloud services enable \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com \
+    run.googleapis.com \
+    secretmanager.googleapis.com \
+    storage.googleapis.com \
+    cloudscheduler.googleapis.com \
+    --project "$PROJECT_ID"
+fi
 
 if ! gcloud artifacts repositories describe "$AR_REPOSITORY" \
   --project "$PROJECT_ID" \
@@ -152,7 +168,7 @@ fi
 
 require_secret "$SUPABASE_SECRET_NAME" "SUPABASE_SERVICE_ROLE_KEY"
 require_secret "$GEMINI_SECRET_NAME" "GEMINI_API_KEY"
-if [[ "$WORKER_ARGS" == *"manatal-sync"* ]]; then
+if needs_manatal_api; then
   require_secret "$MANATAL_SECRET_NAME" "MANATAL_API_TOKEN"
 fi
 
@@ -175,7 +191,7 @@ gcloud secrets add-iam-policy-binding "$GEMINI_SECRET_NAME" \
   --role roles/secretmanager.secretAccessor \
   >/dev/null
 
-if [[ "$WORKER_ARGS" == *"manatal-sync"* ]]; then
+if needs_manatal_api; then
   gcloud secrets add-iam-policy-binding "$MANATAL_SECRET_NAME" \
     --project "$PROJECT_ID" \
     --member "serviceAccount:${WORKER_SA_EMAIL}" \
@@ -190,6 +206,14 @@ if [[ -n "$CV_BUCKET_NAME" ]]; then
     --member "serviceAccount:${WORKER_SA_EMAIL}" \
     --role roles/storage.objectViewer \
     >/dev/null
+
+  if needs_bucket_write; then
+    gcloud storage buckets add-iam-policy-binding "gs://${CV_BUCKET_NAME}" \
+      --project "$PROJECT_ID" \
+      --member "serviceAccount:${WORKER_SA_EMAIL}" \
+      --role roles/storage.objectCreator \
+      >/dev/null
+  fi
 
   volume_flags=(
     --add-volume "name=cv-source,type=cloud-storage,bucket=${CV_BUCKET_NAME},readonly=true"
@@ -219,6 +243,8 @@ env_vars=(
   "CV_SYNC_ORIGINALS_TO_STORAGE=${CV_SYNC_ORIGINALS_TO_STORAGE:-false}"
   "CV_DELETE_SYNCED_BUNDLES=${CV_DELETE_SYNCED_BUNDLES:-true}"
   "SUPABASE_STORAGE_BUCKET=${SUPABASE_STORAGE_BUCKET:-cv-originals}"
+  "GCS_ORIGINALS_BUCKET=${GCS_ORIGINALS_BUCKET}"
+  "CV_BUCKET_NAME=${CV_BUCKET_NAME}"
   "MANATAL_API_BASE_URL=${MANATAL_API_BASE_URL:-https://api.manatal.com/open/v3}"
   "MANATAL_PAGE_SIZE=${MANATAL_PAGE_SIZE:-100}"
   "MANATAL_LOOKBACK_HOURS=${MANATAL_LOOKBACK_HOURS:-24}"
@@ -227,12 +253,12 @@ env_vars=(
 )
 
 secret_vars=(
-  "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SECRET_NAME}:latest"
-  "GEMINI_API_KEY=${GEMINI_SECRET_NAME}:latest"
-  "CV_MODEL_API_KEY=${MODEL_SECRET_NAME}:latest"
+  "SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SECRET_NAME}:${SUPABASE_SECRET_VERSION}"
+  "GEMINI_API_KEY=${GEMINI_SECRET_NAME}:${GEMINI_SECRET_VERSION}"
+  "CV_MODEL_API_KEY=${MODEL_SECRET_NAME}:${MODEL_SECRET_VERSION}"
 )
-if [[ "$WORKER_ARGS" == *"manatal-sync"* ]]; then
-  secret_vars+=("MANATAL_API_TOKEN=${MANATAL_SECRET_NAME}:latest")
+if needs_manatal_api; then
+  secret_vars+=("MANATAL_API_TOKEN=${MANATAL_SECRET_NAME}:${MANATAL_SECRET_VERSION}")
 fi
 
 env_arg="$(IFS=,; echo "${env_vars[*]}")"
@@ -252,7 +278,7 @@ gcloud run jobs deploy "$WORKER_JOB_NAME" \
   --max-retries "$WORKER_MAX_RETRIES" \
   --set-env-vars "$env_arg" \
   --set-secrets "$secret_arg" \
-  "${volume_flags[@]}"
+  ${volume_flags[@]+"${volume_flags[@]}"}
 
 if [[ "$ENABLE_SCHEDULER" == "true" ]]; then
   ensure_scheduler

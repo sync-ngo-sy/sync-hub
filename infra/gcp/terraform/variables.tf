@@ -44,10 +44,62 @@ variable "cv_bucket_name" {
   type        = string
 }
 
+variable "create_cv_bucket" {
+  description = "Whether Terraform should create and manage the CV originals bucket."
+  type        = bool
+  default     = true
+}
+
+variable "cv_bucket_location" {
+  description = "Location for the CV originals bucket. Keep it near Cloud Run unless there is a data residency reason not to."
+  type        = string
+  default     = "us-central1"
+}
+
+variable "cv_bucket_storage_class" {
+  description = "Default storage class for CV originals."
+  type        = string
+  default     = "STANDARD"
+}
+
+variable "cv_bucket_labels" {
+  description = "Labels applied to the CV originals bucket."
+  type        = map(string)
+  default = {
+    app  = "cv-intelligence"
+    data = "cv-originals"
+    env  = "prod"
+  }
+}
+
+variable "cv_bucket_soft_delete_retention_seconds" {
+  description = "How long Cloud Storage keeps soft-deleted CV objects."
+  type        = number
+  default     = 604800
+}
+
+variable "cv_bucket_versioning_enabled" {
+  description = "Whether object versioning is enabled for CV originals."
+  type        = bool
+  default     = false
+}
+
 variable "cv_source_dir" {
   description = "Mounted input directory passed to the worker."
   type        = string
   default     = "/mnt/cvs/demo"
+}
+
+variable "create_document_signer_service_account" {
+  description = "Whether Terraform should create a service account for future authenticated GCS signed URL generation."
+  type        = bool
+  default     = true
+}
+
+variable "document_signer_service_account_id" {
+  description = "Service account id used by a future signed-URL backend."
+  type        = string
+  default     = "cv-document-signer"
 }
 
 variable "worker_env" {
