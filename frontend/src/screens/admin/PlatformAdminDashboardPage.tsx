@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, FileStack, FlaskConical, Sparkles, Users2 } from "lucide-react";
+import { AlertTriangle, Building2, FileStack, FlaskConical, Settings2, Sparkles, Users2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { EmptyState, PageIntro, Panel, StatCard, Tag } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
@@ -307,6 +307,9 @@ export function PlatformAdminDashboardPage() {
             <Link className="button button--secondary" to="/admin/parsing/lab">
               Parsing Lab
             </Link>
+            <Link className="button button--secondary" to="/admin/settings">
+              Runtime settings
+            </Link>
           </>
         }
       />
@@ -457,6 +460,15 @@ export function PlatformAdminDashboardPage() {
               <div>
                 <strong>Manage parser profiles</strong>
                 <p>Update model, prompt, OCR, and embedding versions for the next run.</p>
+              </div>
+            </Link>
+            <Link to="/admin/settings" className="inline-cta">
+              <div className="stack">
+                <div className="skill-list">
+                  <Settings2 size={16} />
+                  <strong>Runtime settings</strong>
+                </div>
+                <p>Change Gemini model ID, LLM provider, and timeouts for search / ask / agent without a CLI deploy.</p>
               </div>
             </Link>
           </div>

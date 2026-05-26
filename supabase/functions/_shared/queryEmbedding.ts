@@ -1,4 +1,5 @@
 import { buildDeterministicQueryEmbedding, DETERMINISTIC_EMBEDDING_VERSION } from "./deterministicEmbedding.ts";
+import { getRuntimeSetting } from "./platformRuntimeSettings.ts";
 
 function envText(name: string) {
   const value = Deno.env.get(name)?.trim();
@@ -35,7 +36,11 @@ export async function buildQueryEmbedding(query: string) {
 
   const geminiApiKey = envText("GEMINI_API_KEY");
   if (geminiApiKey) {
-    const geminiModel = envText("GEMINI_EMBEDDING_MODEL") ?? envText("CV_EMBEDDING_MODEL") ?? "gemini-embedding-001";
+    const geminiModel =
+      (await getRuntimeSetting("gemini_embedding_model")) ??
+      envText("GEMINI_EMBEDDING_MODEL") ??
+      envText("CV_EMBEDDING_MODEL") ??
+      "gemini-embedding-001";
     const outputDimensionality = envNumber("GEMINI_EMBEDDING_DIMENSION", envNumber("CV_EMBEDDING_DIMENSION", 768));
     const normalizedModel = normalizeGeminiModelName(geminiModel);
     try {

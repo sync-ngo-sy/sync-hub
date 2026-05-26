@@ -175,9 +175,14 @@ export function AccountProvisioningPage() {
         title="Account provisioning"
         description="Create workspace owner accounts or add recruiters to an existing tenant. This replaces the tenant_admin.py CLI for day-to-day onboarding."
         actions={
-          <Link className="button button--secondary" to="/admin">
-            Platform dashboard
-          </Link>
+          <>
+            <Link className="button button--secondary" to="/admin">
+              Platform dashboard
+            </Link>
+            <Link className="button button--secondary" to="/admin/settings">
+              Runtime settings
+            </Link>
+          </>
         }
       />
 

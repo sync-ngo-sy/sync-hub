@@ -14,6 +14,8 @@ import type {
   IndexingWorkbench,
   ManatalSyncStatus,
   OpsAlert,
+  PlatformRuntimeConfig,
+  PlatformRuntimeConfigSource,
   ParsingDocumentDetail,
   ParsingOverview,
   ParserProfile,
@@ -112,6 +114,8 @@ type PlatformApi = {
     fullName?: string;
     role?: MembershipRole;
   }) => Promise<AccountProvisionResult>;
+  getPlatformRuntimeConfig: () => Promise<PlatformRuntimeConfig>;
+  savePlatformRuntimeConfig: (settings: Record<string, string | null>) => Promise<PlatformRuntimeConfig>;
 };
 
 type OriginalDocumentUrlContext = {
@@ -1502,6 +1506,35 @@ function mapTenantAdminSummary(row: unknown): TenantAdminSummary {
   };
 }
 
+function mapRuntimeConfigSource(value: unknown): PlatformRuntimeConfigSource {
+  return value === "database" || value === "environment" || value === "unset" ? value : "unset";
+}
+
+function mapPlatformRuntimeConfig(payload: unknown): PlatformRuntimeConfig {
+  const record = asRecord(payload);
+  const settings = Array.isArray(record.settings)
+    ? record.settings.map((item) => {
+        const row = asRecord(item);
+        return {
+          key: typeof row.key === "string" ? row.key : "",
+          value: typeof row.value === "string" ? row.value : null,
+          source: mapRuntimeConfigSource(row.source),
+          envName: typeof row.envName === "string" ? row.envName : typeof row.env_name === "string" ? row.env_name : "",
+        };
+      })
+    : [];
+
+  return {
+    settings,
+    updatedAt:
+      typeof record.updatedAt === "string"
+        ? record.updatedAt
+        : typeof record.updated_at === "string"
+          ? record.updated_at
+          : null,
+  };
+}
+
 function mapAccountProvisionResult(row: unknown): AccountProvisionResult {
   const record = asRecord(row);
   return {
@@ -1951,6 +1984,13 @@ function createMockApi(): PlatformApi {
     async addUserToTenant() {
       throw new Error("Account provisioning requires Supabase.");
     },
+    async getPlatformRuntimeConfig() {
+      await wait(80);
+      return { settings: [], updatedAt: null };
+    },
+    async savePlatformRuntimeConfig() {
+      throw new Error("Runtime settings require Supabase.");
+    },
   };
 }
 
@@ -2290,6 +2330,14 @@ function createRemoteApi(): PlatformApi {
         role: input.role ?? "recruiter",
       });
       return mapAccountProvisionResult(payload);
+    },
+    async getPlatformRuntimeConfig() {
+      const payload = await invokePlatform<unknown>("get_platform_runtime_config");
+      return mapPlatformRuntimeConfig(payload);
+    },
+    async savePlatformRuntimeConfig(settings) {
+      const payload = await invokePlatform<unknown>("save_platform_runtime_config", { settings });
+      return mapPlatformRuntimeConfig(payload);
     },
   };
 }

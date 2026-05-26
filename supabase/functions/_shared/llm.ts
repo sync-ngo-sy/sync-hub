@@ -1,3 +1,5 @@
+import { getRuntimeSetting, type RuntimeSettingKey } from "./platformRuntimeSettings.ts";
+
 type JsonSchema = Record<string, unknown>;
 
 export type LlmProvider = "openai" | "gemini" | "ollama";
@@ -70,35 +72,67 @@ function envNumber(name: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function resolveLlmConfig(): LlmConfig | null {
-  const provider = envText("LLM_PROVIDER");
-  const timeoutMs = envNumber("LLM_TIMEOUT_MS", 12000);
+async function resolveRuntimeOrEnv(key: RuntimeSettingKey, envName: string) {
+  return (await getRuntimeSetting(key)) ?? envText(envName);
+}
+
+async function resolveGeminiModelId() {
+  return await resolveRuntimeOrEnv("gemini_model_id", "GEMINI_MODEL_ID");
+}
+
+async function buildGeminiConfig(timeoutMs: number): Promise<Extract<LlmConfig, { provider: "gemini" }> | null> {
+  const apiKey = envText("GEMINI_API_KEY");
+  const modelId = await resolveGeminiModelId();
+  if (!apiKey || !modelId) {
+    return null;
+  }
+
+  return {
+    provider: "gemini",
+    apiKey,
+    model: modelId,
+    baseUrl: envText("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta",
+    timeoutMs,
+  };
+}
+
+async function resolveLlmTimeoutMs() {
+  const fromRuntime = await getRuntimeSetting("llm_timeout_ms");
+  if (fromRuntime) {
+    const parsed = Number(fromRuntime);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return envNumber("LLM_TIMEOUT_MS", 12000);
+}
+
+async function resolveLlmConfig(): Promise<LlmConfig | null> {
+  const provider = (await resolveRuntimeOrEnv("llm_provider", "LLM_PROVIDER")) ?? null;
+  const timeoutMs = await resolveLlmTimeoutMs();
   const defaultLocalOllamaModel = isLocalRuntime() ? "qwen3:30b-a3b" : null;
+  const geminiConfig = await buildGeminiConfig(timeoutMs);
+  const openaiModel = (await resolveRuntimeOrEnv("openai_model", "OPENAI_MODEL")) ?? "gpt-4.1-mini";
+  const ollamaModel = (await resolveRuntimeOrEnv("ollama_model", "OLLAMA_MODEL")) ?? defaultLocalOllamaModel;
 
   if ((provider === "openai" || !provider) && envText("OPENAI_API_KEY")) {
     return {
       provider: "openai",
       apiKey: envText("OPENAI_API_KEY") as string,
-      model: envText("OPENAI_MODEL") ?? "gpt-4.1-mini",
+      model: openaiModel,
       baseUrl: envText("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
       timeoutMs,
     };
   }
 
-  if ((provider === "gemini" || !provider) && envText("GEMINI_API_KEY")) {
-    return {
-      provider: "gemini",
-      apiKey: envText("GEMINI_API_KEY") as string,
-      model: envText("GEMINI_MODEL") ?? "gemini-2.5-flash",
-      baseUrl: envText("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta",
-      timeoutMs,
-    };
+  if ((provider === "gemini" || !provider) && geminiConfig) {
+    return geminiConfig;
   }
 
-  if ((provider === "ollama" || !provider) && (envText("OLLAMA_MODEL") || defaultLocalOllamaModel)) {
+  if ((provider === "ollama" || !provider) && ollamaModel) {
     return {
       provider: "ollama",
-      model: envText("OLLAMA_MODEL") ?? (defaultLocalOllamaModel as string),
+      model: ollamaModel,
       baseUrl: envText("OLLAMA_BASE_URL") ?? "http://host.docker.internal:11434",
       timeoutMs,
     };
@@ -108,26 +142,20 @@ function resolveLlmConfig(): LlmConfig | null {
     return {
       provider: "openai",
       apiKey: envText("OPENAI_API_KEY") as string,
-      model: envText("OPENAI_MODEL") ?? "gpt-4.1-mini",
+      model: openaiModel,
       baseUrl: envText("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
       timeoutMs,
     };
   }
 
-  if (provider === "gemini" && envText("GEMINI_API_KEY")) {
-    return {
-      provider: "gemini",
-      apiKey: envText("GEMINI_API_KEY") as string,
-      model: envText("GEMINI_MODEL") ?? "gemini-2.5-flash",
-      baseUrl: envText("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta",
-      timeoutMs,
-    };
+  if (provider === "gemini" && geminiConfig) {
+    return geminiConfig;
   }
 
-  if (provider === "ollama" && (envText("OLLAMA_MODEL") || defaultLocalOllamaModel)) {
+  if (provider === "ollama" && ollamaModel) {
     return {
       provider: "ollama",
-      model: envText("OLLAMA_MODEL") ?? (defaultLocalOllamaModel as string),
+      model: ollamaModel,
       baseUrl: envText("OLLAMA_BASE_URL") ?? "http://host.docker.internal:11434",
       timeoutMs,
     };
@@ -136,8 +164,8 @@ function resolveLlmConfig(): LlmConfig | null {
   return null;
 }
 
-export function isLlmConfigured() {
-  return resolveLlmConfig() !== null;
+export async function isLlmConfigured() {
+  return (await resolveLlmConfig()) !== null;
 }
 
 function extractOpenAiText(payload: Record<string, unknown>) {
@@ -507,7 +535,7 @@ async function callOllama<T>(config: Extract<LlmConfig, { provider: "ollama" }>,
 }
 
 export async function generateStructuredObject<T>(request: StructuredGenerationRequest): Promise<StructuredGenerationResult<T> | null> {
-  const config = resolveLlmConfig();
+  const config = await resolveLlmConfig();
   if (!config) {
     return null;
   }
@@ -523,7 +551,7 @@ export async function generateStructuredObject<T>(request: StructuredGenerationR
 }
 
 export async function generateText(request: TextGenerationRequest): Promise<TextGenerationResult | null> {
-  const config = resolveLlmConfig();
+  const config = await resolveLlmConfig();
   if (!config) {
     return null;
   }

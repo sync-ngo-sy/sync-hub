@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   base: './',
+  envDir: path.resolve(__dirname, '..'),
   plugins: [react()],
   build: {
     rollupOptions: {

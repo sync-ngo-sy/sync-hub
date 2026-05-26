@@ -470,6 +470,20 @@ export type AnalyticsSnapshot = {
   }>;
 };
 
+export type PlatformRuntimeConfigSource = "database" | "environment" | "unset";
+
+export type PlatformRuntimeConfigField = {
+  key: string;
+  value: string | null;
+  source: PlatformRuntimeConfigSource;
+  envName: string;
+};
+
+export type PlatformRuntimeConfig = {
+  settings: PlatformRuntimeConfigField[];
+  updatedAt: string | null;
+};
+
 export type SystemHealth = {
   overallStatus: string;
   latencyMs: number;

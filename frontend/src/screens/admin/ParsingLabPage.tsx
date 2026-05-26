@@ -282,6 +282,9 @@ export function ParsingLabPage() {
         description="Manage versioned parser profiles, prompt templates, and publish controls in one place. Profiles stay workspace-specific, but this lab is available across the full platform."
         actions={
           <>
+            <Link className="button button--secondary" to="/admin/settings">
+              Runtime settings (search / ask)
+            </Link>
             <Link className="button button--secondary" to="/admin/parsing">
               View parsing quality
             </Link>

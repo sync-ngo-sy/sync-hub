@@ -139,8 +139,12 @@ or
 supabase secrets set \
   LLM_PROVIDER=gemini \
   GEMINI_API_KEY=YOUR_GEMINI_API_KEY \
-  GEMINI_MODEL=gemini-2.5-flash
+  GEMINI_MODEL_ID=gemini-3.5-flash
 ```
+
+`GEMINI_MODEL_ID` is required for Gemini-backed search, ask, and agent flows. Use a currently supported model such as `gemini-3.5-flash` (Gemini 3 Flash, stable GA). Preview-only IDs like `gemini-3-flash-preview` also work but may be deprecated on short notice. If you previously set `GEMINI_MODEL` (for example to a removed preview model), unset it and set `GEMINI_MODEL_ID` instead, then redeploy edge functions.
+
+Platform administrators can also change non-secret runtime values (model IDs, provider, timeouts) from **Admin → Runtime settings** in the web app after applying migration `20260526130000_platform_runtime_settings_v1.sql`. Database values override Supabase secrets for the same key; API keys always remain in secrets.
 
 or Ollama-compatible:
 

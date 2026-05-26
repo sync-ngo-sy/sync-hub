@@ -7,6 +7,10 @@ import {
   createTenantAccount,
   listAdminTenants,
 } from "../_shared/platformProvisioning.ts";
+import {
+  buildPlatformRuntimeConfigView,
+  savePlatformRuntimeSettings,
+} from "../_shared/platformRuntimeSettings.ts";
 import { normalizeLocationValue, normalizeSkillList } from "../_shared/searchTaxonomy.ts";
 
 const SEARCH_PAGE_SIZE = 1000;
@@ -1294,6 +1298,28 @@ Deno.serve(async (req) => {
         await assertPlatformAdmin(supabase);
         const admin = createServiceClient();
         return jsonResponse(200, await addUserToTenant(admin, body));
+      }
+      case "get_platform_runtime_config": {
+        await assertPlatformAdmin(supabase);
+        return jsonResponse(200, await buildPlatformRuntimeConfigView());
+      }
+      case "save_platform_runtime_config": {
+        const user = await assertPlatformAdmin(supabase);
+        const settings = asRecord(body.settings);
+        try {
+          return jsonResponse(200, await savePlatformRuntimeSettings(settings, user.id));
+        } catch (error) {
+          const message = describeError(error);
+          try {
+            const parsed = JSON.parse(message) as { code?: string; fields?: Record<string, string> };
+            if (parsed.code === "validation_error") {
+              return jsonResponse(400, { error: "validation_error", fields: parsed.fields ?? {} });
+            }
+          } catch {
+            // fall through
+          }
+          throw error;
+        }
       }
       default:
         return jsonResponse(400, { error: "unknown_action", details: action });
