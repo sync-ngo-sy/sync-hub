@@ -112,7 +112,7 @@ def _default_prompt_version() -> str:
 
 
 def _default_ingest_concurrency() -> str:
-    return _env_any("CV_BATCH_SIZE", "CVI_BATCH_SIZE", default="8")
+    return "8"
 
 
 def _default_supabase_plan() -> str:

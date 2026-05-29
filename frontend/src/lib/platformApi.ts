@@ -1,53 +1,25 @@
 import type {
-  AccessRoster,
   AccountProvisionResult,
-  MembershipRole,
   TenantAdminSummary,
   AgentResponse,
-  AnalyticsSnapshot,
   AskResponse,
   CandidateDetail,
   CandidateShortlistInput,
   CandidateShortlistItem,
   ComparisonResponse,
-  DataConnector,
-  IndexingWorkbench,
   ManatalSyncStatus,
   OpsAlert,
   PlatformRuntimeConfig,
   PlatformRuntimeConfigSource,
-  ParsingDocumentDetail,
   ParsingOverview,
   ParserProfile,
-  ParserProfileInput,
   SearchFilterOptions,
   SearchFilters,
   SearchDebugResponse,
-  SearchQueryOptions,
   SearchResponse,
   SystemHealth,
   WorkspaceStats,
 } from "@/lib/contracts";
-import {
-  accessRoster,
-  analyticsSnapshot,
-  askCandidates,
-  compareCandidates,
-  dataConnectors,
-  defaultCompareIds,
-  defaultIntelligenceIds,
-  getCandidate,
-  getParserProfiles,
-  getParsingDocument,
-  getWorkspaceStats as getMockWorkspaceStats,
-  indexingWorkbench,
-  opsAlerts,
-  parsingOverview,
-  publishParserProfile,
-  saveParserProfile,
-  searchCandidates,
-  systemHealth,
-} from "@/data/mockData";
 import {
   buildParsingDocumentDetail,
   buildParsingOverview,
@@ -56,249 +28,40 @@ import {
   type ParsingProfileRow,
   type ParsingSourceDocumentRow,
 } from "@/lib/parsingQuality";
-import { formatSeniorityValue, normalizeLocationValue, normalizeSeniorityValue, normalizeSkillList, SEARCH_SENIORITY_TABLE, SEARCH_SKILL_TABLE } from "@/lib/searchTaxonomy";
+import type {
+  CandidateChunkRow,
+  CandidateDossierRow,
+  CandidateSearchFacetRow,
+  CandidateShortlistRow,
+  JsonRecord,
+  ParserProfileRow,
+  ParsingOverviewOptions,
+  ParsingRemoteSnapshot,
+  PlatformApi,
+} from "@/lib/platformApiTypes";
+import {
+  asArray,
+  asRecord,
+  dedupeSorted,
+  errorMessage,
+  hueFromId,
+  isBrowserOpenableSource,
+  percent,
+  tenantCacheKey,
+  toNumber,
+  toStringArray,
+} from "@/lib/platformApiUtils";
+import { createMockApi } from "@/lib/platformMockApi";
+import { createFallbackSearchFilterOptions } from "@/lib/platformApiSearchOptions";
+import { formatSeniorityValue, normalizeLocationValue, normalizeSeniorityValue, normalizeSkillList } from "@/lib/searchTaxonomy";
 import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
-
-type JsonRecord = Record<string, unknown>;
 
 const MAX_VISIBLE_CITATIONS = 3;
 const MAX_CONTEXT_BLOCKS = 6;
-
-type PlatformApi = {
-  search: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchResponse>;
-  searchDebug: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchDebugResponse>;
-  getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
-  getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;
-  getManatalSyncStatus: (tenantIds?: string[]) => Promise<ManatalSyncStatus>;
-  getManatalCandidateId: (candidateId: string) => Promise<string | null>;
-  getCandidate: (candidateId: string) => Promise<CandidateDetail>;
-  compare: (candidateIds: string[], requiredSkills?: string[]) => Promise<ComparisonResponse>;
-  ask: (question: string, candidateIds: string[]) => Promise<AskResponse>;
-  agent: (
-    question: string,
-    candidateIds?: string[],
-    messages?: Array<{ role: "user" | "assistant"; content: string }>,
-    tenantIds?: string[],
-  ) => Promise<AgentResponse>;
-  getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null, context?: OriginalDocumentUrlContext) => Promise<string | null>;
-  getShortlist: (tenantIds?: string[]) => Promise<CandidateShortlistItem[]>;
-  saveShortlistItem: (item: CandidateShortlistInput) => Promise<CandidateShortlistItem>;
-  removeShortlistItem: (candidateId: string, tenantId?: string | null) => Promise<void>;
-  clearShortlist: (tenantIds?: string[]) => Promise<void>;
-  getParsingOverview: (tenantIds?: string[], options?: ParsingOverviewOptions) => Promise<ParsingOverview>;
-  getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;
-  getParserProfiles: (tenantIds?: string[]) => Promise<ParserProfile[]>;
-  saveParserProfile: (profile: ParserProfileInput, tenantId?: string) => Promise<ParserProfile>;
-  publishParserProfile: (profileId: string, tenantId?: string) => Promise<ParserProfile>;
-  getAnalytics: () => Promise<AnalyticsSnapshot>;
-  getSystemHealth: () => Promise<SystemHealth>;
-  getOpsAlerts: (tenantIds?: string[]) => Promise<OpsAlert[]>;
-  acknowledgeOpsAlert: (dedupeKey: string) => Promise<OpsAlert | null>;
-  getDataConnectors: () => Promise<DataConnector[]>;
-  getIndexingWorkbench: () => Promise<IndexingWorkbench>;
-  getAccessRoster: () => Promise<AccessRoster>;
-  listAdminTenants: () => Promise<TenantAdminSummary[]>;
-  createTenantAccount: (input: {
-    email: string;
-    password: string;
-    tenantName: string;
-    tenantSlug?: string;
-    tenantIcon?: string;
-    fullName?: string;
-    role?: MembershipRole;
-  }) => Promise<AccountProvisionResult>;
-  addUserToTenant: (input: {
-    email: string;
-    password: string;
-    tenantSlug: string;
-    fullName?: string;
-    role?: MembershipRole;
-  }) => Promise<AccountProvisionResult>;
-  getPlatformRuntimeConfig: () => Promise<PlatformRuntimeConfig>;
-  savePlatformRuntimeConfig: (settings: Record<string, string | null>) => Promise<PlatformRuntimeConfig>;
-};
-
-type OriginalDocumentUrlContext = {
-  candidateId?: string | null;
-  documentId?: string | null;
-  tenantId?: string | null;
-  tenantIds?: string[];
-};
-
-type ParsingOverviewOptions = {
-  pageSize?: number;
-  pageIndex?: number;
-  reviewFilter?: "all" | "needsReview";
-  searchQuery?: string;
-};
-
-type CandidateDossierRow = {
-  candidate_id: string;
-  source_document_id?: string | null;
-  name: string;
-  headline: string | null;
-  current_title: string | null;
-  location: string | null;
-  years_experience: number | null;
-  seniority: string | null;
-  primary_role: string | null;
-  top_skills: string[] | null;
-  email: string | null;
-  phone: string | null;
-  links: string[] | null;
-  summary_short: string | null;
-  short_summary: string | null;
-  long_summary: string | null;
-  strengths: unknown;
-  risks: unknown;
-  recommended_roles: unknown;
-  timeline_json: unknown;
-  profile_json: unknown;
-  original_filename: string | null;
-  mime_type: string | null;
-  storage_path: string | null;
-  source_uri: string | null;
-  manatal_candidate_id?: string | null;
-  confidence: number | null;
-};
-
-type CandidateChunkRow = {
-  id: string;
-  chunk_type: string;
-  text: string;
-};
-
-type CandidateSearchFacetRow = {
-  seniority: string | null;
-  skills: string[] | null;
-  companies: string[] | null;
-  location: string | null;
-};
-
-type CandidateSearchRow = CandidateSearchFacetRow & {
-  tenant_id: string;
-  candidate_id: string;
-  name: string | null;
-  headline: string | null;
-  current_title: string | null;
-  years_experience: number | null;
-  primary_role: string | null;
-  summary_short: string | null;
-  stored_short_summary: string | null;
-};
-
-type CandidateTimelineRow = {
-  timeline_json: unknown;
-};
-
-type ParsingRemoteSnapshot = {
-  documents: ParsingSourceDocumentRow[];
-  candidates: ParsingCandidateRow[];
-  profiles: ParsingProfileRow[];
-  runs: ParsingProcessingRunRow[];
-};
-
-type ParserProfileRow = {
-  id: string;
-  tenant_id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  status: string;
-  extraction_provider: string;
-  extraction_model: string;
-  parser_version: string;
-  model_version: string;
-  prompt_version: string;
-  chunk_version: string;
-  embedding_provider: string;
-  embedding_model: string;
-  embedding_version: string;
-  chunking_profile: string;
-  ocr_enabled: boolean;
-  allow_heuristic_fallback: boolean;
-  prompt_template: string;
-  notes: string | null;
-  last_evaluated_at: string | null;
-  avg_parse_percentage: number | null;
-  avg_confidence: number | null;
-  documents_evaluated: number | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type CandidateShortlistRow = {
-  user_id: string;
-  tenant_id: string;
-  candidate_id: string;
-  candidate_name: string | null;
-  current_title: string | null;
-  location: string | null;
-  years_experience: number | null;
-  seniority: string | null;
-  primary_role: string | null;
-  top_skills: string[] | null;
-  match_rate: number | null;
-  cv_url: string | null;
-  original_filename: string | null;
-  source_query: string | null;
-  search_snapshot: unknown;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 const STORAGE_BUCKET = "cv-originals";
 const SEARCH_FACET_CACHE_TTL_MS = 60_000;
-const SEARCH_REST_PAGE_SIZE = 1000;
 
 const searchFacetRowsCache = new Map<string, { expiresAt: number; promise: Promise<CandidateSearchFacetRow[]> }>();
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function toStringArray(value: unknown): string[] {
-  return asArray(value)
-    .map((item) => String(item).trim())
-    .filter(Boolean);
-}
-
-function toNumber(value: unknown, fallback = 0) {
-  const normalized = Number(value);
-  return Number.isFinite(normalized) ? normalized : fallback;
-}
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (error && typeof error === "object") {
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return String(error);
-    }
-  }
-  return String(error);
-}
-
-function isTimeoutError(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
-  return message.includes("statement timeout") || message.includes("57014") || message.includes("canceling statement");
-}
-
-function tenantCacheKey(tenantIds?: string[]) {
-  return (tenantIds ?? []).slice().sort().join("|") || "all";
-}
 
 async function fetchSearchFacetRows(tenantIds?: string[]) {
   const key = tenantCacheKey(tenantIds);
@@ -436,323 +199,6 @@ async function fetchParsingOverviewRpc(tenantIds: string[], options: ParsingOver
   );
 }
 
-function normalizeSearchText(value: unknown) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeQuery(query: string) {
-  return normalizeSearchText(query)
-    .split(/[^a-z0-9+#.]+/i)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2)
-    .slice(0, 12);
-}
-
-function includesAllNeedles(haystack: string, needles: string[]) {
-  return needles.every((needle) => haystack.includes(normalizeSearchText(needle)));
-}
-
-const GENERIC_TITLE_QUERY_TOKENS = new Set([
-  "candidate",
-  "developer",
-  "development",
-  "dev",
-  "engineer",
-  "engineering",
-  "expert",
-  "junior",
-  "lead",
-  "manager",
-  "mid",
-  "person",
-  "people",
-  "principal",
-  "role",
-  "senior",
-  "software",
-  "specialist",
-  "staff",
-]);
-
-function roleSearchAliases(role: string | null | undefined) {
-  switch (role) {
-    case "frontend":
-      return ["frontend", "front end", "front-end", "web developer", "web application engineer", "ui developer"];
-    case "backend":
-      return ["backend", "back end", "back-end", "api developer", "server developer", "server engineer"];
-    case "full-stack":
-      return ["full-stack", "full stack", "fullstack"];
-    case "mobile":
-      return ["mobile", "android", "ios", "flutter", "react native"];
-    case "devops":
-      return ["devops", "sre", "kubernetes", "terraform", "platform"];
-    case "data":
-      return ["data", "analytics", "etl", "bi"];
-    case "ml":
-      return ["ml", "ai", "machine learning", "llm"];
-    case "qa":
-      return ["qa", "quality", "test", "automation"];
-    case "security":
-      return ["security", "cybersecurity", "soc"];
-    default:
-      return role ? [role] : [];
-  }
-}
-
-function roleSkillAliases(role: string | null | undefined) {
-  switch (role) {
-    case "frontend":
-      return ["react", "angular", "vue", "next.js", "nextjs", "javascript", "typescript", "html", "css", "tailwind", "bootstrap"];
-    case "backend":
-      return ["node.js", "node", "django", "flask", ".net", "asp.net", "java", "php", "laravel", "api", "rest api", "postgresql", "mysql"];
-    case "full-stack":
-      return ["react", "angular", "vue", "node.js", "node", ".net", "django", "laravel", "javascript", "typescript"];
-    case "mobile":
-      return ["android", "ios", "flutter", "react native", "swift", "kotlin", "dart"];
-    case "devops":
-      return ["kubernetes", "terraform", "docker", "aws", "azure", "ci/cd"];
-    case "data":
-      return ["data analysis", "analytics", "etl", "bi", "sql", "python", "pandas"];
-    case "ml":
-      return ["machine learning", "ml", "ai", "llm", "tensorflow", "pytorch"];
-    case "qa":
-      return ["qa", "quality assurance", "testing", "automation testing", "selenium"];
-    case "security":
-      return ["security", "cybersecurity", "soc", "penetration testing"];
-    default:
-      return [];
-  }
-}
-
-function roleCompatibilityScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const primaryRole = normalizeSearchText(row.primary_role);
-  if (!role || !primaryRole) {
-    return 0;
-  }
-  const normalizedRole = normalizeSearchText(role);
-  if (primaryRole === "full stack" && (normalizedRole === "frontend" || normalizedRole === "backend")) {
-    return 0.78;
-  }
-  if (normalizedRole === "full stack" && primaryRole === "full stack") {
-    return 0.78;
-  }
-  return 0;
-}
-
-function aliasHitCount(text: string, aliases: string[]) {
-  return new Set(aliases.map(normalizeSearchText).filter((alias) => alias && text.includes(alias))).size;
-}
-
-function genericEngineeringTitleScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const title = normalizeSearchText(row.current_title);
-  if (!title || !role) {
-    return 0;
-  }
-  if (role === "frontend" && /\b(?:software|ui|front end|frontend)\b/.test(title)) {
-    return 0.66;
-  }
-  if (role === "backend" && /\b(?:software|backend|back end|api|server)\b/.test(title)) {
-    return 0.66;
-  }
-  return 0;
-}
-
-function roleMatchScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const aliases = roleSearchAliases(role).map(normalizeSearchText).filter(Boolean);
-  if (!aliases.length) {
-    return 0;
-  }
-  const titleText = normalizeSearchText(row.current_title);
-  if (aliases.some((alias) => titleText.includes(alias))) {
-    return 1;
-  }
-
-  const skillHits = aliasHitCount(normalizeSearchText(toStringArray(row.skills).join(" ")), roleSkillAliases(role));
-  const supportScore = Math.max(genericEngineeringTitleScore(row, role), roleCompatibilityScore(row, role) * 0.86);
-  if (skillHits >= 2 && supportScore > 0) {
-    return Math.max(0.72, supportScore);
-  }
-  if (skillHits > 0 && supportScore > 0) {
-    return Math.max(supportScore, 0.58);
-  }
-  return 0;
-}
-
-function titleIntentScore(row: CandidateSearchRow, query: string, role: string | null | undefined) {
-  const title = normalizeSearchText(row.current_title);
-  const skillsText = normalizeSearchText(toStringArray(row.skills).join(" "));
-  const aliases = roleSearchAliases(role).map(normalizeSearchText).filter(Boolean);
-  const focusTokens = tokenizeQuery(query).filter((token) => !GENERIC_TITLE_QUERY_TOKENS.has(token));
-
-  if (aliases.some((alias) => title.includes(alias))) {
-    return 1;
-  }
-
-  const titleTokenScore = focusTokens.length
-    ? focusTokens.filter((token) => title.includes(token)).length / focusTokens.length
-    : 0;
-  const skillHits = aliasHitCount(skillsText, roleSkillAliases(role));
-  const skillAliasScore = skillHits >= 2 ? 0.72 : skillHits === 1 ? 0.58 : 0;
-  const skillTokenScore = focusTokens.length
-    ? 0.68 * (focusTokens.filter((token) => skillsText.includes(token)).length / focusTokens.length)
-    : 0;
-
-  return Math.max(titleTokenScore, skillAliasScore, skillTokenScore, genericEngineeringTitleScore(row, role));
-}
-
-function rowMatchesFastFilters(row: CandidateSearchRow, filters: ReturnType<typeof normalizeSearchFilters>) {
-  const skills = normalizeSkillList(toStringArray(row.skills)).map(normalizeSearchText);
-  const companies = toStringArray(row.companies).map(normalizeSearchText);
-  const location = normalizeSearchText(normalizeLocationValue(row.location) ?? row.location);
-  const filterLocation = normalizeSearchText(normalizeLocationValue(filters.location) ?? filters.location);
-
-  if (filters.role && roleMatchScore(row, filters.role) <= 0) {
-    return false;
-  }
-  if (filters.seniority && normalizeSearchText(row.seniority) !== normalizeSearchText(filters.seniority)) {
-    return false;
-  }
-  if (filters.min_years_experience !== null && toNumber(row.years_experience) < filters.min_years_experience) {
-    return false;
-  }
-  if (filters.location && !location.includes(filterLocation) && !normalizeSearchText(row.location).includes(normalizeSearchText(filters.location))) {
-    return false;
-  }
-  if (filters.skills.length && !filters.skills.some((skill) => skills.includes(normalizeSearchText(skill)))) {
-    return false;
-  }
-  if (filters.companies.length && !filters.companies.some((company) => companies.includes(normalizeSearchText(company)))) {
-    return false;
-  }
-  return true;
-}
-
-function fastRowScore(row: CandidateSearchRow, query: string, filters: ReturnType<typeof normalizeSearchFilters>) {
-  const tokens = tokenizeQuery(query);
-  const name = normalizeSearchText(row.name);
-  const title = normalizeSearchText(row.current_title);
-  const skills = normalizeSkillList(toStringArray(row.skills)).join(" ");
-  const companies = toStringArray(row.companies).join(" ");
-  const summary = normalizeSearchText(`${row.summary_short ?? ""} ${row.stored_short_summary ?? ""}`);
-  const haystack = normalizeSearchText(`${name} ${title} ${skills} ${companies} ${summary} ${row.location ?? ""}`);
-  const titleScore = titleIntentScore(row, query, filters.role);
-  const roleScore = roleMatchScore(row, filters.role);
-
-  if (tokens.length && !includesAllNeedles(haystack, tokens)) {
-    if (!filters.role || titleScore < 0.5) {
-      return 0;
-    }
-  }
-
-  let score = tokens.length ? 0.08 : 0.25;
-  for (const token of tokens) {
-    if (name.includes(token)) {
-      score += 0.34;
-    }
-    if (title.includes(token)) {
-      score += 0.22;
-    }
-    if (normalizeSearchText(skills).includes(token)) {
-      score += 0.16;
-    }
-    if (normalizeSearchText(companies).includes(token)) {
-      score += 0.12;
-    }
-    if (summary.includes(token)) {
-      score += 0.06;
-    }
-  }
-
-  if (filters.role && title.includes(normalizeSearchText(filters.role))) {
-    score += 0.14;
-  }
-  score = Math.max(score, titleScore * 0.82, roleScore * 0.76);
-  if (filters.skills.length) {
-    const skillSet = new Set(normalizeSkillList(toStringArray(row.skills)).map(normalizeSearchText));
-    score += 0.18 * (filters.skills.filter((skill) => skillSet.has(normalizeSearchText(skill))).length / filters.skills.length);
-  }
-  if (filters.min_years_experience !== null) {
-    score += 0.08 * Math.min(1, toNumber(row.years_experience) / Math.max(1, filters.min_years_experience));
-  }
-
-  if (filters.role && roleScore <= 0 && titleScore < 0.5) {
-    score *= 0.35;
-  }
-
-  if (filters.role && titleScore >= 0.9) {
-    score += 0.06;
-  }
-
-  return Math.min(0.99, score);
-}
-
-function mapFastSearchRow(row: CandidateSearchRow, score: number): SearchResponse["results"][number] {
-  const matchRate = Math.round(Math.max(1, Math.min(99, score * 100)));
-  const summary = String(row.summary_short ?? row.stored_short_summary ?? "");
-  return {
-    tenantId: row.tenant_id,
-    candidateId: row.candidate_id,
-    name: String(row.name ?? "Unknown candidate"),
-    currentTitle: String(row.current_title ?? "Candidate"),
-    headline: summary || String(row.headline ?? row.current_title ?? "Candidate"),
-    location: String(row.location ?? "Unknown"),
-    yearsExperience: toNumber(row.years_experience),
-    seniority: String(row.seniority ?? "unknown"),
-    primaryRole: String(row.primary_role ?? "generalist"),
-    topSkills: toStringArray(row.skills).slice(0, 8),
-    matchScore: matchRate,
-    backendMatchRate: matchRate,
-    backendScoreRaw: score,
-    matchSignals: {
-      semantic: 0,
-      skill: 0,
-      experience: 0,
-    },
-    shortSummary: summary,
-    strengths: [],
-    risks: [],
-    recommendedRoles: [],
-    stage: "Retrieved",
-    avatarHue: hueFromId(row.candidate_id),
-    matchNarrative: summary || "Fast fallback result from candidate profile fields.",
-  };
-}
-
-async function runFastRestSearch(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-): Promise<SearchResponse> {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Backend search fallback is unavailable; use the search Edge Function.");
-}
-
-function hueFromId(seed: string) {
-  return seed.split("").reduce((memo, character) => memo + character.charCodeAt(0), 0) % 360;
-}
-
-function dedupeSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
-}
-
-function countDistinctEmployers(rows: CandidateTimelineRow[]) {
-  return new Set(
-    rows.flatMap((row) =>
-      asArray(row.timeline_json)
-        .map((entry) => String(asRecord(entry).company ?? asRecord(entry).employer ?? "").trim())
-        .filter(Boolean)
-    ),
-  ).size;
-}
-
 function normalizeSearchFilters(filters: SearchFilters) {
   return {
     role: filters.role?.trim() || null,
@@ -793,62 +239,6 @@ function createEmptyWorkspaceStats(): WorkspaceStats {
     candidateCount: 0,
     companyCount: 0,
   };
-}
-
-function buildSearchRpcPayload(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
-  const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
-
-  return {
-    p_q: query,
-    p_query_embedding: null,
-    p_limit: limit,
-    p_offset: offset,
-    p_role: filters.role,
-    p_seniority: filters.seniority,
-    p_min_years: filters.min_years_experience,
-    p_skills: filters.skills,
-    p_embedding_version: null,
-    p_rank_version: "v2-rate",
-    p_tenant_ids: tenantIds?.length ? tenantIds : null,
-    p_filter_role: filters.role,
-    p_filter_seniority: filters.seniority,
-    p_filter_min_years: filters.min_years_experience,
-    p_filter_skills: filters.skills,
-    p_filter_companies: filters.companies,
-    p_filter_location: filters.location,
-  };
-}
-
-async function runDirectSearchRpc(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Direct Supabase search RPC fallback has been disabled; use the search Edge Function.");
-}
-
-async function runDirectSearchDebugRpc(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Direct Supabase search debug RPC fallback has been disabled; use the search-debug Edge Function.");
 }
 
 function normalizeBackendMatchScore(rawScore: unknown) {
@@ -937,23 +327,6 @@ async function invokePlatform<T>(action: string, body: JsonRecord = {}): Promise
   return invokeFunction<T>("platform", { action, ...body });
 }
 
-async function fetchParsingSnapshot(tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
-  if (!supabase) {
-    throw new Error("Missing Supabase browser client configuration.");
-  }
-
-  if (!tenantIds.length) {
-    return {
-      documents: [],
-      candidates: [],
-      profiles: [],
-      runs: [],
-    };
-  }
-
-  return fetchParsingOverviewSnapshotRpc(tenantIds);
-}
-
 async function fetchParsingDocumentSnapshot(documentId: string, tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
   const payload = await invokePlatform<JsonRecord>("parsing_document", {
     document_id: documentId,
@@ -983,13 +356,6 @@ async function countRemoteRows(table: string, tenantIds: string[], apply?: (quer
     throw error;
   }
   return count ?? 0;
-}
-
-function percent(numerator: number, denominator: number) {
-  if (!denominator) {
-    return 0;
-  }
-  return Math.round((numerator / denominator) * 100);
 }
 
 function mapManatalSyncRow(row: JsonRecord): ManatalSyncStatus["recentRows"][number] {
@@ -1096,10 +462,6 @@ async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<Manata
       : null,
     recentRows: asArray(recentResult.data).map((row) => mapManatalSyncRow(asRecord(row))),
   };
-}
-
-function isBrowserOpenableSource(sourceUri?: string | null) {
-  return Boolean(sourceUri && /^(https?:)?\/\//i.test(sourceUri));
 }
 
 function isGcsSource(sourceUri?: string | null) {
@@ -1308,20 +670,6 @@ function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
       source: "remote",
     },
     rawResponse: payload,
-  };
-}
-
-function createFallbackSearchFilterOptions(): SearchFilterOptions {
-  const fallbackSeniorityValues = ["junior", "mid", "senior", "staff-plus"];
-
-  return {
-    seniority: fallbackSeniorityValues.map((value) => ({
-      value,
-      label: formatSeniorityValue(value) || value,
-    })),
-    skills: dedupeSorted(SEARCH_SKILL_TABLE.map((entry) => String(entry.value))),
-    companies: [],
-    locations: [],
   };
 }
 
@@ -1588,8 +936,6 @@ function shortlistInputPayload(item: CandidateShortlistInput) {
   };
 }
 
-const mockShortlistItems = new Map<string, CandidateShortlistItem>();
-
 function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[]): CandidateDetail {
   const profile = asRecord(row.profile_json);
   const cvUrl = buildCandidateCvUrl(row.source_uri);
@@ -1684,313 +1030,6 @@ function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[
       row.mime_type ? `MIME type: ${row.mime_type}` : "",
       cvUrl ? `Drive link: ${cvUrl}` : "",
     ].filter(Boolean),
-  };
-}
-
-function createMockApi(): PlatformApi {
-  return {
-    async search(query, filters, options, _tenantIds) {
-      await wait(180);
-      return searchCandidates(query, filters, options);
-    },
-    async searchDebug(query, filters, options, tenantIds) {
-      await wait(180);
-      const response = searchCandidates(query, filters, options);
-      const explicitFilters = {
-        role: filters.role?.trim() || null,
-        seniority: normalizeSeniorityValue(filters.seniority) ?? null,
-        minYearsExperience:
-          typeof filters.minYearsExperience === "number" && filters.minYearsExperience > 0
-            ? filters.minYearsExperience
-            : null,
-        location: filters.location?.trim() || null,
-        skills: normalizeSkillList(filters.skills ?? []),
-        companies: dedupeSorted((filters.companies ?? []).map((company) => company.trim())),
-      };
-
-      return {
-        request: {
-          query,
-          limit: Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12))),
-          offset: Math.max(0, Math.trunc(options?.offset ?? 0)),
-          tenantIds: tenantIds ?? [],
-          explicitFilters,
-        },
-        analysis: {
-          intentSource: "explicit",
-          llmIntent: null,
-          resolvedIntent: explicitFilters,
-          embedding: {
-            provider: "mock",
-            version: "mock-v1",
-            dimensions: 0,
-            preview: [],
-          },
-          rpcPayload: {
-            p_q: query,
-            p_tenant_ids: tenantIds ?? [],
-            p_filter_role: explicitFilters.role,
-            p_filter_seniority: explicitFilters.seniority,
-            p_filter_min_years: explicitFilters.minYearsExperience,
-            p_filter_skills: explicitFilters.skills,
-            p_filter_companies: explicitFilters.companies,
-            p_filter_location: explicitFilters.location,
-          },
-          engine: {
-            usesLexical: Boolean(query.trim()),
-            usesSemantic: false,
-            usesNameBoost: Boolean(query.trim()),
-            strictFilters: Object.entries(explicitFilters)
-              .filter(([, value]) => Array.isArray(value) ? value.length > 0 : value !== null && value !== "")
-              .map(([key]) => key),
-          },
-        },
-        results: response.results.map((candidate) => ({
-          tenantId: candidate.tenantId ?? null,
-          candidateId: candidate.candidateId,
-          name: candidate.name,
-          currentTitle: candidate.currentTitle,
-          location: candidate.location,
-          yearsExperience: candidate.yearsExperience,
-          seniority: candidate.seniority,
-          primaryRole: candidate.primaryRole,
-          scoreRaw: candidate.backendScoreRaw,
-          matchRate: candidate.backendMatchRate,
-          displayedMatchScore: candidate.backendMatchRate,
-          subscores: {
-            semantic_similarity: candidate.matchSignals.semantic,
-            skill_match: candidate.matchSignals.skill,
-            experience_match: candidate.matchSignals.experience,
-          },
-          matchedFilters: {
-            role: explicitFilters.role,
-            seniority: explicitFilters.seniority,
-            min_years_experience: explicitFilters.minYearsExperience,
-            location: explicitFilters.location,
-            required_skills: explicitFilters.skills,
-            required_companies: explicitFilters.companies,
-          },
-          summaryShort: candidate.shortSummary,
-          evidence: [],
-        })),
-        nextCursor: response.nextCursor,
-        meta: {
-          ...response.meta,
-        },
-        rawResponse: {
-          results: response.results,
-          next_cursor: response.nextCursor,
-          meta: response.meta,
-        },
-      };
-    },
-    async getSearchFilterOptions(_tenantIds) {
-      await wait(80);
-      return createFallbackSearchFilterOptions();
-    },
-    async getWorkspaceStats(_tenantIds) {
-      await wait(80);
-      return getMockWorkspaceStats();
-    },
-    async getManatalSyncStatus(_tenantIds) {
-      await wait(90);
-      const generatedAt = new Date().toISOString();
-      return {
-        generatedAt,
-        totals: {
-          sourceDocuments: 2074,
-          gcsOriginals: 1447,
-          driveOriginals: 627,
-          manatalRows: 3171,
-          mappedManatalRows: 1581,
-          syncedRows: 1447,
-          pendingRows: 1590,
-          failedRows: 1,
-          skippedRows: 120,
-        },
-        coverage: {
-          gcsOriginalsPercent: 70,
-          manatalSyncedPercent: 46,
-          mappedRowsPercent: 50,
-        },
-        lastSyncedAt: generatedAt,
-        lastFailure: {
-          manatalCandidateId: "145496734",
-          candidateName: "Deleted Manatal candidate",
-          errorMessage: "No Candidate matches the given query.",
-          updatedAt: generatedAt,
-        },
-        recentRows: [
-          {
-            manatalCandidateId: "141886959",
-            candidateName: "Abdalrahmaan Mohammad Alsayed",
-            email: "candidate@example.com",
-            syncStatus: "synced",
-            lastSyncedAt: generatedAt,
-            updatedAt: generatedAt,
-            sourceDocumentId: "1b21c0a0-792a-5291-ae8e-529f1350f79d",
-            errorMessage: null,
-          },
-        ],
-      };
-    },
-    async getManatalCandidateId(_candidateId) {
-      await wait(40);
-      return null;
-    },
-    async getCandidate(candidateId) {
-      await wait(120);
-      return getCandidate(candidateId);
-    },
-    async compare(candidateIds, requiredSkills) {
-      await wait(140);
-      return compareCandidates(candidateIds.length ? candidateIds : defaultCompareIds, requiredSkills);
-    },
-    async ask(question, candidateIds) {
-      await wait(130);
-      return askCandidates(question, candidateIds);
-    },
-    async agent(question, candidateIds, _messages, _tenantIds) {
-      await wait(130);
-      const scoped = askCandidates(question, candidateIds ?? []);
-      return {
-        answer: scoped.extractiveAnswer,
-        citations: scoped.citations,
-        contextBlocks: scoped.contextBlocks,
-        meta: {
-          candidateCount: scoped.meta.candidateCount,
-          topK: scoped.meta.topK,
-          answerSource: scoped.meta.answerSource ?? "mock",
-          scopeSource: scoped.meta.scopeSource ?? ((candidateIds?.length ?? 0) > 0 ? "explicit" : "mock"),
-          resolvedCandidateIds: scoped.meta.resolvedCandidateIds ?? (candidateIds ?? []),
-        },
-      };
-    },
-    async getOriginalDocumentUrl(storagePath, sourceUri, _context) {
-      await wait(40);
-      if (isBrowserOpenableSource(sourceUri)) {
-        return sourceUri ?? null;
-      }
-      return null;
-    },
-    async getShortlist(tenantIds) {
-      await wait(60);
-      const allowedTenantIds = new Set(tenantIds ?? []);
-      return Array.from(mockShortlistItems.values())
-        .filter((item) => !allowedTenantIds.size || allowedTenantIds.has(item.tenantId))
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    },
-    async saveShortlistItem(item) {
-      await wait(70);
-      const now = new Date().toISOString();
-      const key = `${item.tenantId}:${item.candidateId}`;
-      const current = mockShortlistItems.get(key);
-      const saved: CandidateShortlistItem = {
-        userId: "mock-user",
-        tenantId: item.tenantId,
-        candidateId: item.candidateId,
-        candidateName: item.candidateName,
-        currentTitle: item.currentTitle,
-        location: item.location,
-        yearsExperience: item.yearsExperience ?? null,
-        seniority: item.seniority ?? null,
-        primaryRole: item.primaryRole ?? null,
-        topSkills: item.topSkills ?? [],
-        matchRate: item.matchRate ?? null,
-        cvUrl: item.cvUrl ?? null,
-        originalFilename: item.originalFilename ?? null,
-        sourceQuery: item.sourceQuery ?? "",
-        searchSnapshot: item.searchSnapshot ?? {},
-        notes: item.notes ?? "",
-        createdAt: current?.createdAt ?? now,
-        updatedAt: now,
-      };
-      mockShortlistItems.set(key, saved);
-      return saved;
-    },
-    async removeShortlistItem(candidateId, tenantId) {
-      await wait(50);
-      for (const [key, item] of mockShortlistItems.entries()) {
-        if (item.candidateId === candidateId && (!tenantId || item.tenantId === tenantId)) {
-          mockShortlistItems.delete(key);
-        }
-      }
-    },
-    async clearShortlist(tenantIds) {
-      await wait(60);
-      const allowedTenantIds = new Set(tenantIds ?? []);
-      for (const [key, item] of mockShortlistItems.entries()) {
-        if (!allowedTenantIds.size || allowedTenantIds.has(item.tenantId)) {
-          mockShortlistItems.delete(key);
-        }
-      }
-    },
-    async getParsingOverview(_tenantIds) {
-      await wait(120);
-      return parsingOverview;
-    },
-    async getParsingDocument(documentId, _tenantIds) {
-      await wait(120);
-      return getParsingDocument(documentId);
-    },
-    async getParserProfiles(_tenantIds) {
-      await wait(120);
-      return getParserProfiles();
-    },
-    async saveParserProfile(profile) {
-      await wait(120);
-      return saveParserProfile(profile);
-    },
-    async publishParserProfile(profileId) {
-      await wait(100);
-      return publishParserProfile(profileId);
-    },
-    async getAnalytics() {
-      await wait(80);
-      return analyticsSnapshot;
-    },
-    async getSystemHealth() {
-      await wait(80);
-      return systemHealth;
-    },
-    async getOpsAlerts() {
-      await wait(80);
-      return opsAlerts;
-    },
-    async acknowledgeOpsAlert(dedupeKey) {
-      await wait(80);
-      const alert = opsAlerts.find((item) => item.dedupeKey === dedupeKey);
-      return alert ? { ...alert, status: "acknowledged" } : null;
-    },
-    async getDataConnectors() {
-      await wait(80);
-      return dataConnectors;
-    },
-    async getIndexingWorkbench() {
-      await wait(80);
-      return indexingWorkbench;
-    },
-    async getAccessRoster() {
-      await wait(80);
-      return accessRoster;
-    },
-    async listAdminTenants() {
-      await wait(80);
-      return [];
-    },
-    async createTenantAccount() {
-      throw new Error("Account provisioning requires Supabase.");
-    },
-    async addUserToTenant() {
-      throw new Error("Account provisioning requires Supabase.");
-    },
-    async getPlatformRuntimeConfig() {
-      await wait(80);
-      return { settings: [], updatedAt: null };
-    },
-    async savePlatformRuntimeConfig() {
-      throw new Error("Runtime settings require Supabase.");
-    },
   };
 }
 

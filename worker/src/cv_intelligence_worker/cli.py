@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from dataclasses import replace
-from typing import Sequence
+from typing import Callable, Sequence
 
 from .config import WorkerConfig
 from .discovery import discover_documents
@@ -88,6 +88,122 @@ def _config_with_ingest_overrides(config: WorkerConfig, args: argparse.Namespace
     return replace(config, **updates) if updates else config
 
 
+def _progress_printer(disabled: bool) -> None | Callable[[str], None]:
+    return None if disabled else (lambda message: print(message, file=sys.stderr, flush=True))
+
+
+def _run_discover(args: argparse.Namespace, tenant_id: str, discovery_inputs: list[str]) -> int:
+    sources = discover_documents(
+        discovery_inputs,
+        tenant_id=tenant_id,
+        ingestion_run_id=f"discover-{tenant_id}",
+        uploaded_by=args.uploaded_by,
+    )
+    print(_json_output([dataclass_to_dict(source) for source in sources], pretty=args.pretty))
+    return 0
+
+
+def _run_ingest(args: argparse.Namespace, config: WorkerConfig, tenant_id: str, discovery_inputs: list[str]) -> int:
+    config = _config_with_ingest_overrides(config, args)
+    pipeline = IngestionPipeline(config=config)
+    result = pipeline.ingest_paths(
+        inputs=discovery_inputs,
+        tenant_id=tenant_id,
+        uploaded_by=args.uploaded_by,
+        sync_to_supabase=not args.no_sync,
+        progress=_progress_printer(args.no_progress),
+    )
+    payload = {
+        "ingestion_run_id": result.ingestion_run_id,
+        "discovered": result.total_discovered,
+        "processed": len(result.bundles),
+        "failures": result.failures,
+        "warnings": result.warnings,
+        "sync_stats": result.sync_stats,
+        "candidate_ids": [bundle.profile.candidate_id for bundle in result.bundles],
+    }
+    print(_json_output(payload, pretty=args.pretty))
+    return 0 if not result.failures else 2
+
+
+def _run_compare(args: argparse.Namespace, config: WorkerConfig, tenant_id: str) -> int:
+    pipeline = IngestionPipeline(config=config)
+    artifact_key, artifact = pipeline.compare_candidates(
+        tenant_id=tenant_id,
+        candidate_ids=args.candidate_ids,
+        query=args.query,
+        sync_to_supabase=not args.no_sync,
+    )
+    payload = {
+        "artifact_key": artifact_key,
+        "comparison": dataclass_to_dict(artifact),
+    }
+    print(_json_output(payload, pretty=args.pretty))
+    return 0
+
+
+def _run_manatal_sync(args: argparse.Namespace, config: WorkerConfig) -> int:
+    if args.lookback_hours is not None:
+        config = replace(config, manatal_lookback_hours=args.lookback_hours)
+    tenant_id = args.tenant_id or config.tenant_id
+    config = replace(config, tenant_id=tenant_id)
+    result = ManatalSync(config).sync(
+        updated_since=args.updated_since,
+        candidate_ids=args.candidate_ids or [],
+        pending=args.pending,
+        queue_only=args.queue_only,
+        limit=args.limit,
+        sync_to_supabase=not args.no_sync,
+        uploaded_by=args.uploaded_by,
+        progress=_progress_printer(args.no_progress),
+    )
+    payload = {
+        "fetched_candidates": result.fetched_candidates,
+        "queued_candidates": result.queued_candidates,
+        "skipped_candidates": result.skipped_candidates,
+        "downloaded_resumes": result.downloaded_resumes,
+        "synced_resumes": result.synced_resumes,
+        "failures": result.failures,
+        "ingestion": None
+        if result.ingestion_result is None
+        else {
+            "ingestion_run_id": result.ingestion_result.ingestion_run_id,
+            "discovered": result.ingestion_result.total_discovered,
+            "processed": len(result.ingestion_result.bundles),
+            "warnings": result.ingestion_result.warnings,
+            "sync_stats": result.ingestion_result.sync_stats,
+        },
+    }
+    print(_json_output(payload, pretty=args.pretty))
+    return _manatal_sync_exit_code(result, pending=args.pending)
+
+
+def _run_manatal_originals_to_gcs(args: argparse.Namespace, config: WorkerConfig) -> int:
+    tenant_id = args.tenant_id or config.tenant_id
+    config = replace(config, tenant_id=tenant_id)
+    result = ManatalOriginalsBackfill(config).run(
+        bucket=args.bucket or config.gcs_originals_bucket,
+        limit=args.limit,
+        page_size=args.page_size,
+        offset=args.offset,
+        apply=args.apply,
+        force=args.force,
+        update_source_uri=args.update_source_uri,
+        progress=_progress_printer(args.no_progress),
+    )
+    payload = {
+        "processed": result.processed,
+        "uploaded": result.uploaded,
+        "skipped": result.skipped,
+        "missing_source": result.missing_source,
+        "failed": result.failed,
+        "failures": result.failures,
+        "dry_run": result.dry_run,
+    }
+    print(_json_output(payload, pretty=args.pretty))
+    return 0 if not result.failed else 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -96,138 +212,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     discovery_inputs = list(args.inputs) if hasattr(args, "inputs") and args.inputs else [config.source_dir]
 
     if args.command == "discover":
-        sources = discover_documents(
-            discovery_inputs,
-            tenant_id=tenant_id,
-            ingestion_run_id=f"discover-{tenant_id}",
-            uploaded_by=args.uploaded_by,
-        )
-        print(_json_output([dataclass_to_dict(source) for source in sources], pretty=args.pretty))
-        return 0
+        return _run_discover(args, tenant_id, discovery_inputs)
 
     if args.command == "ingest":
-        config = _config_with_ingest_overrides(config, args)
-        pipeline = IngestionPipeline(config=config)
-        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
-        result = pipeline.ingest_paths(
-            inputs=discovery_inputs,
-            tenant_id=tenant_id,
-            uploaded_by=args.uploaded_by,
-            sync_to_supabase=not args.no_sync,
-            progress=progress,
-        )
-        payload = {
-            "ingestion_run_id": result.ingestion_run_id,
-            "discovered": result.total_discovered,
-            "processed": len(result.bundles),
-            "failures": result.failures,
-            "warnings": result.warnings,
-            "sync_stats": result.sync_stats,
-            "candidate_ids": [bundle.profile.candidate_id for bundle in result.bundles],
-        }
-        print(_json_output(payload, pretty=args.pretty))
-        return 0 if not result.failures else 2
+        return _run_ingest(args, config, tenant_id, discovery_inputs)
 
     if args.command == "compare":
-        pipeline = IngestionPipeline(config=config)
-        artifact_key, artifact = pipeline.compare_candidates(
-            tenant_id=tenant_id,
-            candidate_ids=args.candidate_ids,
-            query=args.query,
-            sync_to_supabase=not args.no_sync,
-        )
-        payload = {
-            "artifact_key": artifact_key,
-            "comparison": dataclass_to_dict(artifact),
-        }
-        print(_json_output(payload, pretty=args.pretty))
-        return 0
+        return _run_compare(args, config, tenant_id)
 
     if args.command == "manatal-sync":
-        if args.lookback_hours is not None:
-            config = replace(config, manatal_lookback_hours=args.lookback_hours)
-        tenant_id = args.tenant_id or config.tenant_id
-        config = replace(config, tenant_id=tenant_id)
-        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
-        result = ManatalSync(config).sync(
-            updated_since=args.updated_since,
-            candidate_ids=args.candidate_ids or [],
-            pending=args.pending,
-            queue_only=args.queue_only,
-            limit=args.limit,
-            sync_to_supabase=not args.no_sync,
-            uploaded_by=args.uploaded_by,
-            progress=progress,
-        )
-        payload = {
-            "fetched_candidates": result.fetched_candidates,
-            "queued_candidates": result.queued_candidates,
-            "skipped_candidates": result.skipped_candidates,
-            "downloaded_resumes": result.downloaded_resumes,
-            "synced_resumes": result.synced_resumes,
-            "failures": result.failures,
-            "ingestion": None if result.ingestion_result is None else {
-                "ingestion_run_id": result.ingestion_result.ingestion_run_id,
-                "discovered": result.ingestion_result.total_discovered,
-                "processed": len(result.ingestion_result.bundles),
-                "warnings": result.ingestion_result.warnings,
-                "sync_stats": result.ingestion_result.sync_stats,
-            },
-        }
-        print(_json_output(payload, pretty=args.pretty))
-        return _manatal_sync_exit_code(result, pending=args.pending)
+        return _run_manatal_sync(args, config)
 
     if args.command == "manatal-originals-to-gcs":
-        tenant_id = args.tenant_id or config.tenant_id
-        config = replace(config, tenant_id=tenant_id)
-        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
-        result = ManatalOriginalsBackfill(config).run(
-            bucket=args.bucket or config.gcs_originals_bucket,
-            limit=args.limit,
-            page_size=args.page_size,
-            offset=args.offset,
-            apply=args.apply,
-            force=args.force,
-            update_source_uri=args.update_source_uri,
-            progress=progress,
-        )
-        payload = {
-            "processed": result.processed,
-            "uploaded": result.uploaded,
-            "skipped": result.skipped,
-            "missing_source": result.missing_source,
-            "failed": result.failed,
-            "failures": result.failures,
-            "dry_run": result.dry_run,
-        }
-        print(_json_output(payload, pretty=args.pretty))
-        return 0 if not result.failed else 2
-
-    if args.command == "manatal-originals-to-gcs":
-        tenant_id = args.tenant_id or config.tenant_id
-        config = replace(config, tenant_id=tenant_id)
-        progress = None if args.no_progress else (lambda message: print(message, file=sys.stderr, flush=True))
-        result = ManatalOriginalsBackfill(config).run(
-            bucket=args.bucket or config.gcs_originals_bucket,
-            limit=args.limit,
-            page_size=args.page_size,
-            offset=args.offset,
-            apply=args.apply,
-            force=args.force,
-            update_source_uri=args.update_source_uri,
-            progress=progress,
-        )
-        payload = {
-            "processed": result.processed,
-            "uploaded": result.uploaded,
-            "skipped": result.skipped,
-            "missing_source": result.missing_source,
-            "failed": result.failed,
-            "failures": result.failures,
-            "dry_run": result.dry_run,
-        }
-        print(_json_output(payload, pretty=args.pretty))
-        return 0 if not result.failed else 2
+        return _run_manatal_originals_to_gcs(args, config)
 
     parser.error(f"unsupported command: {args.command}")
     return 1

@@ -10,6 +10,16 @@ Offline-first CV search, ranking, and candidate analysis for recruiter workflows
 - `worker/`: offline ingestion and AI processing on a laptop or dedicated operator machine.
 - `frontend/`: static React frontend for search, dossiers, comparison, intelligence, analytics, and admin operations.
 
+## Contributor resources
+
+- [Contributing guide](CONTRIBUTING.md): setup, quality gates, PR expectations, and coding standards.
+- [Code of conduct](CODE_OF_CONDUCT.md): collaboration expectations and reporting process.
+- [Security policy](SECURITY.md): vulnerability reporting and secure development rules.
+- [Clean code guidelines](docs/clean-code-guidelines.md): module boundaries and refactoring expectations.
+- [Development workflow](docs/development-workflow.md): branch, PR, protection, and dependency update conventions.
+- [Release process](docs/release-process.md): deploy order, smoke tests, and rollback guidance.
+- [Data retention](docs/data-retention.md): privacy rules for CVs, caches, and generated artifacts.
+
 ## Architecture
 
 The system is intentionally split into two planes:
@@ -380,8 +390,19 @@ Ollama is still supported if you explicitly set the worker env vars back to an O
 ```bash
 cd frontend
 npm install
+npm run lint
+npm run test
 npm run dev
 npm run build
+```
+
+### Repository quality checks
+
+```bash
+node scripts/check-repo-format.mjs
+node scripts/check-supabase-migrations.mjs
+python -m ruff check worker/src worker/tests scripts
+python -m pytest worker/tests
 ```
 
 ### Local live testing

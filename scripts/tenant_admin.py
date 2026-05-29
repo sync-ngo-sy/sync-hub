@@ -11,7 +11,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Iterable, Optional
 from urllib import error, parse, request
 
 

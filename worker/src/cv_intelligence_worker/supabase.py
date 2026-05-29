@@ -7,69 +7,12 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .config import WorkerConfig
 from .schema import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
-from .utils import normalize_email, skill_slugify, slugify, stable_uuid, strip_nul_bytes, urlopen
-
-
-def _vector_literal(values: list[float]) -> str:
-    return "[" + ",".join(f"{value:.8f}" for value in values) + "]"
-
-
-def _is_jwt(value: str) -> bool:
-    return value.count(".") == 2
-
-
-def _chunks(values: list[Any], size: int) -> Iterable[list[Any]]:
-    size = max(1, size)
-    for index in range(0, len(values), size):
-        yield values[index : index + size]
-
-
-def _json_payload_size(value: Any) -> int:
-    return len(json.dumps(strip_nul_bytes(value), separators=(",", ":"), ensure_ascii=True).encode("utf-8"))
-
-
-def _dedupe_rows(rows: list[dict[str, Any]], key_fields: tuple[str, ...]) -> list[dict[str, Any]]:
-    keyed: dict[tuple[Any, ...], dict[str, Any]] = {}
-    for row in rows:
-        key = tuple(row.get(field) for field in key_fields)
-        keyed[key] = row
-    return list(keyed.values())
-
-
-def _format_bytes(value: int) -> str:
-    units = ("B", "KiB", "MiB", "GiB", "TiB")
-    size = float(max(0, value))
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} {unit}"
-        size /= 1024
-    return f"{value} B"
-
-
-def _bounded_years_experience(value: Any) -> float:
-    try:
-        years = float(value or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
-    return round(max(0.0, min(80.0, years)), 2)
-
-
-def _is_retryable_supabase_error(error: Exception) -> bool:
-    message = str(error).lower()
-    return any(
-        marker in message
-        for marker in (
-            "57014",
-            "statement timeout",
-            "timeout",
-            "temporarily unavailable",
-            "connection reset",
-        )
-    )
+from .supabase_helpers import bounded_years_experience, chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size, vector_literal
+from .utils import normalize_email, skill_slugify, stable_uuid, strip_nul_bytes, urlopen
 
 
 @dataclass(frozen=True)
@@ -102,7 +45,7 @@ class SupabaseClient:
             "Content-Type": "application/json",
             "User-Agent": self.config.user_agent,
         }
-        if _is_jwt(bearer_token):
+        if is_jwt(bearer_token):
             headers["Authorization"] = f"Bearer {bearer_token}"
         if extra:
             headers.update(extra)
@@ -147,7 +90,7 @@ class SupabaseClient:
             self.upsert(table, rows, on_conflict)
             return
         except RuntimeError as exc:
-            if not _is_retryable_supabase_error(exc):
+            if not is_retryable_supabase_error(exc):
                 raise
             if len(rows) > 1:
                 midpoint = max(1, len(rows) // 2)
@@ -160,14 +103,14 @@ class SupabaseClient:
             self._upsert_batch_with_retry(table, rows, on_conflict, attempt=attempt + 1)
 
     def upsert_many(self, table: str, rows: list[dict[str, Any]], on_conflict: str, batch_size: int | None = None) -> int:
-        for batch in _chunks(rows, batch_size or self.config.supabase_batch_size):
+        for batch in chunks(rows, batch_size or self.config.supabase_batch_size):
             self._upsert_batch_with_retry(table, batch, on_conflict)
         return len(rows)
 
     def _select_in(self, table: str, tenant_id: str, column: str, values: list[str], select: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         unique_values = sorted({value for value in values if value})
-        for batch in _chunks(unique_values, 100):
+        for batch in chunks(unique_values, 100):
             query = urllib.parse.urlencode(
                 {
                     "tenant_id": f"eq.{tenant_id}",
@@ -271,7 +214,7 @@ class SupabaseClient:
             if ratio >= threshold:
                 warnings.append(
                     "Supabase database usage is near the configured limit: "
-                    f"projected {_format_bytes(projected_database_bytes)} of {_format_bytes(self.config.supabase_database_limit_bytes)} "
+                    f"projected {format_bytes(projected_database_bytes)} of {format_bytes(self.config.supabase_database_limit_bytes)} "
                     f"({ratio:.1%}, source={snapshot.source})."
                 )
         if self.config.supabase_storage_limit_bytes:
@@ -281,7 +224,7 @@ class SupabaseClient:
                 if ratio >= threshold:
                     warnings.append(
                         "Supabase storage usage is near the configured limit: "
-                        f"projected {_format_bytes(projected_storage_bytes)} of {_format_bytes(self.config.supabase_storage_limit_bytes)} "
+                        f"projected {format_bytes(projected_storage_bytes)} of {format_bytes(self.config.supabase_storage_limit_bytes)} "
                         f"({ratio:.1%}, source={snapshot.source})."
                     )
         if snapshot.source == "rest-counts":
@@ -424,7 +367,7 @@ class SupabaseClient:
         profile_payload["candidate_id"] = candidate_id
         profile_payload["source_document_id"] = source_document_id
         profile_payload["email"] = candidate_email
-        profile_payload["years_experience"] = _bounded_years_experience(profile_payload.get("years_experience"))
+        profile_payload["years_experience"] = bounded_years_experience(profile_payload.get("years_experience"))
         profile_payload.pop("raw_text", None)
 
         source_document = {
@@ -447,7 +390,7 @@ class SupabaseClient:
             "headline": bundle.profile.headline,
             "current_title": bundle.profile.current_title,
             "location": bundle.profile.location,
-            "years_experience": _bounded_years_experience(bundle.profile.years_experience),
+            "years_experience": bounded_years_experience(bundle.profile.years_experience),
             "seniority": bundle.profile.seniority,
             "primary_role": bundle.profile.role_tags[0] if bundle.profile.role_tags else None,
             "top_skills": bundle.profile.skills,
@@ -521,7 +464,7 @@ class SupabaseClient:
                     "token_count": chunk.token_count,
                     "source_span": chunk.source_span,
                     "metadata_json": chunk.metadata,
-                    "embedding": _vector_literal(embedding.embedding),
+                    "embedding": vector_literal(embedding.embedding),
                     "embedding_version": embedding.embedding_version,
                     "parse_version": bundle.document_text.parser_version,
                     "normalization_version": bundle.processing_run.chunk_version,
@@ -568,7 +511,7 @@ class SupabaseClient:
             "Content-Type": content_type,
             "x-upsert": "true",
         }
-        if _is_jwt(bearer_token):
+        if is_jwt(bearer_token):
             headers["Authorization"] = f"Bearer {bearer_token}"
         request = urllib.request.Request(
             f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
@@ -625,11 +568,11 @@ class SupabaseClient:
             "processing_runs": ("tenant_id", "input_hash"),
         }
         rows_by_table = {
-            table: _dedupe_rows(rows, conflict_keys[table])
+            table: dedupe_rows(rows, conflict_keys[table])
             for table, rows in rows_by_table.items()
         }
 
-        estimated_database_bytes = sum(_json_payload_size(rows) for rows in rows_by_table.values() if rows)
+        estimated_database_bytes = sum(json_payload_size(rows) for rows in rows_by_table.values() if rows)
         tenant_id = bundles[0].source.tenant_id
         warnings = self.capacity_warnings(tenant_id, estimated_database_bytes=estimated_database_bytes, estimated_storage_bytes=storage_bytes)
 
