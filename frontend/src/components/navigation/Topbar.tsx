@@ -24,6 +24,11 @@ const routeMeta: Array<{ test: (path: string) => boolean; title: string; subtitl
     subtitle: "Side-by-side recommendation with grounded overlap and gaps",
   },
   {
+    test: (path) => path === "/insights",
+    title: "Insights",
+    subtitle: "Read-only corpus intelligence, job-family distribution, skills gaps, and seniority mix",
+  },
+  {
     test: (path) => path === "/admin" || path === "/admin/dashboard",
     title: "Platform Dashboard",
     subtitle: "Cross-workspace admin view for corpus volume, tenant coverage, and parser rollout health",

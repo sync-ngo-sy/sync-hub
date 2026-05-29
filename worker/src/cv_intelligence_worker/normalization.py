@@ -259,6 +259,82 @@ ROLE_PATTERNS = {
     "security": ["security", "cybersecurity", "siem", "soc", "threat detection", "penetration testing", "vulnerability"],
 }
 
+JOB_FAMILY_TAXONOMY_VERSION = "production-corpus-v1"
+
+JOB_FAMILY_RULES = (
+    (
+        "Full-Stack Engineering",
+        ("full-stack",),
+        (
+            "full stack",
+            "full-stack",
+        ),
+        ("react", "node.js", "apis", "sql", "postgresql", "mongodb"),
+    ),
+    (
+        "Backend Engineering",
+        ("backend",),
+        ("backend", "back-end", "api", "server", "platform"),
+        ("node.js", "nestjs", "express", "java", "spring", "python", "django", "fastapi", "laravel", "php", "asp.net", ".net", "c#", "postgresql", "mysql", "mongodb", "redis", "rest apis", "graphql"),
+    ),
+    (
+        "Frontend Engineering",
+        ("frontend",),
+        ("frontend", "front-end", "ui engineer", "web developer"),
+        ("react", "next.js", "angular", "vue", "javascript", "typescript", "html", "css", "tailwind css", "bootstrap", "redux"),
+    ),
+    (
+        "Mobile Engineering",
+        ("mobile",),
+        ("mobile", "android", "ios", "flutter", "react native"),
+        ("flutter", "dart", "android", "ios", "swift", "kotlin", "react native", "firebase"),
+    ),
+    (
+        "AI & Machine Learning",
+        ("ml",),
+        ("machine learning", "ml engineer", "ai engineer", "data scientist", "llm"),
+        ("machine learning", "deep learning", "tensorflow", "pytorch", "scikit", "keras", "opencv", "nlp", "llm", "computer vision"),
+    ),
+    (
+        "Data & Analytics",
+        ("data",),
+        ("data analyst", "data engineer", "business intelligence", "bi developer", "analytics"),
+        ("sql", "power bi", "tableau", "excel", "pandas", "numpy", "etl", "data analysis", "data visualization"),
+    ),
+    (
+        "Cloud, DevOps & SRE",
+        ("devops",),
+        ("devops", "sre", "site reliability", "cloud", "infrastructure"),
+        ("docker", "kubernetes", "terraform", "aws", "azure", "google cloud", "gcp", "ci/cd", "linux", "jenkins", "ansible", "helm"),
+    ),
+    (
+        "Cybersecurity",
+        ("security",),
+        ("security", "cyber", "soc", "penetration", "threat", "siem"),
+        ("cybersecurity", "security", "soc operations", "siem", "penetration testing", "vulnerability", "threat detection", "incident response"),
+    ),
+    (
+        "QA & Test Automation",
+        ("qa",),
+        ("qa", "quality assurance", "test automation", "tester"),
+        ("selenium", "playwright", "cypress", "jest", "testing", "test automation", "quality assurance"),
+    ),
+    (
+        "Product & Design",
+        (),
+        ("product designer", "ui/ux", "ux designer", "product manager"),
+        ("figma", "ui/ux", "wireframing", "prototyping", "user research", "product management"),
+    ),
+    (
+        "Software Engineering",
+        ("generalist",),
+        ("software", "developer", "engineer", "programmer"),
+        ("git", "github", "apis", "problem solving", "javascript", "python", "sql"),
+    ),
+)
+
+JOB_FAMILY_LABELS = tuple(rule[0] for rule in JOB_FAMILY_RULES) + ("Unclassified",)
+
 ROLE_TAG_ALIASES = {
     "fullstack": "full-stack",
     "full-stack": "full-stack",
@@ -944,6 +1020,36 @@ def infer_additional_skills(profile: CandidateProfile) -> list[str]:
     return dedupe_keep_order(inferred)
 
 
+def _contains_any(haystack: str, needles: tuple[str, ...]) -> bool:
+    return any(needle and needle in haystack for needle in needles)
+
+
+def infer_job_family(profile: CandidateProfile) -> tuple[str, float]:
+    role_text = " ".join([*profile.role_tags, profile.current_title, profile.headline]).lower()
+    title_text = " ".join([profile.current_title, profile.headline]).lower()
+    skill_text = " ".join(profile.skills).lower()
+    scores: dict[str, float] = {}
+
+    for family, role_tags, title_signals, skill_signals in JOB_FAMILY_RULES:
+        score = 0.0
+        if _contains_any(role_text, role_tags):
+            score += 90.0
+        if _contains_any(title_text, title_signals):
+            score += 55.0
+        matched_skill_count = sum(1 for skill in skill_signals if skill in skill_text)
+        score += min(60.0, matched_skill_count * 12.0)
+        scores[family] = score
+
+    if "backend" in profile.role_tags and "frontend" in profile.role_tags:
+        scores["Full-Stack Engineering"] = max(scores.get("Full-Stack Engineering", 0.0), 120.0)
+
+    family, score = max(scores.items(), key=lambda item: (item[1], item[0]))
+    if score < 40.0:
+        return "Unclassified", 0.0
+    confidence = min(0.98, 0.55 + (score / 240.0))
+    return family, round(confidence, 3)
+
+
 def choose_current_title(profile: CandidateProfile) -> str:
     current_title = compact_whitespace(profile.current_title)
     headline = compact_whitespace(profile.headline)
@@ -1046,6 +1152,25 @@ def normalize_profile(profile: CandidateProfile) -> CandidateProfile:
         ),
         years_experience,
     )
+    job_family, job_family_confidence = infer_job_family(
+        replace(
+            profile,
+            current_title=current_title,
+            headline=headline,
+            skills=skills,
+            experience=normalized_experience,
+            location=location,
+            role_tags=role_tags,
+        )
+    )
+    metadata = {
+        **profile.metadata,
+        "job_family": job_family,
+        "job_family_confidence": job_family_confidence,
+        "job_family_taxonomy_version": JOB_FAMILY_TAXONOMY_VERSION,
+        "job_family_source": "production_role_tags_skills",
+        "job_family_inferred_at": datetime.now(timezone.utc).isoformat(),
+    }
     aliases = {
         canonical: [raw for raw in profile.skills if canonical_skill(raw).lower() == canonical.lower()]
         for canonical in skills
@@ -1062,4 +1187,5 @@ def normalize_profile(profile: CandidateProfile) -> CandidateProfile:
         role_tags=role_tags,
         years_experience=years_experience,
         seniority=seniority,
+        metadata=metadata,
     )

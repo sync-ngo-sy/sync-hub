@@ -8,6 +8,7 @@ import {
   FileText,
   GitCompareArrows,
   Home,
+  LineChart,
   LayoutDashboard,
   Search,
   SlidersHorizontal,
@@ -22,6 +23,7 @@ import { SyncBrand, TenantBadge } from "@/components/ui";
 
 const productRoutes = [
   { to: "/search", label: "Search & Discovery", icon: Search },
+  { to: "/insights", label: "Insights", icon: LineChart },
   { to: "/chat", label: "General Agent", icon: Bot },
   { to: "/compare", label: "Intelligent Comparison", icon: GitCompareArrows },
 ];

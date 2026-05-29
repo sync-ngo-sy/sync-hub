@@ -8,7 +8,7 @@ from dataclasses import replace
 from typing import Any
 
 from .config import WorkerConfig
-from .normalization import normalize_location, normalize_profile
+from .normalization import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION, normalize_location, normalize_profile
 from .schema import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
 from .utils import compact_whitespace, dedupe_keep_order, normalize_email, stable_uuid, urlopen
 
@@ -217,6 +217,15 @@ OLLAMA_FORMAT_SCHEMA = {
         }
     ],
     "summary": "string",
+}
+
+JOB_FAMILY_OUTPUT_SCHEMA = {
+    "job_family": "one of the allowed job family labels",
+    "confidence": "number from 0 to 1",
+    "rationale": "short explanation using only supplied profile facts",
+    "matched_role_tags": ["string"],
+    "matched_skills": ["string"],
+    "alternate_job_family": "one allowed label or null",
 }
 
 
@@ -1017,6 +1026,182 @@ def _validate_llm_profile(profile: CandidateProfile) -> None:
         raise ValueError(f"structured extractor returned incomplete profile: {', '.join(missing_core)}")
 
 
+def _job_family_system_prompt() -> str:
+    return (
+        "Classify the candidate into exactly one allowed job family.\n\n"
+        "Rules:\n"
+        "- Return valid JSON only.\n"
+        "- Do not invent new family labels.\n"
+        "- Use only the provided structured profile facts.\n"
+        "- Prefer the most specific family when multiple families match.\n"
+        "- Use Unclassified only when the evidence is too weak or contradictory.\n"
+        "- confidence must be between 0 and 1.\n\n"
+        f"Allowed job families: {json.dumps(list(JOB_FAMILY_LABELS), ensure_ascii=True)}\n\n"
+        f"Output schema: {json.dumps(JOB_FAMILY_OUTPUT_SCHEMA, ensure_ascii=True)}"
+    )
+
+
+def _job_family_prompt(profile: CandidateProfile) -> dict[str, Any]:
+    return {
+        "taxonomy_version": JOB_FAMILY_TAXONOMY_VERSION,
+        "deterministic_job_family": profile.metadata.get("job_family"),
+        "deterministic_confidence": profile.metadata.get("job_family_confidence"),
+        "candidate_profile": {
+            "current_title": profile.current_title,
+            "headline": profile.headline,
+            "seniority": profile.seniority,
+            "role_tags": profile.role_tags,
+            "skills": profile.skills[:80],
+            "summary": compact_whitespace(profile.summary)[:1200],
+            "experience": [
+                {
+                    "title": entry.title,
+                    "company": entry.company,
+                    "description": compact_whitespace(entry.description)[:500],
+                }
+                for entry in profile.experience[:6]
+            ],
+            "projects": [
+                {
+                    "name": project.name,
+                    "description": compact_whitespace(project.description)[:300],
+                    "technologies": project.technologies[:20],
+                }
+                for project in profile.projects[:4]
+            ],
+        },
+    }
+
+
+def _call_openai_compatible_json(config: WorkerConfig, model: str, system_prompt: str, prompt: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(prompt)},
+        ],
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+    }
+    request = urllib.request.Request(
+        f"{config.model_base_url.rstrip('/')}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {config.model_api_key}",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=config.request_timeout_seconds) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    return _parse_json_content(body["choices"][0]["message"]["content"])
+
+
+def _call_ollama_json(config: WorkerConfig, model: str, system_prompt: str, prompt: dict[str, Any], format_schema: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "model": model,
+        "stream": False,
+        "format": format_schema,
+        "options": {"temperature": 0},
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(prompt)},
+        ],
+    }
+    request = urllib.request.Request(
+        f"{config.model_base_url.rstrip('/').removesuffix('/v1')}/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urlopen(request, timeout=config.request_timeout_seconds) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    return _parse_json_content(body["message"]["content"])
+
+
+def _validated_job_family_result(value: dict[str, Any], profile: CandidateProfile, config: WorkerConfig) -> dict[str, Any] | None:
+    family = _string_value(value.get("job_family"))
+    confidence = _number_value(value.get("confidence"))
+    if family not in JOB_FAMILY_LABELS:
+        return None
+    if confidence < max(0.0, min(1.0, config.job_family_min_confidence)):
+        return None
+    deterministic_family = _string_value(profile.metadata.get("job_family")) or "Unclassified"
+    deterministic_confidence = _number_value(profile.metadata.get("job_family_confidence"))
+    auto_accept_confidence = max(config.job_family_min_confidence, min(1.0, config.job_family_auto_accept_confidence))
+    review_reasons: list[str] = []
+    if confidence < auto_accept_confidence:
+        review_reasons.append("llm_confidence_below_auto_accept_threshold")
+    if family == "Unclassified":
+        review_reasons.append("llm_returned_unclassified")
+    if family != deterministic_family and deterministic_confidence >= 0.78 and confidence < 0.9:
+        review_reasons.append("llm_disagrees_with_high_confidence_rules")
+    review_status = "needs_review" if review_reasons else "auto_accepted"
+    return {
+        "job_family": family,
+        "job_family_confidence": round(confidence, 3),
+        "job_family_taxonomy_version": JOB_FAMILY_TAXONOMY_VERSION,
+        "job_family_source": "llm",
+        "job_family_review_status": review_status,
+        "job_family_review_reason": ",".join(review_reasons) if review_reasons else "accepted",
+        "job_family_rules_baseline": deterministic_family,
+        "job_family_rules_confidence": deterministic_confidence,
+        "job_family_rationale": compact_whitespace(_string_value(value.get("rationale")))[:500],
+        "job_family_matched_role_tags": _string_list(value.get("matched_role_tags")),
+        "job_family_matched_skills": _string_list(value.get("matched_skills")),
+        "job_family_alternate": _string_value(value.get("alternate_job_family")) if _string_value(value.get("alternate_job_family")) in JOB_FAMILY_LABELS else "",
+    }
+
+
+def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig) -> CandidateProfile:
+    provider = config.job_family_provider.lower()
+    model = config.job_family_model or config.extraction_model
+    if provider in {"rules", "deterministic", "off", "disabled"} or not model:
+        return profile
+
+    try:
+        if provider == "ollama" or (provider == "llm" and config.extraction_provider.lower() == "ollama"):
+            result = _call_ollama_json(config, model, _job_family_system_prompt(), _job_family_prompt(profile), JOB_FAMILY_OUTPUT_SCHEMA)
+        else:
+            result = _call_openai_compatible_json(config, model, _job_family_system_prompt(), _job_family_prompt(profile))
+        validated = _validated_job_family_result(result, profile, config)
+        if not validated:
+            return replace(
+                profile,
+                metadata={
+                    **profile.metadata,
+                    "job_family_review_status": "needs_review",
+                    "job_family_review_reason": "llm_rejected_invalid_label_or_low_confidence",
+                    "job_family_rules_baseline": profile.metadata.get("job_family"),
+                    "job_family_rules_confidence": profile.metadata.get("job_family_confidence"),
+                    "job_family_llm_status": "rejected",
+                    "job_family_llm_rejection_reason": "invalid_label_or_low_confidence",
+                },
+            )
+        return replace(
+            profile,
+            metadata={
+                **profile.metadata,
+                **validated,
+            },
+        )
+    except (TimeoutError, urllib.error.URLError, KeyError, ValueError, json.JSONDecodeError) as exc:
+        return replace(
+            profile,
+            metadata={
+                **profile.metadata,
+                "job_family_review_status": "needs_review",
+                "job_family_review_reason": "llm_failed_rules_fallback",
+                "job_family_rules_baseline": profile.metadata.get("job_family"),
+                "job_family_rules_confidence": profile.metadata.get("job_family_confidence"),
+                "job_family_llm_status": "failed",
+                "job_family_llm_error": str(exc)[:300],
+            },
+        )
+
+
 def _merge_extracted_profile(source: DocumentSource, document_text: DocumentText, extracted: dict[str, Any]) -> CandidateProfile:
     email = normalize_email(_string_value(extracted.get("email")))
     links = _string_list(extracted.get("links"))
@@ -1187,7 +1372,8 @@ def extract_candidate_profile(source: DocumentSource, document_text: DocumentTex
     last_error: Exception | None = None
     for _attempt in range(max_attempts):
         try:
-            return extractor.extract(source, document_text)
+            profile = extractor.extract(source, document_text)
+            return classify_job_family_with_llm(profile, config)
         except (TimeoutError, urllib.error.URLError, KeyError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc
     if last_error:

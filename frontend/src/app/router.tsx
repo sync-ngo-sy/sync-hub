@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui";
 import { CandidateDossierPage } from "@/screens/CandidateDossierPage";
 import { IntelligentComparisonPage } from "@/screens/IntelligentComparisonPage";
 import { IntelligenceHubPage } from "@/screens/IntelligenceHubPage";
+import { InsightsDashboardPage } from "@/screens/InsightsDashboardPage";
 import { SearchConfigurationPage } from "@/screens/SearchConfigurationPage";
 import { SearchDiscoveryPage } from "@/screens/SearchDiscoveryPage";
 import { OpsAlertsPage } from "@/screens/admin/OpsAlertsPage";
@@ -28,9 +29,10 @@ export const router = createHashRouter([
       { path: "chat", element: <IntelligenceHubPage /> },
       { path: "dossier/:candidateId", element: <CandidateDossierPage /> },
       { path: "compare", element: <IntelligentComparisonPage /> },
+      { path: "insights", element: <InsightsDashboardPage /> },
       { path: "search-config", element: <Navigate to="/admin/search-simulator" replace /> },
       { path: "intelligence", element: <Navigate to="/chat" replace /> },
-      { path: "analytics", element: <Navigate to="/search" replace /> },
+      { path: "analytics", element: <Navigate to="/insights" replace /> },
       { path: "admin", element: <PlatformAdminDashboardPage /> },
       { path: "admin/dashboard", element: <PlatformAdminDashboardPage /> },
       { path: "admin/accounts", element: <AccountProvisioningPage /> },

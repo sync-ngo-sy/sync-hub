@@ -111,6 +111,10 @@ def _default_prompt_version() -> str:
     return "openai-json-v1"
 
 
+def _default_job_family_model() -> str:
+    return _env_any("CV_JOB_FAMILY_MODEL", "CVI_JOB_FAMILY_MODEL", default=_default_extraction_model())
+
+
 def _default_ingest_concurrency() -> str:
     return _env_any("CV_BATCH_SIZE", "CVI_BATCH_SIZE", default="8")
 
@@ -156,6 +160,10 @@ class WorkerConfig:
     model_api_key: str = field(default_factory=lambda: _env_any("CV_MODEL_API_KEY", "CVI_MODEL_API_KEY", "GEMINI_API_KEY", default=_default_model_api_key()))
     extraction_provider: str = field(default_factory=lambda: _env_any("CV_EXTRACTION_PROVIDER", "CVI_EXTRACTION_PROVIDER", default="openai-compatible"))
     extraction_model: str = field(default_factory=lambda: _env_any("CV_EXTRACTION_MODEL", "CVI_EXTRACTION_MODEL", default=_default_extraction_model()))
+    job_family_provider: str = field(default_factory=lambda: _env_any("CV_JOB_FAMILY_PROVIDER", "CVI_JOB_FAMILY_PROVIDER", default="llm"))
+    job_family_model: str = field(default_factory=lambda: _env_any("CV_JOB_FAMILY_MODEL", "CVI_JOB_FAMILY_MODEL", default=_default_job_family_model()))
+    job_family_min_confidence: float = field(default_factory=lambda: _float_env("CV_JOB_FAMILY_MIN_CONFIDENCE", "CVI_JOB_FAMILY_MIN_CONFIDENCE", default="0.62"))
+    job_family_auto_accept_confidence: float = field(default_factory=lambda: _float_env("CV_JOB_FAMILY_AUTO_ACCEPT_CONFIDENCE", "CVI_JOB_FAMILY_AUTO_ACCEPT_CONFIDENCE", default="0.82"))
     embedding_model: str = field(default_factory=lambda: _env_any("CV_EMBEDDING_MODEL", "CVI_EMBEDDING_MODEL", default=_default_embedding_model()))
     embedding_provider: str = field(default_factory=lambda: _env_any("CV_EMBEDDING_PROVIDER", "CVI_EMBEDDING_PROVIDER", default=_default_embedding_provider()))
     embedding_dimension: int = field(default_factory=lambda: int(_env_any("CV_EMBEDDING_DIMENSION", "CVI_EMBEDDING_DIMENSION", default="768")))

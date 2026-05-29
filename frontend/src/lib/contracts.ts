@@ -470,6 +470,74 @@ export type AnalyticsSnapshot = {
   }>;
 };
 
+export type InsightsMetric = {
+  key: string;
+  label: string;
+  value: number;
+  deltaValue: number;
+  deltaPercent: number | null;
+  trend: "up" | "down" | "flat";
+  sparkline: number[];
+};
+
+export type InsightsDistributionItem = {
+  label: string;
+  value: number;
+  percent?: number | null;
+};
+
+export type InsightsSkillFrequency = {
+  skill: string;
+  count: number;
+};
+
+export type InsightsSeniorityPyramidRow = {
+  jobFamily: string;
+  junior: number;
+  mid: number;
+  senior: number;
+  lead: number;
+  executive: number;
+};
+
+export type InsightsGapAnalysis = {
+  targetRole: string | null;
+  targetSkills: string[];
+  fullyMatchingCandidates: number;
+  partiallyMatchingCandidates: number;
+  zeroMatchCandidates: number;
+  missingSkills: Array<{
+    skill: string;
+    missingFromPartialCandidates: number;
+  }>;
+};
+
+export type InsightsGapUseCase = {
+  id: string;
+  title: string;
+  detail: string;
+  skills: string[];
+  query: string;
+};
+
+export type InsightsDashboardOptions = {
+  topSkills?: number;
+  targetRole?: string;
+  targetSkills?: string[];
+};
+
+export type InsightsDashboardSnapshot = {
+  generatedAt: string;
+  metrics: InsightsMetric[];
+  profilesBySeniority: InsightsDistributionItem[];
+  profilesByLocation: InsightsDistributionItem[];
+  jobFamilies: InsightsDistributionItem[];
+  skillsFrequency: InsightsSkillFrequency[];
+  gapUseCases: InsightsGapUseCase[];
+  seniorityPyramid: InsightsSeniorityPyramidRow[];
+  gapAnalysis: InsightsGapAnalysis;
+};
+
 export type PlatformRuntimeConfigSource = "database" | "environment" | "unset";
 
 export type PlatformRuntimeConfigField = {

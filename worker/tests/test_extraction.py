@@ -123,6 +123,7 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
             extraction_provider="openai-compatible",
             extraction_max_attempts=2,
             allow_heuristic_fallback=True,
+            job_family_provider="rules",
         )
 
         with patch("cv_intelligence_worker.extraction.OpenAICompatibleExtractor.extract") as extract_mock:
