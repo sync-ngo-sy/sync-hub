@@ -4,11 +4,21 @@ Offline-first CV search, ranking, and candidate analysis for recruiter workflows
 
 ## What this repo contains
 
-- `cvs/`: sample CV files for local development and pipeline validation.
+- `cvs/`: optional ignored local CV source folder for private development data.
 - `workspaces/`: git-safe tenant folder skeletons; real CV files placed here stay ignored.
 - `supabase/`: online backend layer for auth, Postgres, `pgvector`, RLS, and retrieval APIs.
 - `worker/`: offline ingestion and AI processing on a laptop or dedicated operator machine.
 - `frontend/`: static React frontend for search, dossiers, comparison, intelligence, analytics, and admin operations.
+
+## Contributor resources
+
+- [Contributing guide](CONTRIBUTING.md): setup, quality gates, PR expectations, and coding standards.
+- [Code of conduct](CODE_OF_CONDUCT.md): collaboration expectations and reporting process.
+- [Security policy](SECURITY.md): vulnerability reporting and secure development rules.
+- [Clean code guidelines](docs/clean-code-guidelines.md): module boundaries and refactoring expectations.
+- [Development workflow](docs/development-workflow.md): branch, PR, protection, and dependency update conventions.
+- [Release process](docs/release-process.md): deploy order, smoke tests, and rollback guidance.
+- [Data retention](docs/data-retention.md): privacy rules for CVs, caches, and generated artifacts.
 
 ## Architecture
 
@@ -304,12 +314,13 @@ This creates or updates folders like:
 /Users/example/Library/CloudStorage/GoogleDrive-user@example.com/My Drive/cv-intelligence/CV Intelligence/beta
 ```
 
-### Seeding a workspace from the sample `cvs/` folder
+### Seeding a workspace from private local CVs
 
-The repo keeps a small local sample corpus in `./cvs` for testing. If you want to seed the `demo` workspace folder with those same files, copy them into `workspaces/demo/`:
+Private CVs must stay outside git. To seed a local workspace, copy your private files into an ignored workspace folder:
 
 ```bash
-cp -f ./cvs/*.pdf ./workspaces/demo/
+mkdir -p ./workspaces/demo
+cp -f /path/to/private-cvs/*.pdf ./workspaces/demo/
 ```
 
 Then ingest the seeded workspace folder into the local `demo` tenant:
@@ -317,7 +328,7 @@ Then ingest the seeded workspace folder into the local `demo` tenant:
 ```bash
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest \
   "./workspaces/demo" \
-  --tenant-id 00000000-0000-0000-0000-000000000000
+  --tenant-id <tenant-id>
 ```
 
 The copied PDFs under `workspaces/demo/` are ignored by git.
@@ -380,8 +391,19 @@ Ollama is still supported if you explicitly set the worker env vars back to an O
 ```bash
 cd frontend
 npm install
+npm run lint
+npm run test
 npm run dev
 npm run build
+```
+
+### Repository quality checks
+
+```bash
+node scripts/check-repo-format.mjs
+node scripts/check-supabase-migrations.mjs
+python -m ruff check worker/src worker/tests scripts
+python -m pytest worker/tests
 ```
 
 ### Local live testing

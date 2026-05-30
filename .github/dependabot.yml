@@ -1,0 +1,67 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+      include: scope
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:15"
+    groups:
+      frontend-runtime:
+        dependency-type: production
+      frontend-dev:
+        dependency-type: development
+    commit-message:
+      prefix: "build"
+      include: scope
+
+  - package-ecosystem: pip
+    directory: /worker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+    commit-message:
+      prefix: "build"
+      include: scope
+
+  - package-ecosystem: terraform
+    directory: /infra/gcp/terraform
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:45"
+    commit-message:
+      prefix: "build"
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /infra/gcp
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+    commit-message:
+      prefix: "build"
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /infra/gcp/gcs-signer-service
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:15"
+    commit-message:
+      prefix: "build"
+      include: scope

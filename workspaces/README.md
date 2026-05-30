@@ -7,12 +7,11 @@ This folder is the repo-safe place for tenant/workspace CV inputs.
 - Create one subfolder per tenant slug.
 - Put real CV files inside `workspaces/<tenant-slug>/`.
 - Git ignores the actual CV files under these folders.
-- Keep only `.gitkeep` placeholders in the repo.
+- Keep workspace contents private and out of git.
 
-## Current tenant folders
+## Local tenant folders
 
-- `workspaces/demo/`
-- `workspaces/beta/`
+Create tenant folders locally when needed. They are ignored by git.
 
 ## Recommended worker usage
 
@@ -24,12 +23,11 @@ PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest \
 
 ## Demo workspace seed
 
-The local `demo` workspace is intended to hold the 10 sample CVs used for local testing.
-
-If you already have the sample files in `./cvs`, seed the workspace folder like this:
+If you have private sample files outside the repository, seed the local demo folder like this:
 
 ```bash
-cp -f ./cvs/*.pdf ./workspaces/demo/
+mkdir -p ./workspaces/demo
+cp -f /path/to/private-cvs/*.pdf ./workspaces/demo/
 ```
 
 Then ingest them into the local `demo` tenant:
@@ -37,7 +35,7 @@ Then ingest them into the local `demo` tenant:
 ```bash
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest \
   "./workspaces/demo" \
-  --tenant-id 00000000-0000-0000-0000-000000000000
+  --tenant-id <tenant-id>
 ```
 
 The PDF files inside `workspaces/demo/` stay ignored by git.

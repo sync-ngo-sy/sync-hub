@@ -1,0 +1,18 @@
+repos:
+  - repo: local
+    hooks:
+      - id: repo-format-check
+        name: repository format check
+        entry: node scripts/check-repo-format.mjs
+        language: system
+        pass_filenames: false
+      - id: worker-ruff-check
+        name: worker ruff check
+        entry: python -m ruff check worker/src worker/tests scripts
+        language: system
+        pass_filenames: false
+      - id: frontend-type-check
+        name: frontend type check
+        entry: bash -c 'cd frontend && npm run check'
+        language: system
+        pass_filenames: false

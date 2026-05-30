@@ -4,7 +4,7 @@ import hashlib
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, List, Sequence
+from typing import Iterator, List, Sequence
 from uuid import NAMESPACE_URL, uuid5
 
 from .schema import DocumentSource

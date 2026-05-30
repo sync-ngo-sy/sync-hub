@@ -116,7 +116,7 @@ def _default_job_family_model() -> str:
 
 
 def _default_ingest_concurrency() -> str:
-    return _env_any("CV_BATCH_SIZE", "CVI_BATCH_SIZE", default="8")
+    return "8"
 
 
 def _default_supabase_plan() -> str:

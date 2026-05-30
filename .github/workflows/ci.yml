@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pr-validation:
+    name: PR validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          title = os.environ["PR_TITLE"].strip()
+          pattern = re.compile(r"^(build|chore|ci|docs|feat|fix|perf|refactor|security|test)(\([a-z0-9._-]+\))?: .{8,}$")
+          if pattern.match(title):
+              sys.exit(0)
+
+          print("PR title must match: type(scope): summary")
+          print("Allowed types: build, chore, ci, docs, feat, fix, perf, refactor, security, test")
+          print(f"Received: {title}")
+          sys.exit(1)
+          PY
+
+  repository-format:
+    name: Repository format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check repository file formatting
+        run: node scripts/check-repo-format.mjs
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint and static type check
+        run: npm run lint
+      - name: Format check
+        run: npm run format:check
+      - name: Unit smoke tests
+        run: npm run test
+      - name: Build
+        run: npm run build
+      - name: Dependency vulnerability scan
+        run: npm audit --audit-level=high
+
+  worker:
+    name: Worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install worker and developer tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "worker[dev]"
+      - name: Lint
+        run: python -m ruff check worker/src worker/tests scripts
+      - name: Unit tests with coverage threshold
+        run: python -m pytest --cov=cv_intelligence_worker --cov-report=term-missing --cov-fail-under=65 worker/tests
+      - name: Python security static analysis
+        run: python -m bandit -q -r worker/src scripts -lll
+      - name: Python dependency vulnerability scan
+        run: python -m pip_audit --skip-editable
+
+  supabase-migrations:
+    name: Supabase migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check migration hygiene
+        run: node scripts/check-supabase-migrations.mjs
+
+  supabase-functions:
+    name: Supabase functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Format check
+        run: deno fmt --check supabase/functions
+      - name: Lint
+        run: deno lint supabase/functions

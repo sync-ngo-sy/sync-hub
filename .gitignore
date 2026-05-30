@@ -45,6 +45,7 @@ supabase/.temp/
 *.log
 .tools/
 docs/generated/
+cvs/
 tmp/cv_intelligence_worker/
 tmp/
 temp/
