@@ -4,7 +4,7 @@ Offline-first CV search, ranking, and candidate analysis for recruiter workflows
 
 ## What this repo contains
 
-- `cvs/`: sample CV files for local development and pipeline validation.
+- `cvs/`: optional ignored local CV source folder for private development data.
 - `workspaces/`: git-safe tenant folder skeletons; real CV files placed here stay ignored.
 - `supabase/`: online backend layer for auth, Postgres, `pgvector`, RLS, and retrieval APIs.
 - `worker/`: offline ingestion and AI processing on a laptop or dedicated operator machine.
@@ -314,12 +314,13 @@ This creates or updates folders like:
 /Users/example/Library/CloudStorage/GoogleDrive-user@example.com/My Drive/cv-intelligence/CV Intelligence/beta
 ```
 
-### Seeding a workspace from the sample `cvs/` folder
+### Seeding a workspace from private local CVs
 
-The repo keeps a small local sample corpus in `./cvs` for testing. If you want to seed the `demo` workspace folder with those same files, copy them into `workspaces/demo/`:
+Private CVs must stay outside git. To seed a local workspace, copy your private files into an ignored workspace folder:
 
 ```bash
-cp -f ./cvs/*.pdf ./workspaces/demo/
+mkdir -p ./workspaces/demo
+cp -f /path/to/private-cvs/*.pdf ./workspaces/demo/
 ```
 
 Then ingest the seeded workspace folder into the local `demo` tenant:
@@ -327,7 +328,7 @@ Then ingest the seeded workspace folder into the local `demo` tenant:
 ```bash
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest \
   "./workspaces/demo" \
-  --tenant-id 00000000-0000-0000-0000-000000000000
+  --tenant-id <tenant-id>
 ```
 
 The copied PDFs under `workspaces/demo/` are ignored by git.

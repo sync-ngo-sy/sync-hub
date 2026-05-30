@@ -44,6 +44,7 @@ supabase/.temp/
 # Logs and temp files
 *.log
 .tools/
+cvs/
 tmp/cv_intelligence_worker/
 tmp/
 temp/
