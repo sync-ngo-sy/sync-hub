@@ -29,7 +29,15 @@ type SupabaseQueryResult = {
   error?: unknown;
   count?: number | null;
 };
-type SupabaseQueryLike = any;
+type SupabaseQueryLike = PromiseLike<SupabaseQueryResult> & {
+  eq: (column: string, value: unknown) => SupabaseQueryLike;
+  not: (column: string, operator: string, value: unknown) => SupabaseQueryLike;
+  like: (column: string, pattern: string) => SupabaseQueryLike;
+  ilike: (column: string, pattern: string) => SupabaseQueryLike;
+};
+type TenantFilterableQuery<T> = T & {
+  in: (column: string, values: readonly string[]) => T;
+};
 type GcsServiceAccountCredentials = {
   client_email?: string;
   private_key?: string;
@@ -523,12 +531,14 @@ async function getWorkspaceStats(
     : data;
 }
 
-function withTenantFilter(
-  query: SupabaseQueryLike,
+function withTenantFilter<T>(
+  query: T,
   tenantIds: string[],
   column = "tenant_id",
 ) {
-  return tenantIds.length ? query.in(column, tenantIds) : query;
+  return tenantIds.length
+    ? (query as TenantFilterableQuery<T>).in(column, tenantIds)
+    : query;
 }
 
 async function countRows(
@@ -539,7 +549,10 @@ async function countRows(
 ) {
   let query = supabase
     .from(table)
-    .select("*", { count: "exact", head: true });
+    .select("*", {
+      count: "exact",
+      head: true,
+    }) as unknown as SupabaseQueryLike;
   query = withTenantFilter(query, tenantIds);
   if (apply) {
     query = apply(query);
