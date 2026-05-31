@@ -2725,7 +2725,12 @@ const jobApplicationSelect = [
   "updated_at",
 ].join(", ");
 
-function clampInteger(value: unknown, fallback: number, min: number, max: number) {
+function clampInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) {
     return fallback;
@@ -2735,7 +2740,9 @@ function clampInteger(value: unknown, fallback: number, min: number, max: number
 
 function normalizeStatus(value: unknown) {
   const normalized = String(value ?? "draft").trim().toLowerCase();
-  return normalized === "active" || normalized === "closed" ? normalized : "draft";
+  return normalized === "active" || normalized === "closed"
+    ? normalized
+    : "draft";
 }
 
 function normalizePublicSlug(value: unknown) {
@@ -2754,7 +2761,9 @@ function normalizePublicSlug(value: unknown) {
 
 function normalizeRegion(value: unknown) {
   const normalized = String(value ?? "").trim().toUpperCase();
-  return normalized === "GCC" || normalized === "EU" || normalized === "USA" ? normalized : null;
+  return normalized === "GCC" || normalized === "EU" || normalized === "USA"
+    ? normalized
+    : null;
 }
 
 function normalizeEmploymentType(value: unknown) {
@@ -2806,7 +2815,10 @@ function seniorityRank(value: unknown) {
   if (normalized.includes("principal")) {
     return 6;
   }
-  if (normalized.includes("lead") || normalized.includes("architect") || normalized.includes("staff")) {
+  if (
+    normalized.includes("lead") || normalized.includes("architect") ||
+    normalized.includes("staff")
+  ) {
     return 5;
   }
   if (normalized.includes("senior")) {
@@ -2833,7 +2845,9 @@ function seniorityAlignment(candidate: unknown, required: unknown) {
   if (candidateRank === requiredRank) {
     return "Exact Match";
   }
-  if (Math.abs(candidateRank - requiredRank) === 1 || candidateRank > requiredRank) {
+  if (
+    Math.abs(candidateRank - requiredRank) === 1 || candidateRank > requiredRank
+  ) {
     return "Partial Match";
   }
   return "Mismatch";
@@ -2846,22 +2860,39 @@ function normalizeSkillSet(value: unknown) {
 function extractSkillsFromText(text: string) {
   return normalizeSkillList(
     [
-      ...text.matchAll(/\b(?:React|TypeScript|JavaScript|Node(?:\.js)?|Python|Java|C#|\.NET|Angular|Vue|Next(?:\.js)?|SQL|PostgreSQL|MySQL|MongoDB|AWS|Azure|Google Cloud|GCP|Docker|Kubernetes|Terraform|GraphQL|REST(?: APIs?)?|PHP|Laravel|Django|FastAPI|Flask|Flutter|React Native|Swift|Kotlin|Linux|Redis|Kafka|TensorFlow|PyTorch|Pandas|NumPy)\b/gi),
+      ...text.matchAll(
+        /\b(?:React|TypeScript|JavaScript|Node(?:\.js)?|Python|Java|C#|\.NET|Angular|Vue|Next(?:\.js)?|SQL|PostgreSQL|MySQL|MongoDB|AWS|Azure|Google Cloud|GCP|Docker|Kubernetes|Terraform|GraphQL|REST(?: APIs?)?|PHP|Laravel|Django|FastAPI|Flask|Flutter|React Native|Swift|Kotlin|Linux|Redis|Kafka|TensorFlow|PyTorch|Pandas|NumPy)\b/gi,
+      ),
     ].map((match) => match[0]),
   );
 }
 
-function heuristicJobExtraction(input: { title: string | null; jobDescription: string; employerRegion: string | null }) {
+function heuristicJobExtraction(
+  input: {
+    title: string | null;
+    jobDescription: string;
+    employerRegion: string | null;
+  },
+) {
   const text = input.jobDescription;
   const lower = text.toLowerCase();
   const allSkills = extractSkillsFromText(text);
   const preferred = allSkills.filter((skill) => {
     const index = lower.indexOf(skill.toLowerCase());
-    const window = index >= 0 ? lower.slice(Math.max(0, index - 80), index + 120) : "";
+    const window = index >= 0
+      ? lower.slice(Math.max(0, index - 80), index + 120)
+      : "";
     return /preferred|nice to have|plus|bonus|advantage/.test(window);
   });
   const required = allSkills.filter((skill) => !preferred.includes(skill));
-  const seniority = normalizeJobSeniority(input.title ?? text) || (/\blead|architect|principal\b/i.test(text) ? "Lead" : /\bsenior|sr\b/i.test(text) ? "Senior" : /\bjunior|entry|graduate\b/i.test(text) ? "Junior" : "Mid");
+  const seniority = normalizeJobSeniority(input.title ?? text) ||
+    (/\blead|architect|principal\b/i.test(text)
+      ? "Lead"
+      : /\bsenior|sr\b/i.test(text)
+      ? "Senior"
+      : /\bjunior|entry|graduate\b/i.test(text)
+      ? "Junior"
+      : "Mid");
   const employmentType = /contract|contractor/i.test(text)
     ? "Contract"
     : /part[-\s]?time/i.test(text)
@@ -2873,19 +2904,49 @@ function heuristicJobExtraction(input: { title: string | null; jobDescription: s
     : "Full-time";
   const locationCountry =
     normalizeLocationValue(text, { allowFallback: false }) ??
-    (input.employerRegion === "GCC" ? "United Arab Emirates" : input.employerRegion === "USA" ? "United States" : null);
-  const remotePolicy = /remote/i.test(text) ? "Remote" : /hybrid/i.test(text) ? "Hybrid" : /onsite|on-site/i.test(text) ? "Onsite" : "Unspecified";
+      (input.employerRegion === "GCC"
+        ? "United Arab Emirates"
+        : input.employerRegion === "USA"
+        ? "United States"
+        : null);
+  const remotePolicy = /remote/i.test(text)
+    ? "Remote"
+    : /hybrid/i.test(text)
+    ? "Hybrid"
+    : /onsite|on-site/i.test(text)
+    ? "Onsite"
+    : "Unspecified";
   const responsibilities = text
     .split(/\n|(?:^|\s)[*-]\s+/)
     .map((line) => line.trim().replace(/^[-*]\s*/, ""))
-    .filter((line) => line.length >= 24 && /\b(?:build|develop|design|lead|manage|deliver|collaborate|implement|maintain|support|create|drive)\b/i.test(line))
+    .filter((line) =>
+      line.length >= 24 &&
+      /\b(?:build|develop|design|lead|manage|deliver|collaborate|implement|maintain|support|create|drive)\b/i
+        .test(line)
+    )
     .slice(0, 6);
 
   return {
-    requiredSkills: required.map((name) => ({ name, confidence: 0.72, evidence: name })),
-    preferredSkills: preferred.map((name) => ({ name, confidence: 0.66, evidence: name })),
-    seniorityLevel: { value: seniority, confidence: 0.64, evidence: input.title ?? "Job description seniority signals" },
-    employmentType: { value: employmentType, confidence: 0.7, evidence: "Employment type inferred from job description" },
+    requiredSkills: required.map((name) => ({
+      name,
+      confidence: 0.72,
+      evidence: name,
+    })),
+    preferredSkills: preferred.map((name) => ({
+      name,
+      confidence: 0.66,
+      evidence: name,
+    })),
+    seniorityLevel: {
+      value: seniority,
+      confidence: 0.64,
+      evidence: input.title ?? "Job description seniority signals",
+    },
+    employmentType: {
+      value: employmentType,
+      confidence: 0.7,
+      evidence: "Employment type inferred from job description",
+    },
     location: {
       country: locationCountry,
       city: null,
@@ -2894,7 +2955,11 @@ function heuristicJobExtraction(input: { title: string | null; jobDescription: s
       confidence: locationCountry ? 0.62 : 0.38,
     },
     keyResponsibilities: responsibilities,
-    warnings: required.length ? [] : [{ type: "MISSING", message: "No explicit known technical skills were detected; review required skills manually." }],
+    warnings: required.length ? [] : [{
+      type: "MISSING",
+      message:
+        "No explicit known technical skills were detected; review required skills manually.",
+    }],
   };
 }
 
@@ -2974,12 +3039,26 @@ const jobExtractionSchema = {
       },
     },
   },
-  required: ["requiredSkills", "preferredSkills", "seniorityLevel", "employmentType", "location", "keyResponsibilities", "warnings"],
+  required: [
+    "requiredSkills",
+    "preferredSkills",
+    "seniorityLevel",
+    "employmentType",
+    "location",
+    "keyResponsibilities",
+    "warnings",
+  ],
 };
 
 type JobExtractionPayload = ReturnType<typeof heuristicJobExtraction>;
 
-async function extractJobDescription(input: { title: string | null; jobDescription: string; employerRegion: string | null }) {
+async function extractJobDescription(
+  input: {
+    title: string | null;
+    jobDescription: string;
+    employerRegion: string | null;
+  },
+) {
   const fallback = heuristicJobExtraction(input);
   try {
     const result = await generateStructuredObject<JobExtractionPayload>({
@@ -2995,17 +3074,33 @@ async function extractJobDescription(input: { title: string | null; jobDescripti
       }),
     });
     if (!result?.object) {
-      return { payload: fallback, provider: "heuristic", model: "local-fallback" };
+      return {
+        payload: fallback,
+        provider: "heuristic",
+        model: "local-fallback",
+      };
     }
-    return { payload: result.object, provider: result.provider, model: result.model };
+    return {
+      payload: result.object,
+      provider: result.provider,
+      model: result.model,
+    };
   } catch {
-    return { payload: fallback, provider: "heuristic", model: "local-fallback" };
+    return {
+      payload: fallback,
+      provider: "heuristic",
+      model: "local-fallback",
+    };
   }
 }
 
 function extractionToJobFields(payload: JobExtractionPayload) {
-  const requiredSkills = normalizeSkillList(payload.requiredSkills.map((skill) => skill.name)).slice(0, 32);
-  const preferredSkills = normalizeSkillList(payload.preferredSkills.map((skill) => skill.name))
+  const requiredSkills = normalizeSkillList(
+    payload.requiredSkills.map((skill) => skill.name),
+  ).slice(0, 32);
+  const preferredSkills = normalizeSkillList(
+    payload.preferredSkills.map((skill) => skill.name),
+  )
     .filter((skill) => !requiredSkills.includes(skill))
     .slice(0, 32);
   return {
@@ -3014,10 +3109,17 @@ function extractionToJobFields(payload: JobExtractionPayload) {
     seniorityLevel: normalizeJobSeniority(payload.seniorityLevel.value),
     employmentType: normalizeEmploymentType(payload.employmentType.value),
     locationInfo: asRecord(payload.location),
-    keyResponsibilities: payload.keyResponsibilities.map((item) => item.trim()).filter(Boolean).slice(0, 10),
+    keyResponsibilities: payload.keyResponsibilities.map((item) => item.trim())
+      .filter(Boolean).slice(0, 10),
     aiConfidence: {
-      requiredSkills: payload.requiredSkills.map((skill) => ({ name: skill.name, confidence: skill.confidence })),
-      preferredSkills: payload.preferredSkills.map((skill) => ({ name: skill.name, confidence: skill.confidence })),
+      requiredSkills: payload.requiredSkills.map((skill) => ({
+        name: skill.name,
+        confidence: skill.confidence,
+      })),
+      preferredSkills: payload.preferredSkills.map((skill) => ({
+        name: skill.name,
+        confidence: skill.confidence,
+      })),
       seniorityLevel: payload.seniorityLevel.confidence,
       employmentType: payload.employmentType.confidence,
       location: payload.location.confidence,
@@ -3046,7 +3148,11 @@ async function writeAuditEvent(
   });
 }
 
-async function listJobPostings(supabase: ReturnType<typeof createAuthedClient>, tenantIds: string[], body: JsonRecord) {
+async function listJobPostings(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+  body: JsonRecord,
+) {
   let query = supabase
     .from("job_postings")
     .select(jobPostingSelect)
@@ -3058,18 +3164,25 @@ async function listJobPostings(supabase: ReturnType<typeof createAuthedClient>, 
   if (body.status && status) {
     query = query.eq("status", status);
   }
-  const { data, error } = await query.limit(clampInteger(body.limit, 100, 1, 500));
+  const { data, error } = await query.limit(
+    clampInteger(body.limit, 100, 1, 500),
+  );
   if (error) {
     throw error;
   }
   return data ?? [];
 }
 
-async function getJobPosting(supabase: ReturnType<typeof createAuthedClient>, jobId: string) {
+async function getJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  jobId: string,
+) {
   if (!jobId) {
     throw new Error("job_id is required");
   }
-  const { data, error } = await supabase.from("job_postings").select(jobPostingSelect).eq("id", jobId).maybeSingle();
+  const { data, error } = await supabase.from("job_postings").select(
+    jobPostingSelect,
+  ).eq("id", jobId).maybeSingle();
   if (error) {
     throw error;
   }
@@ -3079,12 +3192,18 @@ async function getJobPosting(supabase: ReturnType<typeof createAuthedClient>, jo
   return data;
 }
 
-async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function saveJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const userId = await getCurrentUserId(supabase);
   const job = asRecord(body.job);
   const jobId = asString(job.id);
-  const existing = jobId ? await getJobPosting(supabase, jobId) as unknown as JsonRecord : null;
-  const tenantId = asString(job.tenant_id) ?? asString(job.tenantId) ?? asString(existing?.tenant_id);
+  const existing = jobId
+    ? await getJobPosting(supabase, jobId) as unknown as JsonRecord
+    : null;
+  const tenantId = asString(job.tenant_id) ?? asString(job.tenantId) ??
+    asString(existing?.tenant_id);
   if (!tenantId) {
     throw new Error("tenant_id is required");
   }
@@ -3092,33 +3211,52 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
   const status = normalizeStatus(job.status ?? existing?.status);
   const currentStatus = normalizeStatus(existing?.status);
   const title = asString(job.title) ?? asString(existing?.title) ?? "";
-  const employerName = asString(job.employer_name) ?? asString(job.employerName) ?? asString(existing?.employer_name) ?? "";
-  const employerCountry = asString(job.employer_country) ?? asString(job.employerCountry) ?? asString(existing?.employer_country) ?? "";
-  const employerRegion = normalizeRegion(job.employer_region ?? job.employerRegion ?? existing?.employer_region);
-  const jobDescription = asString(job.job_description) ?? asString(job.jobDescription) ?? asString(existing?.job_description) ?? "";
-  const requiredSkills = normalizeSkillSet(job.required_skills ?? job.requiredSkills ?? existing?.required_skills);
-  const preferredSkills = normalizeSkillSet(job.preferred_skills ?? job.preferredSkills ?? existing?.preferred_skills)
+  const employerName = asString(job.employer_name) ??
+    asString(job.employerName) ?? asString(existing?.employer_name) ?? "";
+  const employerCountry = asString(job.employer_country) ??
+    asString(job.employerCountry) ?? asString(existing?.employer_country) ?? "";
+  const employerRegion = normalizeRegion(
+    job.employer_region ?? job.employerRegion ?? existing?.employer_region,
+  );
+  const jobDescription = asString(job.job_description) ??
+    asString(job.jobDescription) ?? asString(existing?.job_description) ?? "";
+  const requiredSkills = normalizeSkillSet(
+    job.required_skills ?? job.requiredSkills ?? existing?.required_skills,
+  );
+  const preferredSkills = normalizeSkillSet(
+    job.preferred_skills ?? job.preferredSkills ?? existing?.preferred_skills,
+  )
     .filter((skill) => !requiredSkills.includes(skill));
-  const seniorityLevel = normalizeJobSeniority(job.seniority_level ?? job.seniorityLevel ?? existing?.seniority_level);
-  const employmentType = normalizeEmploymentType(job.employment_type ?? job.employmentType ?? existing?.employment_type);
-  const deadline = asString(job.application_deadline) ?? asString(job.applicationDeadline) ?? asString(existing?.application_deadline);
-  const isPublic =
-    typeof job.is_public === "boolean"
-      ? job.is_public
-      : typeof job.isPublic === "boolean"
-      ? job.isPublic
-      : existing?.is_public === true;
-  const publicSlug = normalizePublicSlug(job.public_slug ?? job.publicSlug ?? existing?.public_slug);
-  const publicTitle = asString(job.public_title) ?? asString(job.publicTitle) ?? asString(existing?.public_title) ?? title;
-  const publicSummary = asString(job.public_summary) ?? asString(job.publicSummary) ?? asString(existing?.public_summary);
-  const publicDescription = asString(job.public_description) ?? asString(job.publicDescription) ?? asString(existing?.public_description);
-  const publicLocation = asString(job.public_location) ?? asString(job.publicLocation) ?? asString(existing?.public_location);
-  const publicApplyEnabled =
-    typeof job.public_apply_enabled === "boolean"
-      ? job.public_apply_enabled
-      : typeof job.publicApplyEnabled === "boolean"
-      ? job.publicApplyEnabled
-      : existing?.public_apply_enabled !== false;
+  const seniorityLevel = normalizeJobSeniority(
+    job.seniority_level ?? job.seniorityLevel ?? existing?.seniority_level,
+  );
+  const employmentType = normalizeEmploymentType(
+    job.employment_type ?? job.employmentType ?? existing?.employment_type,
+  );
+  const deadline = asString(job.application_deadline) ??
+    asString(job.applicationDeadline) ??
+    asString(existing?.application_deadline);
+  const isPublic = typeof job.is_public === "boolean"
+    ? job.is_public
+    : typeof job.isPublic === "boolean"
+    ? job.isPublic
+    : existing?.is_public === true;
+  const publicSlug = normalizePublicSlug(
+    job.public_slug ?? job.publicSlug ?? existing?.public_slug,
+  );
+  const publicTitle = asString(job.public_title) ?? asString(job.publicTitle) ??
+    asString(existing?.public_title) ?? title;
+  const publicSummary = asString(job.public_summary) ??
+    asString(job.publicSummary) ?? asString(existing?.public_summary);
+  const publicDescription = asString(job.public_description) ??
+    asString(job.publicDescription) ?? asString(existing?.public_description);
+  const publicLocation = asString(job.public_location) ??
+    asString(job.publicLocation) ?? asString(existing?.public_location);
+  const publicApplyEnabled = typeof job.public_apply_enabled === "boolean"
+    ? job.public_apply_enabled
+    : typeof job.publicApplyEnabled === "boolean"
+    ? job.publicApplyEnabled
+    : existing?.public_apply_enabled !== false;
   if (deadline) {
     const deadlineDate = new Date(`${deadline}T00:00:00Z`);
     const today = new Date();
@@ -3127,11 +3265,23 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
       throw new Error("application_deadline must be today or a future date");
     }
   }
-  if (status === "active" && (!title || !employerName || !employerCountry || !employerRegion || !jobDescription || !requiredSkills.length || !seniorityLevel || !employmentType)) {
-    throw new Error("Publishing requires title, employer, region, description, required skills, seniority, and employment type.");
+  if (
+    status === "active" &&
+    (!title || !employerName || !employerCountry || !employerRegion ||
+      !jobDescription || !requiredSkills.length || !seniorityLevel ||
+      !employmentType)
+  ) {
+    throw new Error(
+      "Publishing requires title, employer, region, description, required skills, seniority, and employment type.",
+    );
   }
-  if (isPublic && status === "active" && (!publicSlug || !publicTitle || !publicDescription)) {
-    throw new Error("Public jobs require a public slug, public title, and redacted public description.");
+  if (
+    isPublic && status === "active" &&
+    (!publicSlug || !publicTitle || !publicDescription)
+  ) {
+    throw new Error(
+      "Public jobs require a public slug, public title, and redacted public description.",
+    );
   }
   const now = new Date().toISOString();
 
@@ -3148,15 +3298,34 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
     employment_type: employmentType,
     application_deadline: deadline,
     status,
-    posted_date: status === "active" && currentStatus !== "active" ? now.slice(0, 10) : asString(existing?.posted_date),
-    location_info: asRecord(job.location_info ?? job.locationInfo ?? existing?.location_info),
-    key_responsibilities: asStringArray(job.key_responsibilities ?? job.keyResponsibilities ?? existing?.key_responsibilities).slice(0, 12),
-    ai_profile: asRecord(job.ai_profile ?? job.aiProfile ?? existing?.ai_profile),
-    ai_confidence: asRecord(job.ai_confidence ?? job.aiConfidence ?? existing?.ai_confidence),
+    posted_date: status === "active" && currentStatus !== "active"
+      ? now.slice(0, 10)
+      : asString(existing?.posted_date),
+    location_info: asRecord(
+      job.location_info ?? job.locationInfo ?? existing?.location_info,
+    ),
+    key_responsibilities: asStringArray(
+      job.key_responsibilities ?? job.keyResponsibilities ??
+        existing?.key_responsibilities,
+    ).slice(0, 12),
+    ai_profile: asRecord(
+      job.ai_profile ?? job.aiProfile ?? existing?.ai_profile,
+    ),
+    ai_confidence: asRecord(
+      job.ai_confidence ?? job.aiConfidence ?? existing?.ai_confidence,
+    ),
     created_by_user_id: asString(existing?.created_by_user_id) ?? userId,
     updated_by_user_id: userId,
-    closed_at: status === "closed" && currentStatus !== "closed" ? now : status !== "closed" ? null : asString(existing?.closed_at),
-    closed_by_user_id: status === "closed" && currentStatus !== "closed" ? userId : status !== "closed" ? null : asString(existing?.closed_by_user_id),
+    closed_at: status === "closed" && currentStatus !== "closed"
+      ? now
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_at),
+    closed_by_user_id: status === "closed" && currentStatus !== "closed"
+      ? userId
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_by_user_id),
     is_public: isPublic,
     public_slug: publicSlug,
     public_title: publicTitle,
@@ -3164,12 +3333,17 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
     public_description: publicDescription,
     public_location: publicLocation,
     public_apply_enabled: publicApplyEnabled,
-    public_published_at: isPublic && status === "active" ? asString(existing?.public_published_at) ?? now : null,
+    public_published_at: isPublic && status === "active"
+      ? asString(existing?.public_published_at) ?? now
+      : null,
   };
 
   const mutation = jobId
-    ? supabase.from("job_postings").update(payload).eq("id", jobId).select(jobPostingSelect).single()
-    : supabase.from("job_postings").insert(payload).select(jobPostingSelect).single();
+    ? supabase.from("job_postings").update(payload).eq("id", jobId).select(
+      jobPostingSelect,
+    ).single()
+    : supabase.from("job_postings").insert(payload).select(jobPostingSelect)
+      .single();
   const { data, error } = await mutation;
   if (error) {
     throw error;
@@ -3179,7 +3353,11 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
   await writeAuditEvent(supabase, {
     tenantId,
     actorUserId: userId,
-    action: jobId ? "JOB_UPDATED" : status === "active" ? "JOB_PUBLISHED" : "JOB_CREATED",
+    action: jobId
+      ? "JOB_UPDATED"
+      : status === "active"
+      ? "JOB_PUBLISHED"
+      : "JOB_CREATED",
     entityType: "job_posting",
     entityId: savedJobId,
     payload: { status, requiredSkills, preferredSkills },
@@ -3187,21 +3365,35 @@ async function saveJobPosting(supabase: ReturnType<typeof createAuthedClient>, b
   return savedJob;
 }
 
-async function extractJobPosting(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function extractJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const userId = await getCurrentUserId(supabase);
   const jobId = asString(body.job_id);
-  const job = jobId ? await getJobPosting(supabase, jobId) as unknown as JsonRecord : null;
+  const job = jobId
+    ? await getJobPosting(supabase, jobId) as unknown as JsonRecord
+    : null;
   const tenantId = asString(body.tenant_id) ?? asString(job?.tenant_id);
   const title = asString(body.title) ?? asString(job?.title);
-  const employerRegion = normalizeRegion(body.employer_region ?? job?.employer_region);
-  const jobDescription = asString(body.job_description) ?? asString(body.jobDescription) ?? asString(job?.job_description);
+  const employerRegion = normalizeRegion(
+    body.employer_region ?? job?.employer_region,
+  );
+  const jobDescription = asString(body.job_description) ??
+    asString(body.jobDescription) ?? asString(job?.job_description);
   if (!tenantId || !jobDescription) {
     throw new Error("tenant_id and job_description are required");
   }
 
-  const { payload, provider, model } = await extractJobDescription({ title, jobDescription, employerRegion });
+  const { payload, provider, model } = await extractJobDescription({
+    title,
+    jobDescription,
+    employerRegion,
+  });
   const fields = extractionToJobFields(payload);
-  const inputHash = await sha256Hex(JSON.stringify({ title, employerRegion, jobDescription }));
+  const inputHash = await sha256Hex(
+    JSON.stringify({ title, employerRegion, jobDescription }),
+  );
   const extraction = {
     ...payload,
     ...fields,
@@ -3231,7 +3423,11 @@ async function extractJobPosting(supabase: ReturnType<typeof createAuthedClient>
     action: "AI_EXTRACTION_COMPLETED",
     entityType: jobId ? "job_posting" : "job_extraction",
     entityId: jobId ?? inputHash,
-    payload: { modelProvider: provider, modelName: model, warningCount: payload.warnings.length },
+    payload: {
+      modelProvider: provider,
+      modelName: model,
+      warningCount: payload.warnings.length,
+    },
   });
   return extraction;
 }
@@ -3244,11 +3440,15 @@ function buildJobProfile(job: JsonRecord) {
     `Preferred Skills: ${asStringArray(job.preferred_skills).join(", ")}`,
     `Seniority: ${asString(job.seniority_level) ?? ""}`,
     `Employment Type: ${asString(job.employment_type) ?? ""}`,
-    `Location: ${asString(location.country) ?? asString(job.employer_country) ?? ""} ${asString(location.remotePolicy) ?? ""}`,
+    `Location: ${
+      asString(location.country) ?? asString(job.employer_country) ?? ""
+    } ${asString(location.remotePolicy) ?? ""}`,
     `Responsibilities: ${asStringArray(job.key_responsibilities).join("; ")}`,
     `Description: ${asString(job.job_description) ?? ""}`,
   ];
-  return lines.filter((line) => line.replace(/^[^:]+:\s*/, "").trim()).join("\n");
+  return lines.filter((line) => line.replace(/^[^:]+:\s*/, "").trim()).join(
+    "\n",
+  );
 }
 
 function textIncludesSkill(candidateSkills: string[], requiredSkill: string) {
@@ -3264,25 +3464,58 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
     ...asStringArray(matchedFilters.matched_skills),
     ...asStringArray(asRecord(candidate.candidate_snapshot).top_skills),
   ]);
-  const matchedSkills = requiredSkills.filter((skill) => textIncludesSkill(candidateSkills, skill));
-  const missingSkills = requiredSkills.filter((skill) => !textIncludesSkill(candidateSkills, skill));
-  const preferredCoverage = preferredSkills.filter((skill) => textIncludesSkill(candidateSkills, skill)).length / Math.max(1, preferredSkills.length);
-  const requiredCoverage = matchedSkills.length / Math.max(1, requiredSkills.length);
-  const semanticScore = Math.max(0, Math.min(100, Math.round((asNumber(candidate.match_rate) ?? asNumber(candidate.score) ?? 0) * (asNumber(candidate.match_rate) === null ? 100 : 1))));
-  const alignment = seniorityAlignment(candidate.seniority, job.seniority_level);
-  const seniorityScore = alignment === "Exact Match" ? 100 : alignment === "Partial Match" ? 74 : 35;
-  const experienceYears = asNumber(candidate.years_experience) ?? 0;
-  const requiredYears = seniorityRank(job.seniority_level) >= 4 ? 5 : seniorityRank(job.seniority_level) >= 3 ? 3 : 1;
-  const experienceScore = Math.min(100, Math.round((experienceYears / Math.max(1, requiredYears)) * 100));
-  const aiScore = Math.round(
-    (0.3 * requiredCoverage * 100)
-    + (0.25 * Math.min(100, experienceScore))
-    + (0.15 * seniorityScore)
-    + (0.1 * semanticScore)
-    + (0.1 * preferredCoverage * 100)
-    + 7,
+  const matchedSkills = requiredSkills.filter((skill) =>
+    textIncludesSkill(candidateSkills, skill)
   );
-  const finalScore = Math.max(0, Math.min(100, Math.round((0.2 * semanticScore) + (0.8 * aiScore))));
+  const missingSkills = requiredSkills.filter((skill) =>
+    !textIncludesSkill(candidateSkills, skill)
+  );
+  const preferredCoverage =
+    preferredSkills.filter((skill) => textIncludesSkill(candidateSkills, skill))
+      .length / Math.max(1, preferredSkills.length);
+  const requiredCoverage = matchedSkills.length /
+    Math.max(1, requiredSkills.length);
+  const semanticScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        (asNumber(candidate.match_rate) ?? asNumber(candidate.score) ?? 0) *
+          (asNumber(candidate.match_rate) === null ? 100 : 1),
+      ),
+    ),
+  );
+  const alignment = seniorityAlignment(
+    candidate.seniority,
+    job.seniority_level,
+  );
+  const seniorityScore = alignment === "Exact Match"
+    ? 100
+    : alignment === "Partial Match"
+    ? 74
+    : 35;
+  const experienceYears = asNumber(candidate.years_experience) ?? 0;
+  const requiredYears = seniorityRank(job.seniority_level) >= 4
+    ? 5
+    : seniorityRank(job.seniority_level) >= 3
+    ? 3
+    : 1;
+  const experienceScore = Math.min(
+    100,
+    Math.round((experienceYears / Math.max(1, requiredYears)) * 100),
+  );
+  const aiScore = Math.round(
+    (0.3 * requiredCoverage * 100) +
+      (0.25 * Math.min(100, experienceScore)) +
+      (0.15 * seniorityScore) +
+      (0.1 * semanticScore) +
+      (0.1 * preferredCoverage * 100) +
+      7,
+  );
+  const finalScore = Math.max(
+    0,
+    Math.min(100, Math.round((0.2 * semanticScore) + (0.8 * aiScore))),
+  );
   return {
     semanticScore,
     aiScore,
@@ -3290,10 +3523,22 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
     matchedSkills,
     missingSkills,
     seniorityAlignment: alignment,
-    experienceSummary: `${String(candidate.name ?? "Candidate")} has ${experienceYears || "unspecified"} years of experience and is indexed as ${String(candidate.seniority ?? "unknown")} seniority.`,
+    experienceSummary: `${String(candidate.name ?? "Candidate")} has ${
+      experienceYears || "unspecified"
+    } years of experience and is indexed as ${
+      String(candidate.seniority ?? "unknown")
+    } seniority.`,
     matchExplanation: matchedSkills.length
-      ? `Matches ${matchedSkills.length} required skill${matchedSkills.length === 1 ? "" : "s"} for ${String(job.title ?? "this role")}; ${missingSkills.length ? `missing ${missingSkills.join(", ")}.` : "no required skill gaps detected."}`
-      : `Semantic match found for ${String(job.title ?? "this role")}, but required skill coverage needs recruiter review.`,
+      ? `Matches ${matchedSkills.length} required skill${
+        matchedSkills.length === 1 ? "" : "s"
+      } for ${String(job.title ?? "this role")}; ${
+        missingSkills.length
+          ? `missing ${missingSkills.join(", ")}.`
+          : "no required skill gaps detected."
+      }`
+      : `Semantic match found for ${
+        String(job.title ?? "this role")
+      }, but required skill coverage needs recruiter review.`,
     scoringBreakdown: {
       requiredSkillAlignment: Math.round(requiredCoverage * 30),
       relevantWorkExperience: Math.round(Math.min(25, experienceScore * 0.25)),
@@ -3305,23 +3550,41 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
   };
 }
 
-async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function startJobMatchingRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const userId = await getCurrentUserId(supabase);
   const jobId = asString(body.job_id);
-  const job = await getJobPosting(supabase, jobId ?? "") as unknown as JsonRecord;
+  const job = await getJobPosting(
+    supabase,
+    jobId ?? "",
+  ) as unknown as JsonRecord;
   if (normalizeStatus(job.status) !== "active") {
     throw new Error("Only active job postings can be matched.");
   }
   const limit = clampInteger(body.limit, 20, 1, 100);
-  const semanticPoolSize = clampInteger(body.semantic_pool_size ?? body.semanticPoolSize, 200, limit, 500);
-  const rerankPoolSize = clampInteger(body.rerank_pool_size ?? body.rerankPoolSize, 50, limit, 100);
+  const semanticPoolSize = clampInteger(
+    body.semantic_pool_size ?? body.semanticPoolSize,
+    200,
+    limit,
+    500,
+  );
+  const rerankPoolSize = clampInteger(
+    body.rerank_pool_size ?? body.rerankPoolSize,
+    50,
+    limit,
+    100,
+  );
   const profileText = buildJobProfile(job);
   const embeddingPayload = await buildQueryEmbedding(profileText);
   const matchingConfig = {
     limit,
     semanticPoolSize,
     rerankPoolSize,
-    mandatoryCriteria: asRecord(body.mandatory_criteria ?? body.mandatoryCriteria),
+    mandatoryCriteria: asRecord(
+      body.mandatory_criteria ?? body.mandatoryCriteria,
+    ),
   };
   const runInsert = await supabase.from("job_matching_runs").insert({
     tenant_id: job.tenant_id,
@@ -3361,28 +3624,41 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
 
   try {
     const mandatory = asRecord(matchingConfig.mandatoryCriteria);
-    const location = asString(asRecord(job.location_info).country) ?? asString(job.employer_country);
+    const location = asString(asRecord(job.location_info).country) ??
+      asString(job.employer_country);
     const rpcPayload = {
       p_q: profileText,
       p_query_embedding: embeddingPayload.embedding,
       p_limit: Math.max(semanticPoolSize, rerankPoolSize),
       p_offset: 0,
       p_role: asString(job.title),
-      p_seniority: normalizeSeniorityValue(asString(job.seniority_level)) ?? null,
+      p_seniority: normalizeSeniorityValue(asString(job.seniority_level)) ??
+        null,
       p_min_years: null,
       p_skills: asStringArray(job.required_skills),
       p_embedding_version: null,
       p_rank_version: "job-match-v1",
       p_tenant_ids: null,
       p_filter_role: null,
-      p_filter_seniority: normalizeSeniorityValue(asString(mandatory.minimum_seniority ?? mandatory.minimumSeniority)) ?? null,
-      p_filter_min_years: asNumber(mandatory.minimum_years ?? mandatory.minimumYears),
-      p_filter_skills: asStringArray(mandatory.required_skills ?? mandatory.requiredSkills),
+      p_filter_seniority: normalizeSeniorityValue(
+        asString(mandatory.minimum_seniority ?? mandatory.minimumSeniority),
+      ) ?? null,
+      p_filter_min_years: asNumber(
+        mandatory.minimum_years ?? mandatory.minimumYears,
+      ),
+      p_filter_skills: asStringArray(
+        mandatory.required_skills ?? mandatory.requiredSkills,
+      ),
       p_filter_companies: [],
       p_filter_location: asString(mandatory.location) ?? null,
     };
-    let { data: rawCandidates, error } = await supabase.rpc("search_candidates_with_rate_v1", rpcPayload);
-    if (error && `${error.message}`.includes("search_candidates_with_rate_v1")) {
+    let { data: rawCandidates, error } = await supabase.rpc(
+      "search_candidates_with_rate_v1",
+      rpcPayload,
+    );
+    if (
+      error && `${error.message}`.includes("search_candidates_with_rate_v1")
+    ) {
       const fallback = await supabase.rpc("search_candidates_v1", rpcPayload);
       rawCandidates = fallback.data;
       error = fallback.error;
@@ -3393,10 +3669,15 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
 
     const candidates = ((rawCandidates ?? []) as JsonRecord[])
       .filter((candidate) => {
-        if (!location || !asString(mandatory.location_required ?? mandatory.locationRequired)) {
+        if (
+          !location ||
+          !asString(mandatory.location_required ?? mandatory.locationRequired)
+        ) {
           return true;
         }
-        return String(candidate.location ?? "").toLowerCase().includes(location.toLowerCase());
+        return String(candidate.location ?? "").toLowerCase().includes(
+          location.toLowerCase(),
+        );
       })
       .slice(0, rerankPoolSize)
       .map((candidate) => {
@@ -3412,7 +3693,8 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
         matching_run_id: insertedRunId,
         job_posting_id: job.id,
         candidate_id: candidate.candidate_id,
-        candidate_source_tenant_id: asString(candidate.tenant_id) ?? asString(job.tenant_id),
+        candidate_source_tenant_id: asString(candidate.tenant_id) ??
+          asString(job.tenant_id),
         rank: index + 1,
         semantic_score: score.semanticScore,
         ai_score: score.aiScore,
@@ -3442,7 +3724,9 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
           subscores: candidate.subscores,
         },
       }));
-      const insertResults = await supabase.from("job_matching_results").insert(rows);
+      const insertResults = await supabase.from("job_matching_results").insert(
+        rows,
+      );
       if (insertResults.error) {
         throw insertResults.error;
       }
@@ -3452,7 +3736,10 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
     const update = await supabase.from("job_matching_runs").update({
       status: "completed",
       retrieved_count: (rawCandidates ?? []).length,
-      filtered_count: Math.max(0, (rawCandidates ?? []).length - candidates.length),
+      filtered_count: Math.max(
+        0,
+        (rawCandidates ?? []).length - candidates.length,
+      ),
       reranked_count: Math.min((rawCandidates ?? []).length, rerankPoolSize),
       completed_count: candidates.length,
       completed_at: completedAt,
@@ -3466,7 +3753,10 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
       action: "MATCHING_RUN_COMPLETED",
       entityType: "job_matching_run",
       entityId: insertedRunId,
-      payload: { completedCount: candidates.length, retrievedCount: (rawCandidates ?? []).length },
+      payload: {
+        completedCount: candidates.length,
+        retrievedCount: (rawCandidates ?? []).length,
+      },
     });
     return getMatchingRun(supabase, insertedRunId);
   } catch (error) {
@@ -3487,7 +3777,10 @@ async function startJobMatchingRun(supabase: ReturnType<typeof createAuthedClien
   }
 }
 
-async function listMatchingRuns(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function listMatchingRuns(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const jobId = asString(body.job_id);
   if (!jobId) {
     throw new Error("job_id is required");
@@ -3504,13 +3797,20 @@ async function listMatchingRuns(supabase: ReturnType<typeof createAuthedClient>,
   return data ?? [];
 }
 
-async function getMatchingRun(supabase: ReturnType<typeof createAuthedClient>, runId: string) {
+async function getMatchingRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  runId: string,
+) {
   if (!runId) {
     throw new Error("run_id is required");
   }
   const [runResult, resultsResult] = await Promise.all([
-    supabase.from("job_matching_runs").select(matchingRunSelect).eq("id", runId).maybeSingle(),
-    supabase.from("job_matching_results").select(matchingResultSelect).eq("matching_run_id", runId).order("rank", { ascending: true }),
+    supabase.from("job_matching_runs").select(matchingRunSelect).eq("id", runId)
+      .maybeSingle(),
+    supabase.from("job_matching_results").select(matchingResultSelect).eq(
+      "matching_run_id",
+      runId,
+    ).order("rank", { ascending: true }),
   ]);
   if (runResult.error) {
     throw runResult.error;
@@ -3527,7 +3827,10 @@ async function getMatchingRun(supabase: ReturnType<typeof createAuthedClient>, r
   };
 }
 
-async function listJobApplications(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function listJobApplications(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const jobId = asString(body.job_id);
   if (!jobId) {
     throw new Error("job_id is required");
@@ -3546,10 +3849,17 @@ async function listJobApplications(supabase: ReturnType<typeof createAuthedClien
 
 function normalizeApplicationStatus(value: unknown) {
   const status = String(value ?? "").trim().toLowerCase();
-  return ["new", "reviewing", "shortlisted", "rejected", "withdrawn"].includes(status) ? status : null;
+  return ["new", "reviewing", "shortlisted", "rejected", "withdrawn"].includes(
+      status,
+    )
+    ? status
+    : null;
 }
 
-async function updateJobApplicationStatus(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function updateJobApplicationStatus(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const userId = await getCurrentUserId(supabase);
   const applicationId = asString(body.application_id);
   const status = normalizeApplicationStatus(body.status);
@@ -3580,7 +3890,10 @@ async function updateJobApplicationStatus(supabase: ReturnType<typeof createAuth
   return data;
 }
 
-async function listJobShortlists(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function listJobShortlists(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const jobId = asString(body.job_id);
   if (!jobId) {
     throw new Error("job_id is required");
@@ -3596,13 +3909,22 @@ async function listJobShortlists(supabase: ReturnType<typeof createAuthedClient>
   return data ?? [];
 }
 
-async function getJobShortlist(supabase: ReturnType<typeof createAuthedClient>, shortlistId: string) {
+async function getJobShortlist(
+  supabase: ReturnType<typeof createAuthedClient>,
+  shortlistId: string,
+) {
   if (!shortlistId) {
     throw new Error("shortlist_id is required");
   }
   const [shortlistResult, candidatesResult] = await Promise.all([
-    supabase.from("job_shortlists").select(jobShortlistSelect).eq("id", shortlistId).maybeSingle(),
-    supabase.from("job_shortlist_candidates").select("*").eq("shortlist_id", shortlistId).order("saved_rank", { ascending: true }),
+    supabase.from("job_shortlists").select(jobShortlistSelect).eq(
+      "id",
+      shortlistId,
+    ).maybeSingle(),
+    supabase.from("job_shortlist_candidates").select("*").eq(
+      "shortlist_id",
+      shortlistId,
+    ).order("saved_rank", { ascending: true }),
   ]);
   if (shortlistResult.error) {
     throw shortlistResult.error;
@@ -3613,10 +3935,16 @@ async function getJobShortlist(supabase: ReturnType<typeof createAuthedClient>, 
   if (candidatesResult.error) {
     throw candidatesResult.error;
   }
-  return { shortlist: shortlistResult.data, candidates: candidatesResult.data ?? [] };
+  return {
+    shortlist: shortlistResult.data,
+    candidates: candidatesResult.data ?? [],
+  };
 }
 
-async function saveJobShortlist(supabase: ReturnType<typeof createAuthedClient>, body: JsonRecord) {
+async function saveJobShortlist(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
   const userId = await getCurrentUserId(supabase);
   const jobId = asString(body.job_id);
   const runId = asString(body.run_id);
@@ -3628,7 +3956,10 @@ async function saveJobShortlist(supabase: ReturnType<typeof createAuthedClient>,
   const runDetail = runId ? await getMatchingRun(supabase, runId) : null;
   const inputCandidates = asStringArray(body.candidate_ids);
   const resultRows = (asArray(runDetail?.results) as JsonRecord[])
-    .filter((result) => !inputCandidates.length || inputCandidates.includes(String(result.candidate_id)));
+    .filter((result) =>
+      !inputCandidates.length ||
+      inputCandidates.includes(String(result.candidate_id))
+    );
   const shortlistResult = await supabase.from("job_shortlists").insert({
     tenant_id: job.tenant_id,
     job_posting_id: jobId,
@@ -3643,16 +3974,21 @@ async function saveJobShortlist(supabase: ReturnType<typeof createAuthedClient>,
   const savedShortlist = asRecord(shortlistResult.data);
   const savedShortlistId = asString(savedShortlist.id) ?? "";
   if (resultRows.length) {
-    const insert = await supabase.from("job_shortlist_candidates").insert(resultRows.map((result) => ({
-      tenant_id: job.tenant_id,
-      shortlist_id: savedShortlistId,
-      candidate_id: result.candidate_id,
-      candidate_source_tenant_id: asString(result.candidate_source_tenant_id) ?? asString(asRecord(result.candidate_snapshot).tenant_id) ?? asString(job.tenant_id),
-      saved_rank: result.rank,
-      saved_score: result.final_score,
-      saved_result_payload: result,
-      added_by_user_id: userId,
-    })));
+    const insert = await supabase.from("job_shortlist_candidates").insert(
+      resultRows.map((result) => ({
+        tenant_id: job.tenant_id,
+        shortlist_id: savedShortlistId,
+        candidate_id: result.candidate_id,
+        candidate_source_tenant_id:
+          asString(result.candidate_source_tenant_id) ??
+            asString(asRecord(result.candidate_snapshot).tenant_id) ??
+            asString(job.tenant_id),
+        saved_rank: result.rank,
+        saved_score: result.final_score,
+        saved_result_payload: result,
+        added_by_user_id: userId,
+      })),
+    );
     if (insert.error) {
       throw insert.error;
     }
@@ -3764,9 +4100,15 @@ Deno.serve(async (req) => {
           await clearShortlistItems(supabase, tenantIds),
         );
       case "job_postings":
-        return jsonResponse(200, await listJobPostings(supabase, tenantIds, body));
+        return jsonResponse(
+          200,
+          await listJobPostings(supabase, tenantIds, body),
+        );
       case "job_posting":
-        return jsonResponse(200, await getJobPosting(supabase, asString(body.job_id) ?? ""));
+        return jsonResponse(
+          200,
+          await getJobPosting(supabase, asString(body.job_id) ?? ""),
+        );
       case "save_job_posting":
         return jsonResponse(200, await saveJobPosting(supabase, body));
       case "extract_job_posting":
@@ -3776,15 +4118,24 @@ Deno.serve(async (req) => {
       case "matching_runs":
         return jsonResponse(200, await listMatchingRuns(supabase, body));
       case "matching_run":
-        return jsonResponse(200, await getMatchingRun(supabase, asString(body.run_id) ?? ""));
+        return jsonResponse(
+          200,
+          await getMatchingRun(supabase, asString(body.run_id) ?? ""),
+        );
       case "job_applications":
         return jsonResponse(200, await listJobApplications(supabase, body));
       case "update_job_application_status":
-        return jsonResponse(200, await updateJobApplicationStatus(supabase, body));
+        return jsonResponse(
+          200,
+          await updateJobApplicationStatus(supabase, body),
+        );
       case "job_shortlists":
         return jsonResponse(200, await listJobShortlists(supabase, body));
       case "job_shortlist":
-        return jsonResponse(200, await getJobShortlist(supabase, asString(body.shortlist_id) ?? ""));
+        return jsonResponse(
+          200,
+          await getJobShortlist(supabase, asString(body.shortlist_id) ?? ""),
+        );
       case "save_job_shortlist":
         return jsonResponse(200, await saveJobShortlist(supabase, body));
       case "list_admin_tenants": {
@@ -3808,7 +4159,10 @@ Deno.serve(async (req) => {
       }
       case "save_platform_runtime_config": {
         const user = await assertPlatformAdmin(supabase);
-        const settings = asRecord(body.settings) as Record<string, string | null | undefined>;
+        const settings = asRecord(body.settings) as Record<
+          string,
+          string | null | undefined
+        >;
         try {
           return jsonResponse(
             200,

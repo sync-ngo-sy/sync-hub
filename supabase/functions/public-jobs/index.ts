@@ -27,12 +27,16 @@ function asString(value: unknown) {
 }
 
 function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
 }
 
 function asStringArray(value: unknown) {
   return Array.isArray(value)
-    ? value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean).slice(0, 24)
+    ? value.map((item) => typeof item === "string" ? item.trim() : "").filter(
+      Boolean,
+    ).slice(0, 24)
     : [];
 }
 
@@ -97,15 +101,20 @@ function publicJob(row: JsonRecord) {
     title: String(row.public_title ?? row.title ?? ""),
     summary: String(row.public_summary ?? ""),
     description: String(row.public_description ?? ""),
-    location: String(row.public_location ?? locationInfo.city ?? locationInfo.country ?? ""),
-    remotePolicy: String(locationInfo.remotePolicy ?? locationInfo.remote_policy ?? "Unspecified"),
+    location: String(
+      row.public_location ?? locationInfo.city ?? locationInfo.country ?? "",
+    ),
+    remotePolicy: String(
+      locationInfo.remotePolicy ?? locationInfo.remote_policy ?? "Unspecified",
+    ),
     seniorityLevel: String(row.seniority_level ?? ""),
     employmentType: String(row.employment_type ?? ""),
     requiredSkills: asStringArray(row.required_skills),
     preferredSkills: asStringArray(row.preferred_skills),
     keyResponsibilities: asStringArray(row.key_responsibilities),
     applicationDeadline: asString(row.application_deadline),
-    applyEnabled: row.public_apply_enabled !== false && isDeadlineOpen(row.application_deadline),
+    applyEnabled: row.public_apply_enabled !== false &&
+      isDeadlineOpen(row.application_deadline),
     publishedAt: asString(row.public_published_at),
   };
 }
@@ -132,15 +141,22 @@ function publicJobSelect() {
 }
 
 async function sha256Hex(value: string) {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const bytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(bytes)).map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
 }
 
 async function sha256Bytes(bytes: Uint8Array) {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   const hash = await crypto.subtle.digest("SHA-256", copy.buffer);
-  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(hash)).map((byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
 }
 
 function safeFileName(value: string) {
@@ -186,14 +202,24 @@ function parseResumeFile(input: JsonRecord) {
   if (!base64) {
     return null;
   }
-  const fileName = safeFileName(asString(resumeFile.fileName ?? resumeFile.file_name) ?? "candidate-cv.pdf");
-  const contentType = contentTypeForFile(fileName, asString(resumeFile.contentType ?? resumeFile.content_type));
+  const fileName = safeFileName(
+    asString(resumeFile.fileName ?? resumeFile.file_name) ?? "candidate-cv.pdf",
+  );
+  const contentType = contentTypeForFile(
+    fileName,
+    asString(resumeFile.contentType ?? resumeFile.content_type),
+  );
   if (!contentType) {
     throw new Error("Upload a PDF, DOCX, or TXT CV.");
   }
   const bytes = decodeBase64(base64);
-  const declaredSize = Number(resumeFile.sizeBytes ?? resumeFile.size_bytes ?? bytes.byteLength);
-  if (!Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > MAX_RESUME_BYTES || bytes.byteLength > MAX_RESUME_BYTES) {
+  const declaredSize = Number(
+    resumeFile.sizeBytes ?? resumeFile.size_bytes ?? bytes.byteLength,
+  );
+  if (
+    !Number.isFinite(declaredSize) || declaredSize <= 0 ||
+    declaredSize > MAX_RESUME_BYTES || bytes.byteLength > MAX_RESUME_BYTES
+  ) {
     throw new Error("CV upload must be 10 MB or smaller.");
   }
   if (bytes.byteLength === 0) {
@@ -216,7 +242,9 @@ async function upsertCandidateShell(
   if (preferredCandidateId) {
     const { data, error } = await supabase
       .from("candidates")
-      .select("id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json")
+      .select(
+        "id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json",
+      )
       .eq("tenant_id", tenantId)
       .eq("id", preferredCandidateId)
       .maybeSingle();
@@ -227,7 +255,9 @@ async function upsertCandidateShell(
   if (!existingCandidate) {
     const { data, error } = await supabase
       .from("candidates")
-      .select("id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json")
+      .select(
+        "id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json",
+      )
       .eq("tenant_id", tenantId)
       .eq("email", application.email)
       .order("updated_at", { ascending: false })
@@ -239,18 +269,27 @@ async function upsertCandidateShell(
 
   const candidateId = asString(existingCandidate?.id) ?? crypto.randomUUID();
   const existingSkills = asStringArray(existingCandidate?.top_skills);
-  const topSkills = uniqueStrings([...application.topSkills, ...existingSkills]).slice(0, 24);
-  const currentTitle = application.currentTitle || asString(existingCandidate?.current_title) || "Public job applicant";
-  const yearsExperience = application.yearsExperience ?? Number(existingCandidate?.years_experience ?? 0);
-  const seniority = application.seniority || asString(existingCandidate?.seniority) || "unclassified";
+  const topSkills = uniqueStrings([...application.topSkills, ...existingSkills])
+    .slice(0, 24);
+  const currentTitle = application.currentTitle ||
+    asString(existingCandidate?.current_title) || "Public job applicant";
+  const yearsExperience = application.yearsExperience ??
+    Number(existingCandidate?.years_experience ?? 0);
+  const seniority = application.seniority ||
+    asString(existingCandidate?.seniority) || "unclassified";
   const links = uniqueStrings([
     ...asStringArray(existingCandidate?.links),
     application.linkedinUrl,
     application.portfolioUrl,
   ]).slice(0, 12);
-  const jobTitle = String(jobRecord.public_title ?? jobRecord.title ?? "public role");
-  const coverSummary = application.coverNote ? ` ${application.coverNote.slice(0, 220)}` : "";
-  const summaryShort = asString(existingCandidate?.summary_short) ?? `Applied for ${jobTitle}.${coverSummary}`;
+  const jobTitle = String(
+    jobRecord.public_title ?? jobRecord.title ?? "public role",
+  );
+  const coverSummary = application.coverNote
+    ? ` ${application.coverNote.slice(0, 220)}`
+    : "";
+  const summaryShort = asString(existingCandidate?.summary_short) ??
+    `Applied for ${jobTitle}.${coverSummary}`;
   const metadata = {
     ...asRecord(existingCandidate?.metadata_json),
     public_application: {
@@ -275,9 +314,12 @@ async function upsertCandidateShell(
     email: application.email,
     phone: application.phone,
     links,
-    latest_document_id: resumeSourceDocumentId ?? asString(existingCandidate?.latest_document_id),
+    latest_document_id: resumeSourceDocumentId ??
+      asString(existingCandidate?.latest_document_id),
     summary_short: summaryShort,
-    status: asString(existingCandidate?.status) === "completed" ? "completed" : "application_submitted",
+    status: asString(existingCandidate?.status) === "completed"
+      ? "completed"
+      : "application_submitted",
     metadata_json: metadata,
     hub_visibility: "platform",
   };
@@ -305,7 +347,10 @@ async function upsertCandidateShell(
     if (skillRows.length) {
       const { error: skillError } = await supabase
         .from("candidate_skill_map")
-        .upsert(skillRows, { onConflict: "tenant_id,candidate_id,skill_slug", ignoreDuplicates: true });
+        .upsert(skillRows, {
+          onConflict: "tenant_id,candidate_id,skill_slug",
+          ignoreDuplicates: true,
+        });
       if (skillError) throw skillError;
     }
   }
@@ -331,12 +376,15 @@ function assertApplication(input: JsonRecord) {
   const email = asString(input.email)?.toLowerCase();
   const consent = input.consent === true || input.consentGiven === true;
   const topSkills = splitList(input.topSkills ?? input.top_skills);
-  const currentTitle = asString(input.currentTitle ?? input.current_title)?.slice(0, 180) ?? "";
+  const currentTitle =
+    asString(input.currentTitle ?? input.current_title)?.slice(0, 180) ?? "";
   const seniority = asString(input.seniority)?.slice(0, 80) ?? "";
   if (!name || name.length > 160) {
     throw new Error("Applicant name is required.");
   }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+  if (
+    !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254
+  ) {
     throw new Error("A valid email address is required.");
   }
   if (!consent) {
@@ -355,15 +403,26 @@ function assertApplication(input: JsonRecord) {
     phone: asString(input.phone)?.slice(0, 80) ?? null,
     location: asString(input.location)?.slice(0, 160) ?? null,
     currentTitle,
-    yearsExperience: boundedYears(input.yearsExperience ?? input.years_experience),
+    yearsExperience: boundedYears(
+      input.yearsExperience ?? input.years_experience,
+    ),
     seniority,
     topSkills,
-    linkedinUrl: asString(input.linkedinUrl ?? input.linkedin_url)?.slice(0, 500) ?? null,
-    portfolioUrl: asString(input.portfolioUrl ?? input.portfolio_url)?.slice(0, 500) ?? null,
-    coverNote: asString(input.coverNote ?? input.cover_note)?.slice(0, 4000) ?? "",
-    resumeOriginalFilename: resumeFile?.fileName ?? asString(input.resumeOriginalFilename ?? input.resume_original_filename)?.slice(0, 255) ?? null,
+    linkedinUrl:
+      asString(input.linkedinUrl ?? input.linkedin_url)?.slice(0, 500) ?? null,
+    portfolioUrl:
+      asString(input.portfolioUrl ?? input.portfolio_url)?.slice(0, 500) ??
+        null,
+    coverNote: asString(input.coverNote ?? input.cover_note)?.slice(0, 4000) ??
+      "",
+    resumeOriginalFilename: resumeFile?.fileName ??
+      asString(input.resumeOriginalFilename ?? input.resume_original_filename)
+        ?.slice(0, 255) ??
+      null,
     resumeFile,
-    idempotencyKey: asString(input.idempotencyKey ?? input.idempotency_key)?.slice(0, 120) ?? null,
+    idempotencyKey:
+      asString(input.idempotencyKey ?? input.idempotency_key)?.slice(0, 120) ??
+        null,
   };
 }
 
@@ -391,7 +450,9 @@ Deno.serve(async (req) => {
         .order("public_published_at", { ascending: false })
         .limit(100);
       if (error) throw error;
-      return jsonResponse(200, { jobs: (data ?? []).map((row) => publicJob(asRecord(row))) });
+      return jsonResponse(200, {
+        jobs: (data ?? []).map((row) => publicJob(asRecord(row))),
+      });
     }
 
     const slug = asString(body.slug);
@@ -417,7 +478,10 @@ Deno.serve(async (req) => {
 
     if (action === "apply") {
       const jobRecord = asRecord(job);
-      if (jobRecord.public_apply_enabled === false || !isDeadlineOpen(jobRecord.application_deadline)) {
+      if (
+        jobRecord.public_apply_enabled === false ||
+        !isDeadlineOpen(jobRecord.application_deadline)
+      ) {
         return jsonResponse(409, { error: "applications_closed" });
       }
       const application = assertApplication(asRecord(body.application));
@@ -442,12 +506,18 @@ Deno.serve(async (req) => {
           },
         });
       }
-      const ipHash = await sha256Hex(req.headers.get("x-forwarded-for") ?? req.headers.get("cf-connecting-ip") ?? "");
-      const userAgentHash = await sha256Hex(req.headers.get("user-agent") ?? "");
+      const ipHash = await sha256Hex(
+        req.headers.get("x-forwarded-for") ??
+          req.headers.get("cf-connecting-ip") ?? "",
+      );
+      const userAgentHash = await sha256Hex(
+        req.headers.get("user-agent") ?? "",
+      );
       const applicationId = crypto.randomUUID();
       let resumeStoragePath: string | null = null;
       let resumeSourceDocumentId: string | null = null;
-      let resumeIngestionStatus: "not_uploaded" | "queued" | "parsed" = "not_uploaded";
+      let resumeIngestionStatus: "not_uploaded" | "queued" | "parsed" =
+        "not_uploaded";
       let linkedCandidateId: string | null = null;
       let createdCandidateId: string | null = null;
       let resumeSha256: string | null = null;
@@ -456,7 +526,8 @@ Deno.serve(async (req) => {
 
       if (application.resumeFile) {
         resumeSha256 = await sha256Bytes(application.resumeFile.bytes);
-        resumeStoragePath = `${jobRecord.tenant_id}/public-applications/${jobRecord.id}/${applicationId}/${application.resumeFile.fileName}`;
+        resumeStoragePath =
+          `${jobRecord.tenant_id}/public-applications/${jobRecord.id}/${applicationId}/${application.resumeFile.fileName}`;
         const uploadResult = await supabase.storage
           .from(RESUME_BUCKET)
           .upload(resumeStoragePath, application.resumeFile.bytes, {
@@ -475,22 +546,42 @@ Deno.serve(async (req) => {
           .eq("document_sha256", resumeSha256)
           .maybeSingle();
         if (existingSource.error) {
-          await supabase.storage.from(RESUME_BUCKET).remove([resumeStoragePath]);
+          await supabase.storage.from(RESUME_BUCKET).remove([
+            resumeStoragePath,
+          ]);
           throw existingSource.error;
         }
 
         if (existingSource.data?.id) {
           resumeSourceDocumentId = existingSource.data.id;
           const sourceCandidateId = asString(existingSource.data.candidate_id);
-          const candidateResult = await upsertCandidateShell(supabase, jobRecord, application, applicationId, sourceCandidateId, resumeSourceDocumentId);
+          const candidateResult = await upsertCandidateShell(
+            supabase,
+            jobRecord,
+            application,
+            applicationId,
+            sourceCandidateId,
+            resumeSourceDocumentId,
+          );
           linkedCandidateId = candidateResult.candidateId;
-          createdCandidateId = candidateResult.created ? linkedCandidateId : createdCandidateId;
+          createdCandidateId = candidateResult.created
+            ? linkedCandidateId
+            : createdCandidateId;
           resumeIngestionStatus = sourceCandidateId ? "parsed" : "queued";
         } else {
           resumeSourceDocumentId = crypto.randomUUID();
-          const candidateResult = await upsertCandidateShell(supabase, jobRecord, application, applicationId, null, resumeSourceDocumentId);
+          const candidateResult = await upsertCandidateShell(
+            supabase,
+            jobRecord,
+            application,
+            applicationId,
+            null,
+            resumeSourceDocumentId,
+          );
           linkedCandidateId = candidateResult.candidateId;
-          createdCandidateId = candidateResult.created ? linkedCandidateId : createdCandidateId;
+          createdCandidateId = candidateResult.created
+            ? linkedCandidateId
+            : createdCandidateId;
           const sourceInsert = await supabase
             .from("source_documents")
             .insert({
@@ -512,9 +603,14 @@ Deno.serve(async (req) => {
               },
             });
           if (sourceInsert.error) {
-            await supabase.storage.from(RESUME_BUCKET).remove([resumeStoragePath]);
+            await supabase.storage.from(RESUME_BUCKET).remove([
+              resumeStoragePath,
+            ]);
             if (createdCandidateId) {
-              await supabase.from("candidates").delete().eq("id", createdCandidateId).eq("tenant_id", jobRecord.tenant_id);
+              await supabase.from("candidates").delete().eq(
+                "id",
+                createdCandidateId,
+              ).eq("tenant_id", jobRecord.tenant_id);
             }
             throw sourceInsert.error;
           }
@@ -524,9 +620,18 @@ Deno.serve(async (req) => {
       }
 
       if (!linkedCandidateId) {
-        const candidateResult = await upsertCandidateShell(supabase, jobRecord, application, applicationId, null, resumeSourceDocumentId);
+        const candidateResult = await upsertCandidateShell(
+          supabase,
+          jobRecord,
+          application,
+          applicationId,
+          null,
+          resumeSourceDocumentId,
+        );
         linkedCandidateId = candidateResult.candidateId;
-        createdCandidateId = candidateResult.created ? linkedCandidateId : createdCandidateId;
+        createdCandidateId = candidateResult.created
+          ? linkedCandidateId
+          : createdCandidateId;
       }
 
       const { data, error } = await supabase
@@ -559,13 +664,21 @@ Deno.serve(async (req) => {
         .single();
       if (error && error.code === "23505") {
         if (insertedResumeSourceDocumentId) {
-          await supabase.from("source_documents").delete().eq("id", insertedResumeSourceDocumentId);
+          await supabase.from("source_documents").delete().eq(
+            "id",
+            insertedResumeSourceDocumentId,
+          );
         }
         if (uploadedResumeStoragePath) {
-          await supabase.storage.from(RESUME_BUCKET).remove([uploadedResumeStoragePath]);
+          await supabase.storage.from(RESUME_BUCKET).remove([
+            uploadedResumeStoragePath,
+          ]);
         }
         if (createdCandidateId) {
-          await supabase.from("candidates").delete().eq("id", createdCandidateId).eq("tenant_id", jobRecord.tenant_id);
+          await supabase.from("candidates").delete().eq(
+            "id",
+            createdCandidateId,
+          ).eq("tenant_id", jobRecord.tenant_id);
         }
         let duplicate = await supabase
           .from("job_applications")
@@ -609,7 +722,10 @@ Deno.serve(async (req) => {
       }
       if (error) throw error;
 
-      if (resumeSourceDocumentId && resumeStoragePath && resumeSha256 && resumeIngestionStatus === "queued") {
+      if (
+        resumeSourceDocumentId && resumeStoragePath && resumeSha256 &&
+        resumeIngestionStatus === "queued"
+      ) {
         const { error: processingError } = await supabase
           .from("processing_runs")
           .insert({
@@ -619,7 +735,9 @@ Deno.serve(async (req) => {
             source_document_id: resumeSourceDocumentId,
             ingestion_run_id: crypto.randomUUID(),
             status: "queued",
-            input_hash: await sha256Hex(`${jobRecord.tenant_id}:${resumeSourceDocumentId}:${applicationId}:public_job_application`),
+            input_hash: await sha256Hex(
+              `${jobRecord.tenant_id}:${resumeSourceDocumentId}:${applicationId}:public_job_application`,
+            ),
             source_path: `supabase://${RESUME_BUCKET}/${resumeStoragePath}`,
             source_sha256: resumeSha256,
             parser_version: "queued-public-application",
@@ -649,10 +767,15 @@ Deno.serve(async (req) => {
           application_id: data.id,
           actor_user_id: null,
           event_type: "APPLICATION_SUBMITTED",
-          payload: { source: "public_job_board", candidate_id: linkedCandidateId },
+          payload: {
+            source: "public_job_board",
+            candidate_id: linkedCandidateId,
+          },
         });
       if (eventError) throw eventError;
-      const { error: refreshError } = await supabase.rpc("refresh_candidate_search_cache_v1");
+      const { error: refreshError } = await supabase.rpc(
+        "refresh_candidate_search_cache_v1",
+      );
       if (refreshError) {
         console.error("candidate_search_cache_refresh_failed", refreshError);
       }
@@ -685,6 +808,9 @@ Deno.serve(async (req) => {
 
     return jsonResponse(400, { error: "unknown_action" });
   } catch (error) {
-    return jsonResponse(400, { error: "public_jobs_failed", details: error instanceof Error ? error.message : String(error) });
+    return jsonResponse(400, {
+      error: "public_jobs_failed",
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 });
