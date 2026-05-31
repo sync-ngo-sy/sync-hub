@@ -1,0 +1,30 @@
+.pyramid-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.pyramid-stack {
+  min-height: 38px;
+  display: flex;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pyramid-stack span {
+  min-width: 36px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #10201f;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.pyramid-stack span:nth-child(1) { background: #9ad7ff; }
+.pyramid-stack span:nth-child(2) { background: #50c1b8; }
+.pyramid-stack span:nth-child(3) { background: #73e0a8; }
+.pyramid-stack span:nth-child(4) { background: #ffcf7a; }
+.pyramid-stack span:nth-child(5) { background: #f08bb4; }

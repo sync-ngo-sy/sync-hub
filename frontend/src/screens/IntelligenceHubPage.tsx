@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, PanelRightOpen, Send, Sparkles, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PlatformScopeControl } from "@/components/PlatformScopeControl";
@@ -44,6 +44,7 @@ export function IntelligenceHubPage() {
   const [loadingContext, setLoadingContext] = useState(false);
   const [loadingAnswer, setLoadingAnswer] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const contextCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const contextCandidateIds = scopedMode ? candidateIds : resolvedCandidateIds;
   const scopeKey = resolvedTenantIds.join("|");
 
@@ -79,6 +80,7 @@ export function IntelligenceHubPage() {
     };
 
     document.body.style.overflow = "hidden";
+    contextCloseButtonRef.current?.focus();
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
@@ -195,7 +197,13 @@ export function IntelligenceHubPage() {
             {messages.length ? <Tag>{messages.filter((item) => item.role === "assistant").length} answers</Tag> : null}
           </div>
           <div className="chat-thread-panel__actions">
-            <button className="button button--secondary" type="button" onClick={() => setContextOpen(true)}>
+            <button
+              className="button button--secondary"
+              type="button"
+              aria-controls="chat-context-drawer"
+              aria-expanded={contextOpen}
+              onClick={() => setContextOpen(true)}
+            >
               <PanelRightOpen size={14} />
               {contextCandidateIds.length ? `Context (${contextCandidateIds.length})` : "Context"}
             </button>
@@ -272,6 +280,7 @@ export function IntelligenceHubPage() {
         >
           <textarea
             className="form-textarea"
+            aria-label="Ask the recruiting agent"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             onKeyDown={(event) => {
@@ -298,45 +307,49 @@ export function IntelligenceHubPage() {
         </form>
       </Panel>
 
-      <div className={`context-drawer-backdrop${contextOpen ? " context-drawer-backdrop--open" : ""}`} onClick={() => setContextOpen(false)} />
-      <aside className={`context-drawer${contextOpen ? " context-drawer--open" : ""}`} aria-hidden={!contextOpen}>
-        <div className="context-drawer__header">
-          <div className="stack">
-            <span className="eyebrow">Context</span>
-            <h3>Candidates in scope</h3>
-          </div>
-          <button className="icon-button" type="button" onClick={() => setContextOpen(false)} aria-label="Close context drawer">
-            <X size={18} />
-          </button>
-        </div>
+      {contextOpen ? (
+        <>
+          <div className="context-drawer-backdrop context-drawer-backdrop--open" onClick={() => setContextOpen(false)} />
+          <aside id="chat-context-drawer" className="context-drawer context-drawer--open" role="dialog" aria-modal="true" aria-labelledby="chat-context-drawer-title">
+            <div className="context-drawer__header">
+              <div className="stack">
+                <span className="eyebrow">Context</span>
+                <h3 id="chat-context-drawer-title">Candidates in scope</h3>
+              </div>
+              <button ref={contextCloseButtonRef} className="icon-button" type="button" onClick={() => setContextOpen(false)} aria-label="Close context drawer">
+                <X size={18} />
+              </button>
+            </div>
 
-        <div className="context-drawer__body">
-          <div className="chat-context-grid">
-            {loadingContext ? (
-              <p className="muted">Loading candidate context…</p>
-            ) : !contextCandidateIds.length ? (
-              <p className="muted">No shortlist has been derived yet.</p>
-            ) : (
-              contextCandidates.map((candidate) => (
-                <Link key={candidate.candidateId} className="chat-context-card" to={`/dossier/${candidate.candidateId}`} onClick={() => setContextOpen(false)}>
-                  <div className="candidate-card__identity">
-                    <Avatar name={candidate.name} hue={candidate.avatarHue} size="sm" />
-                    <div className="stack">
-                      <strong>{candidate.name}</strong>
-                      <p>{candidate.currentTitle}</p>
-                    </div>
-                  </div>
-                  <div className="skill-list">
-                    <Tag>{candidate.seniority}</Tag>
-                    <Tag tone="primary">{candidate.primaryRole}</Tag>
-                  </div>
-                </Link>
-              ))
-            )}
-            {overflowCount > 0 ? <Tag>+{overflowCount} more in scope</Tag> : null}
-          </div>
-        </div>
-      </aside>
+            <div className="context-drawer__body">
+              <div className="chat-context-grid">
+                {loadingContext ? (
+                  <p className="muted">Loading candidate context…</p>
+                ) : !contextCandidateIds.length ? (
+                  <p className="muted">No shortlist has been derived yet.</p>
+                ) : (
+                  contextCandidates.map((candidate) => (
+                    <Link key={candidate.candidateId} className="chat-context-card" to={`/dossier/${candidate.candidateId}`} onClick={() => setContextOpen(false)}>
+                      <div className="candidate-card__identity">
+                        <Avatar name={candidate.name} hue={candidate.avatarHue} size="sm" />
+                        <div className="stack">
+                          <strong>{candidate.name}</strong>
+                          <p>{candidate.currentTitle}</p>
+                        </div>
+                      </div>
+                      <div className="skill-list">
+                        <Tag>{candidate.seniority}</Tag>
+                        <Tag tone="primary">{candidate.primaryRole}</Tag>
+                      </div>
+                    </Link>
+                  ))
+                )}
+                {overflowCount > 0 ? <Tag>+{overflowCount} more in scope</Tag> : null}
+              </div>
+            </div>
+          </aside>
+        </>
+      ) : null}
     </div>
   );
 }

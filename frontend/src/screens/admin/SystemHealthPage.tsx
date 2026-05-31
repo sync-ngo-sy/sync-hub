@@ -1,16 +1,38 @@
 import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Cpu, Server } from "lucide-react";
-import { systemHealth as fallbackHealth } from "@/data/mockData";
 import type { SystemHealth } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { PageIntro, Panel, StatCard, Tag } from "@/components/ui";
 
 export function SystemHealthPage() {
-  const [health, setHealth] = useState<SystemHealth>(fallbackHealth);
+  const [health, setHealth] = useState<SystemHealth | null>(null);
 
   useEffect(() => {
-    platformApi.getSystemHealth().then(setHealth);
+    let active = true;
+    platformApi.getSystemHealth().then((nextHealth) => {
+      if (active) {
+        setHealth(nextHealth);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  if (!health) {
+    return (
+      <div className="page-stack">
+        <PageIntro
+          eyebrow="Operations"
+          title="System health & monitoring"
+          description="Track the online read path and the offline worker fleet in one operational view. This is the control plane for shared-hosting constraints and offline-heavy processing."
+        />
+        <Panel className="table-card">
+          <p className="muted">Loading system health...</p>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">

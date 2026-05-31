@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Sparkles, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { EmptyState, PageIntro, Panel, ScorePill, StatCard, Tag } from "@/components/ui";
-import { parsingOverview as fallbackParsingOverview } from "@/data/mockData";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import type { ParsingOverview } from "@/lib/contracts";
@@ -36,6 +35,20 @@ function toneForQualityBand(band: ParsingOverview["items"][number]["qualityBand"
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+const EMPTY_PARSING_OVERVIEW: ParsingOverview = {
+  overallParsedPercentage: 0,
+  averageConfidence: 0,
+  documentsCount: 0,
+  completedCount: 0,
+  needsReviewCount: 0,
+  failedCount: 0,
+  documentsWithWarnings: 0,
+  missingContactCount: 0,
+  lowCoverageCount: 0,
+  itemsTotalCount: 0,
+  items: [],
+};
 
 function StatSkeletonGrid() {
   return (
@@ -94,8 +107,8 @@ function ParsingOverviewSkeleton() {
 
 export function ParsingOverviewPage() {
   const { adminMemberships, enabled, isAdmin, loading } = useAuth();
-  const [overview, setOverview] = useState<ParsingOverview>(fallbackParsingOverview);
-  const [fetching, setFetching] = useState(false);
+  const [overview, setOverview] = useState<ParsingOverview>(EMPTY_PARSING_OVERVIEW);
+  const [fetching, setFetching] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewFilter, setReviewFilter] = useState<"all" | "needsReview">("all");

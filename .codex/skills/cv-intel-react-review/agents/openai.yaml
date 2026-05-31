@@ -1,0 +1,7 @@
+interface:
+  display_name: "CV Intel React Review"
+  short_description: "CV Intel React review guardrails"
+  default_prompt: "Use $cv-intel-react-review to review CV Intel frontend changes and report merge-blocking issues with file and line references."
+
+policy:
+  allow_implicit_invocation: true
