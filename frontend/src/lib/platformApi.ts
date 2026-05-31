@@ -11,14 +11,31 @@ import type {
   CandidateShortlistItem,
   ComparisonResponse,
   DataConnector,
+  EmployerRegion,
   InsightsGapAnalysis,
   InsightsDashboardOptions,
   InsightsDashboardSnapshot,
   IndexingWorkbench,
+  JobApplication,
+  JobApplicationStatus,
+  JobCandidateMatch,
+  JobExtractionResult,
+  JobMatchingRun,
+  JobMatchingRunDetail,
+  JobPosting,
+  JobPostingInput,
+  JobPostingStatus,
+  JobShortlist,
+  JobShortlistCandidate,
+  JobShortlistDetail,
+  JobShortlistInput,
   ManatalSyncStatus,
   OpsAlert,
   PlatformRuntimeConfig,
   PlatformRuntimeConfigSource,
+  PublicJobApplicationInput,
+  PublicJobApplicationReceipt,
+  PublicJobPosting,
   ParsingDocumentDetail,
   ParsingOverview,
   ParserProfile,
@@ -91,6 +108,33 @@ type PlatformApi = {
   saveShortlistItem: (item: CandidateShortlistInput) => Promise<CandidateShortlistItem>;
   removeShortlistItem: (candidateId: string, tenantId?: string | null) => Promise<void>;
   clearShortlist: (tenantIds?: string[]) => Promise<void>;
+  listJobPostings: (tenantIds?: string[]) => Promise<JobPosting[]>;
+  getJobPosting: (jobId: string) => Promise<JobPosting>;
+  saveJobPosting: (job: JobPostingInput) => Promise<JobPosting>;
+  extractJobPosting: (input: {
+    tenantId: string;
+    jobId?: string;
+    title?: string;
+    employerRegion?: string;
+    jobDescription: string;
+  }) => Promise<JobExtractionResult>;
+  startJobMatchingRun: (input: {
+    jobId: string;
+    limit?: number;
+    semanticPoolSize?: number;
+    rerankPoolSize?: number;
+    mandatoryCriteria?: Record<string, unknown>;
+  }) => Promise<JobMatchingRunDetail>;
+  listJobMatchingRuns: (jobId: string) => Promise<JobMatchingRun[]>;
+  getJobMatchingRun: (runId: string) => Promise<JobMatchingRunDetail>;
+  listJobShortlists: (jobId: string) => Promise<JobShortlist[]>;
+  getJobShortlist: (shortlistId: string) => Promise<JobShortlistDetail>;
+  saveJobShortlist: (input: JobShortlistInput) => Promise<JobShortlistDetail>;
+  listJobApplications: (jobId: string) => Promise<JobApplication[]>;
+  updateJobApplicationStatus: (applicationId: string, status: JobApplicationStatus) => Promise<JobApplication>;
+  listPublicJobPostings: () => Promise<PublicJobPosting[]>;
+  getPublicJobPosting: (slug: string) => Promise<PublicJobPosting>;
+  submitPublicJobApplication: (slug: string, application: PublicJobApplicationInput) => Promise<PublicJobApplicationReceipt>;
   getParsingOverview: (tenantIds?: string[], options?: ParsingOverviewOptions) => Promise<ParsingOverview>;
   getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;
   getParserProfiles: (tenantIds?: string[]) => Promise<ParserProfile[]>;
@@ -1492,6 +1536,323 @@ function mapRemoteShortlistItem(row: CandidateShortlistRow): CandidateShortlistI
   };
 }
 
+function normalizeJobStatus(value: unknown): JobPostingStatus {
+  return value === "active" || value === "closed" ? value : "draft";
+}
+
+function normalizeEmployerRegion(value: unknown): EmployerRegion {
+  return value === "EU" || value === "USA" ? value : "GCC";
+}
+
+function nullableString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function mapRemoteJobPosting(row: unknown): JobPosting {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    title: String(record.title ?? ""),
+    employerName: String(record.employer_name ?? record.employerName ?? ""),
+    employerCountry: String(record.employer_country ?? record.employerCountry ?? ""),
+    employerRegion: normalizeEmployerRegion(record.employer_region ?? record.employerRegion),
+    jobDescription: String(record.job_description ?? record.jobDescription ?? ""),
+    requiredSkills: toStringArray(record.required_skills ?? record.requiredSkills),
+    preferredSkills: toStringArray(record.preferred_skills ?? record.preferredSkills),
+    seniorityLevel: String(record.seniority_level ?? record.seniorityLevel ?? ""),
+    employmentType: String(record.employment_type ?? record.employmentType ?? ""),
+    postedDate: nullableString(record.posted_date ?? record.postedDate),
+    applicationDeadline: nullableString(record.application_deadline ?? record.applicationDeadline),
+    status: normalizeJobStatus(record.status),
+    locationInfo: asRecord(record.location_info ?? record.locationInfo) as JobPosting["locationInfo"],
+    keyResponsibilities: toStringArray(record.key_responsibilities ?? record.keyResponsibilities),
+    aiProfile: asRecord(record.ai_profile ?? record.aiProfile),
+    aiConfidence: asRecord(record.ai_confidence ?? record.aiConfidence),
+    createdByUserId: nullableString(record.created_by_user_id ?? record.createdByUserId),
+    updatedByUserId: nullableString(record.updated_by_user_id ?? record.updatedByUserId),
+    closedAt: nullableString(record.closed_at ?? record.closedAt),
+    closedByUserId: nullableString(record.closed_by_user_id ?? record.closedByUserId),
+    isPublic: Boolean(record.is_public ?? record.isPublic),
+    publicSlug: nullableString(record.public_slug ?? record.publicSlug),
+    publicTitle: nullableString(record.public_title ?? record.publicTitle),
+    publicSummary: nullableString(record.public_summary ?? record.publicSummary),
+    publicDescription: nullableString(record.public_description ?? record.publicDescription),
+    publicLocation: nullableString(record.public_location ?? record.publicLocation),
+    publicApplyEnabled: record.public_apply_enabled === false || record.publicApplyEnabled === false ? false : true,
+    publicPublishedAt: nullableString(record.public_published_at ?? record.publicPublishedAt),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
+  };
+}
+
+function jobPostingPayload(job: JobPostingInput) {
+  return {
+    id: job.id,
+    tenant_id: job.tenantId,
+    title: job.title,
+    employer_name: job.employerName,
+    employer_country: job.employerCountry,
+    employer_region: job.employerRegion,
+    job_description: job.jobDescription,
+    required_skills: job.requiredSkills ?? [],
+    preferred_skills: job.preferredSkills ?? [],
+    seniority_level: job.seniorityLevel,
+    employment_type: job.employmentType,
+    posted_date: job.postedDate,
+    application_deadline: job.applicationDeadline,
+    status: job.status,
+    location_info: job.locationInfo ?? {},
+    key_responsibilities: job.keyResponsibilities ?? [],
+    ai_profile: job.aiProfile ?? {},
+    ai_confidence: job.aiConfidence ?? {},
+    is_public: job.isPublic ?? false,
+    public_slug: job.publicSlug ?? null,
+    public_title: job.publicTitle ?? null,
+    public_summary: job.publicSummary ?? null,
+    public_description: job.publicDescription ?? null,
+    public_location: job.publicLocation ?? null,
+    public_apply_enabled: job.publicApplyEnabled ?? true,
+  };
+}
+
+function mapRemoteJobExtraction(payload: unknown): JobExtractionResult {
+  const record = asRecord(payload);
+  const mapSkill = (item: unknown) => {
+    const row = asRecord(item);
+    return {
+      name: String(row.name ?? ""),
+      confidence: toNumber(row.confidence),
+      evidence: String(row.evidence ?? ""),
+    };
+  };
+  const seniority = asRecord(record.seniorityLevel ?? record.seniority_level);
+  const employmentType = asRecord(record.employmentType ?? record.employment_type);
+  return {
+    requiredSkills: asArray(record.requiredSkills ?? record.required_skills).map(mapSkill).filter((skill) => skill.name),
+    preferredSkills: asArray(record.preferredSkills ?? record.preferred_skills).map(mapSkill).filter((skill) => skill.name),
+    seniorityLevel: {
+      value: String(seniority.value ?? ""),
+      confidence: toNumber(seniority.confidence),
+      evidence: String(seniority.evidence ?? ""),
+    },
+    employmentType: {
+      value: String(employmentType.value ?? ""),
+      confidence: toNumber(employmentType.confidence),
+      evidence: String(employmentType.evidence ?? ""),
+    },
+    location: asRecord(record.location) as JobExtractionResult["location"],
+    keyResponsibilities: toStringArray(record.keyResponsibilities ?? record.key_responsibilities),
+    warnings: asArray(record.warnings).map((item) => {
+      const row = asRecord(item);
+      return {
+        type: String(row.type ?? "WARNING"),
+        message: String(row.message ?? ""),
+      };
+    }),
+    modelProvider: String(record.modelProvider ?? record.model_provider ?? "unknown"),
+    modelName: String(record.modelName ?? record.model_name ?? "unknown"),
+    promptVersion: String(record.promptVersion ?? record.prompt_version ?? "job-extraction-v1"),
+    inputHash: String(record.inputHash ?? record.input_hash ?? ""),
+  };
+}
+
+function mapRemoteJobMatchingRun(row: unknown): JobMatchingRun {
+  const record = asRecord(row);
+  const status = String(record.status ?? "failed");
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
+    initiatedByUserId: nullableString(record.initiated_by_user_id ?? record.initiatedByUserId),
+    status: status === "queued" || status === "running" || status === "completed" || status === "cancelled" ? status : "failed",
+    requestedLimit: toNumber(record.requested_limit ?? record.requestedLimit),
+    semanticPoolSize: toNumber(record.semantic_pool_size ?? record.semanticPoolSize),
+    rerankPoolSize: toNumber(record.rerank_pool_size ?? record.rerankPoolSize),
+    retrievedCount: toNumber(record.retrieved_count ?? record.retrievedCount),
+    filteredCount: toNumber(record.filtered_count ?? record.filteredCount),
+    rerankedCount: toNumber(record.reranked_count ?? record.rerankedCount),
+    completedCount: toNumber(record.completed_count ?? record.completedCount),
+    failureReason: nullableString(record.failure_reason ?? record.failureReason),
+    matchingConfig: asRecord(record.matching_config ?? record.matchingConfig),
+    jobProfile: asRecord(record.job_profile ?? record.jobProfile),
+    embeddingProvider: nullableString(record.embedding_provider ?? record.embeddingProvider),
+    embeddingVersion: nullableString(record.embedding_version ?? record.embeddingVersion),
+    startedAt: nullableString(record.started_at ?? record.startedAt),
+    completedAt: nullableString(record.completed_at ?? record.completedAt),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+  };
+}
+
+function mapRemoteJobCandidateMatch(row: unknown): JobCandidateMatch {
+  const record = asRecord(row);
+  const alignment = String(record.seniority_alignment ?? record.seniorityAlignment);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    matchingRunId: String(record.matching_run_id ?? record.matchingRunId ?? ""),
+    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
+    candidateId: String(record.candidate_id ?? record.candidateId ?? ""),
+    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
+    rank: toNumber(record.rank),
+    semanticScore: toNumber(record.semantic_score ?? record.semanticScore),
+    aiScore: toNumber(record.ai_score ?? record.aiScore),
+    finalScore: toNumber(record.final_score ?? record.finalScore),
+    matchedSkills: toStringArray(record.matched_skills ?? record.matchedSkills),
+    missingSkills: toStringArray(record.missing_skills ?? record.missingSkills),
+    seniorityAlignment: alignment === "Exact Match" || alignment === "Partial Match" ? alignment : "Mismatch",
+    experienceSummary: String(record.experience_summary ?? record.experienceSummary ?? ""),
+    matchExplanation: String(record.match_explanation ?? record.matchExplanation ?? ""),
+    scoringBreakdown: asRecord(record.scoring_breakdown ?? record.scoringBreakdown),
+    hardFilterPayload: asRecord(record.hard_filter_payload ?? record.hardFilterPayload),
+    candidateSnapshot: asRecord(record.candidate_snapshot ?? record.candidateSnapshot),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+  };
+}
+
+function mapRemoteJobMatchingRunDetail(payload: unknown): JobMatchingRunDetail {
+  const record = asRecord(payload);
+  return {
+    run: mapRemoteJobMatchingRun(record.run),
+    results: asArray(record.results).map(mapRemoteJobCandidateMatch),
+  };
+}
+
+function mapRemoteJobShortlist(row: unknown): JobShortlist {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
+    matchingRunId: nullableString(record.matching_run_id ?? record.matchingRunId),
+    name: String(record.name ?? ""),
+    description: String(record.description ?? ""),
+    ownerUserId: nullableString(record.owner_user_id ?? record.ownerUserId),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
+  };
+}
+
+function mapRemoteJobShortlistCandidate(row: unknown): JobShortlistCandidate {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    shortlistId: String(record.shortlist_id ?? record.shortlistId ?? ""),
+    candidateId: String(record.candidate_id ?? record.candidateId ?? ""),
+    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
+    savedRank: toNumber(record.saved_rank ?? record.savedRank),
+    savedScore: toNumber(record.saved_score ?? record.savedScore),
+    savedResultPayload: asRecord(record.saved_result_payload ?? record.savedResultPayload),
+    addedByUserId: nullableString(record.added_by_user_id ?? record.addedByUserId),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+  };
+}
+
+function mapRemoteJobShortlistDetail(payload: unknown): JobShortlistDetail {
+  const record = asRecord(payload);
+  return {
+    shortlist: mapRemoteJobShortlist(record.shortlist),
+    candidates: asArray(record.candidates).map(mapRemoteJobShortlistCandidate),
+  };
+}
+
+function normalizeJobApplicationStatus(value: unknown): JobApplicationStatus {
+  return value === "reviewing" || value === "shortlisted" || value === "rejected" || value === "withdrawn" ? value : "new";
+}
+
+function normalizeResumeIngestionStatus(value: unknown) {
+  return value === "queued" || value === "parsing" || value === "parsed" || value === "failed" ? value : "not_uploaded";
+}
+
+function normalizeCandidateHubVisibility(value: unknown) {
+  return value === "platform" || value === "private" ? value : "tenant";
+}
+
+function mapRemoteJobApplication(row: unknown): JobApplication {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
+    candidateId: nullableString(record.candidate_id ?? record.candidateId),
+    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
+    applicantName: String(record.applicant_name ?? record.applicantName ?? ""),
+    applicantEmail: String(record.applicant_email ?? record.applicantEmail ?? ""),
+    applicantPhone: nullableString(record.applicant_phone ?? record.applicantPhone),
+    applicantLocation: nullableString(record.applicant_location ?? record.applicantLocation),
+    linkedinUrl: nullableString(record.linkedin_url ?? record.linkedinUrl),
+    portfolioUrl: nullableString(record.portfolio_url ?? record.portfolioUrl),
+    resumeStoragePath: nullableString(record.resume_storage_path ?? record.resumeStoragePath),
+    resumeSourceDocumentId: nullableString(record.resume_source_document_id ?? record.resumeSourceDocumentId),
+    resumeOriginalFilename: nullableString(record.resume_original_filename ?? record.resumeOriginalFilename),
+    resumeIngestionStatus: normalizeResumeIngestionStatus(record.resume_ingestion_status ?? record.resumeIngestionStatus),
+    resumeIngestionError: nullableString(record.resume_ingestion_error ?? record.resumeIngestionError),
+    candidateHubVisibility: normalizeCandidateHubVisibility(record.candidate_hub_visibility ?? record.candidateHubVisibility),
+    coverNote: String(record.cover_note ?? record.coverNote ?? ""),
+    consentGiven: Boolean(record.consent_given ?? record.consentGiven),
+    status: normalizeJobApplicationStatus(record.status),
+    source: String(record.source ?? "public_job_board"),
+    submittedAt: String(record.submitted_at ?? record.submittedAt ?? ""),
+    reviewedByUserId: nullableString(record.reviewed_by_user_id ?? record.reviewedByUserId),
+    reviewedAt: nullableString(record.reviewed_at ?? record.reviewedAt),
+    metadata: asRecord(record.metadata_json ?? record.metadata),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
+  };
+}
+
+function mapRemotePublicJob(row: unknown): PublicJobPosting {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    slug: String(record.slug ?? ""),
+    title: String(record.title ?? ""),
+    summary: String(record.summary ?? ""),
+    description: String(record.description ?? ""),
+    location: String(record.location ?? ""),
+    remotePolicy: String(record.remotePolicy ?? record.remote_policy ?? "Unspecified"),
+    seniorityLevel: String(record.seniorityLevel ?? record.seniority_level ?? ""),
+    employmentType: String(record.employmentType ?? record.employment_type ?? ""),
+    requiredSkills: toStringArray(record.requiredSkills ?? record.required_skills),
+    preferredSkills: toStringArray(record.preferredSkills ?? record.preferred_skills),
+    keyResponsibilities: toStringArray(record.keyResponsibilities ?? record.key_responsibilities),
+    applicationDeadline: nullableString(record.applicationDeadline ?? record.application_deadline),
+    applyEnabled: record.applyEnabled === false || record.apply_enabled === false ? false : true,
+    publishedAt: nullableString(record.publishedAt ?? record.published_at),
+  };
+}
+
+function publicApplicationPayload(application: PublicJobApplicationInput) {
+  return {
+    name: application.name,
+    email: application.email,
+    phone: application.phone ?? "",
+    location: application.location ?? "",
+    currentTitle: application.currentTitle ?? "",
+    yearsExperience: application.yearsExperience ?? 0,
+    seniority: application.seniority ?? "",
+    topSkills: application.topSkills ?? [],
+    linkedinUrl: application.linkedinUrl ?? "",
+    portfolioUrl: application.portfolioUrl ?? "",
+    resumeOriginalFilename: application.resumeOriginalFilename ?? "",
+    resumeFile: application.resumeFile ?? null,
+    coverNote: application.coverNote ?? "",
+    consent: application.consent,
+    idempotencyKey: application.idempotencyKey ?? "",
+  };
+}
+
+function mapPublicReceipt(payload: unknown): PublicJobApplicationReceipt {
+  const receipt = asRecord(asRecord(payload).receipt ?? payload);
+  return {
+    accepted: receipt.accepted !== false,
+    duplicate: Boolean(receipt.duplicate),
+    applicationId: nullableString(receipt.applicationId ?? receipt.application_id) ?? undefined,
+    submittedAt: nullableString(receipt.submittedAt ?? receipt.submitted_at) ?? undefined,
+  };
+}
+
 function normalizeOpsSeverity(value: unknown): OpsAlert["severity"] {
   return value === "P0" || value === "P1" || value === "P2" || value === "P3" ? value : "P3";
 }
@@ -2047,6 +2408,8 @@ function shortlistInputPayload(item: CandidateShortlistInput) {
 }
 
 const mockShortlistItems = new Map<string, CandidateShortlistItem>();
+const mockJobPostings = new Map<string, JobPosting>();
+const mockJobApplications = new Map<string, JobApplication>();
 
 function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[]): CandidateDetail {
   const profile = asRecord(row.profile_json);
@@ -2383,6 +2746,181 @@ function createMockApi(): PlatformApi {
         }
       }
     },
+    async listJobPostings(tenantIds) {
+      await wait(80);
+      const allowedTenantIds = new Set(tenantIds ?? []);
+      return Array.from(mockJobPostings.values()).filter((job) => !allowedTenantIds.size || allowedTenantIds.has(job.tenantId));
+    },
+    async getJobPosting(jobId) {
+      await wait(60);
+      const job = mockJobPostings.get(jobId);
+      if (!job) {
+        throw new Error(`Job posting ${jobId} was not found.`);
+      }
+      return job;
+    },
+    async saveJobPosting(job) {
+      await wait(90);
+      const now = new Date().toISOString();
+      const id = job.id ?? crypto.randomUUID();
+      const current = mockJobPostings.get(id);
+      const saved: JobPosting = {
+        id,
+        tenantId: job.tenantId,
+        title: job.title ?? "",
+        employerName: job.employerName ?? "",
+        employerCountry: job.employerCountry ?? "",
+        employerRegion: job.employerRegion ?? "GCC",
+        jobDescription: job.jobDescription ?? "",
+        requiredSkills: job.requiredSkills ?? [],
+        preferredSkills: job.preferredSkills ?? [],
+        seniorityLevel: job.seniorityLevel ?? "",
+        employmentType: job.employmentType ?? "",
+        postedDate: job.status === "active" ? now.slice(0, 10) : job.postedDate ?? null,
+        applicationDeadline: job.applicationDeadline ?? null,
+        status: job.status ?? "draft",
+        locationInfo: job.locationInfo ?? {},
+        keyResponsibilities: job.keyResponsibilities ?? [],
+        aiProfile: job.aiProfile ?? {},
+        aiConfidence: job.aiConfidence ?? {},
+        createdByUserId: job.createdByUserId ?? null,
+        updatedByUserId: job.updatedByUserId ?? null,
+        closedAt: job.closedAt ?? null,
+        closedByUserId: job.closedByUserId ?? null,
+        isPublic: job.isPublic ?? false,
+        publicSlug: job.publicSlug ?? null,
+        publicTitle: job.publicTitle ?? null,
+        publicSummary: job.publicSummary ?? null,
+        publicDescription: job.publicDescription ?? null,
+        publicLocation: job.publicLocation ?? null,
+        publicApplyEnabled: job.publicApplyEnabled ?? true,
+        publicPublishedAt: job.isPublic && job.status === "active" ? now : null,
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+      };
+      mockJobPostings.set(id, saved);
+      return saved;
+    },
+    async extractJobPosting(input) {
+      await wait(120);
+      const skills = normalizeSkillList(input.jobDescription.match(/\b(?:React|TypeScript|Python|Java|SQL|AWS|Azure|GraphQL|Node)\b/gi) ?? []);
+      return {
+        requiredSkills: skills.map((name) => ({ name, confidence: 0.72, evidence: name })),
+        preferredSkills: [],
+        seniorityLevel: { value: /senior/i.test(input.title ?? input.jobDescription) ? "Senior" : "Mid", confidence: 0.64, evidence: input.title ?? "JD" },
+        employmentType: { value: "Full-time", confidence: 0.7, evidence: "Default mock extraction" },
+        location: { country: null, city: null, region: input.employerRegion, remotePolicy: "Unspecified", confidence: 0.3 },
+        keyResponsibilities: [],
+        warnings: [],
+        modelProvider: "mock",
+        modelName: "mock",
+        promptVersion: "job-extraction-v1",
+        inputHash: "mock",
+      };
+    },
+    async startJobMatchingRun() {
+      throw new Error("Job matching requires Supabase.");
+    },
+    async listJobMatchingRuns() {
+      return [];
+    },
+    async getJobMatchingRun() {
+      throw new Error("Matching run was not found.");
+    },
+    async listJobShortlists() {
+      return [];
+    },
+    async getJobShortlist() {
+      throw new Error("Shortlist was not found.");
+    },
+    async saveJobShortlist(input) {
+      return {
+        shortlist: {
+          id: crypto.randomUUID(),
+          tenantId: "mock-tenant",
+          jobPostingId: input.jobId,
+          matchingRunId: input.runId ?? null,
+          name: input.name,
+          description: input.description ?? "",
+          ownerUserId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        candidates: [],
+      };
+    },
+    async listJobApplications(jobId) {
+      return Array.from(mockJobApplications.values()).filter((application) => application.jobPostingId === jobId);
+    },
+    async updateJobApplicationStatus(applicationId, status) {
+      const application = mockJobApplications.get(applicationId);
+      if (!application) {
+        throw new Error("Application was not found.");
+      }
+      const updated = { ...application, status, updatedAt: new Date().toISOString() };
+      mockJobApplications.set(applicationId, updated);
+      return updated;
+    },
+    async listPublicJobPostings() {
+      return Array.from(mockJobPostings.values()).filter((job) => job.status === "active" && job.isPublic).map((job) => ({
+        id: job.publicSlug ?? job.id,
+        slug: job.publicSlug ?? job.id,
+        title: job.publicTitle ?? job.title,
+        summary: job.publicSummary ?? "",
+        description: job.publicDescription ?? job.jobDescription,
+        location: job.publicLocation ?? "",
+        remotePolicy: job.locationInfo.remotePolicy ?? "Unspecified",
+        seniorityLevel: job.seniorityLevel,
+        employmentType: job.employmentType,
+        requiredSkills: job.requiredSkills,
+        preferredSkills: job.preferredSkills,
+        keyResponsibilities: job.keyResponsibilities,
+        applicationDeadline: job.applicationDeadline,
+        applyEnabled: job.publicApplyEnabled,
+        publishedAt: job.publicPublishedAt,
+      }));
+    },
+    async getPublicJobPosting(slug) {
+      const job = (await this.listPublicJobPostings()).find((item) => item.slug === slug);
+      if (!job) {
+        throw new Error("Public job was not found.");
+      }
+      return job;
+    },
+    async submitPublicJobApplication(slug, application) {
+      const publicJob = await this.getPublicJobPosting(slug);
+      const id = crypto.randomUUID();
+      mockJobApplications.set(id, {
+        id,
+        tenantId: "mock-tenant",
+        jobPostingId: publicJob.id,
+        candidateId: crypto.randomUUID(),
+        sourceTenantId: "mock-tenant",
+        applicantName: application.name,
+        applicantEmail: application.email,
+        applicantPhone: application.phone ?? null,
+        applicantLocation: application.location ?? null,
+        linkedinUrl: application.linkedinUrl ?? null,
+        portfolioUrl: application.portfolioUrl ?? null,
+        resumeStoragePath: null,
+        resumeSourceDocumentId: null,
+        resumeOriginalFilename: application.resumeOriginalFilename ?? null,
+        resumeIngestionStatus: application.resumeFile ? "queued" : "not_uploaded",
+        resumeIngestionError: null,
+        candidateHubVisibility: "platform",
+        coverNote: application.coverNote ?? "",
+        consentGiven: application.consent,
+        status: "new",
+        source: "public_job_board",
+        submittedAt: new Date().toISOString(),
+        reviewedByUserId: null,
+        reviewedAt: null,
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return { accepted: true, applicationId: id, submittedAt: new Date().toISOString() };
+    },
     async getParsingOverview(_tenantIds) {
       await wait(120);
       return parsingOverview;
@@ -2688,6 +3226,136 @@ function createRemoteApi(): PlatformApi {
       await invokePlatform("clear_shortlist_items", {
         tenant_ids: tenantIds ?? [],
       });
+    },
+    async listJobPostings(tenantIds) {
+      if (!supabase || !tenantIds?.length) {
+        return supabase ? [] : mock.listJobPostings(tenantIds);
+      }
+      const rows = await invokePlatform<unknown[]>("job_postings", { tenant_ids: tenantIds });
+      return (rows ?? []).map(mapRemoteJobPosting);
+    },
+    async getJobPosting(jobId) {
+      if (!supabase) {
+        return mock.getJobPosting(jobId);
+      }
+      const row = await invokePlatform<unknown>("job_posting", { job_id: jobId });
+      return mapRemoteJobPosting(row);
+    },
+    async saveJobPosting(job) {
+      if (!supabase) {
+        return mock.saveJobPosting(job);
+      }
+      const row = await invokePlatform<unknown>("save_job_posting", { job: jobPostingPayload(job) });
+      return mapRemoteJobPosting(row);
+    },
+    async extractJobPosting(input) {
+      if (!supabase) {
+        return mock.extractJobPosting(input);
+      }
+      const payload = await invokePlatform<unknown>("extract_job_posting", {
+        tenant_id: input.tenantId,
+        job_id: input.jobId ?? null,
+        title: input.title ?? null,
+        employer_region: input.employerRegion ?? null,
+        job_description: input.jobDescription,
+      });
+      return mapRemoteJobExtraction(payload);
+    },
+    async startJobMatchingRun(input) {
+      if (!supabase) {
+        return mock.startJobMatchingRun(input);
+      }
+      const payload = await invokePlatform<unknown>("start_job_matching_run", {
+        job_id: input.jobId,
+        limit: input.limit,
+        semantic_pool_size: input.semanticPoolSize,
+        rerank_pool_size: input.rerankPoolSize,
+        mandatory_criteria: input.mandatoryCriteria ?? {},
+      });
+      return mapRemoteJobMatchingRunDetail(payload);
+    },
+    async listJobMatchingRuns(jobId) {
+      if (!supabase) {
+        return mock.listJobMatchingRuns(jobId);
+      }
+      const rows = await invokePlatform<unknown[]>("matching_runs", { job_id: jobId });
+      return (rows ?? []).map(mapRemoteJobMatchingRun);
+    },
+    async getJobMatchingRun(runId) {
+      if (!supabase) {
+        return mock.getJobMatchingRun(runId);
+      }
+      const payload = await invokePlatform<unknown>("matching_run", { run_id: runId });
+      return mapRemoteJobMatchingRunDetail(payload);
+    },
+    async listJobShortlists(jobId) {
+      if (!supabase) {
+        return mock.listJobShortlists(jobId);
+      }
+      const rows = await invokePlatform<unknown[]>("job_shortlists", { job_id: jobId });
+      return (rows ?? []).map(mapRemoteJobShortlist);
+    },
+    async getJobShortlist(shortlistId) {
+      if (!supabase) {
+        return mock.getJobShortlist(shortlistId);
+      }
+      const payload = await invokePlatform<unknown>("job_shortlist", { shortlist_id: shortlistId });
+      return mapRemoteJobShortlistDetail(payload);
+    },
+    async saveJobShortlist(input) {
+      if (!supabase) {
+        return mock.saveJobShortlist(input);
+      }
+      const payload = await invokePlatform<unknown>("save_job_shortlist", {
+        job_id: input.jobId,
+        run_id: input.runId ?? null,
+        name: input.name,
+        description: input.description ?? "",
+        candidate_ids: input.candidateIds ?? [],
+      });
+      return mapRemoteJobShortlistDetail(payload);
+    },
+    async listJobApplications(jobId) {
+      if (!supabase) {
+        return mock.listJobApplications(jobId);
+      }
+      const rows = await invokePlatform<unknown[]>("job_applications", { job_id: jobId });
+      return (rows ?? []).map(mapRemoteJobApplication);
+    },
+    async updateJobApplicationStatus(applicationId, status) {
+      if (!supabase) {
+        return mock.updateJobApplicationStatus(applicationId, status);
+      }
+      const row = await invokePlatform<unknown>("update_job_application_status", {
+        application_id: applicationId,
+        status,
+      });
+      return mapRemoteJobApplication(row);
+    },
+    async listPublicJobPostings() {
+      if (!supabase) {
+        return mock.listPublicJobPostings();
+      }
+      const payload = await invokeFunction<JsonRecord>("public-jobs", { action: "list" });
+      return asArray(payload.jobs).map(mapRemotePublicJob);
+    },
+    async getPublicJobPosting(slug) {
+      if (!supabase) {
+        return mock.getPublicJobPosting(slug);
+      }
+      const payload = await invokeFunction<JsonRecord>("public-jobs", { action: "detail", slug });
+      return mapRemotePublicJob(asRecord(payload.job));
+    },
+    async submitPublicJobApplication(slug, application) {
+      if (!supabase) {
+        return mock.submitPublicJobApplication(slug, application);
+      }
+      const payload = await invokeFunction<unknown>("public-jobs", {
+        action: "apply",
+        slug,
+        application: publicApplicationPayload(application),
+      });
+      return mapPublicReceipt(payload);
     },
     async getParsingOverview(tenantIds, options) {
       if (!supabase || !tenantIds?.length) {

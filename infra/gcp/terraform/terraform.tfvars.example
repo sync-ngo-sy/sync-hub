@@ -4,8 +4,8 @@ region     = "us-central1"
 artifact_registry_repository = "cv-intelligence"
 worker_image_name            = "cv-worker"
 worker_image_tag             = "latest"
-worker_job_name              = "cv-worker-ingest"
-worker_args                  = ["ingest", "--pretty"]
+worker_job_name              = "cv-worker-public-applications"
+worker_args                  = ["public-applications", "--limit", "25", "--retry-stale-minutes", "30", "--pretty"]
 
 cv_bucket_name     = "your-cv-source-bucket"
 cv_bucket_location = "us-central1"
@@ -24,9 +24,9 @@ worker_secret_env = {
   SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key"
   GEMINI_API_KEY            = "gemini-api-key"
   CV_MODEL_API_KEY          = "gemini-api-key"
-  MANATAL_API_TOKEN         = "manatal-api-token"
 }
 
-enable_scheduler     = false
-scheduler_cron       = "0 2 * * *"
+enable_scheduler     = true
+scheduler_name       = "cv-worker-public-applications-schedule"
+scheduler_cron       = "*/2 * * * *"
 scheduler_time_zone  = "Asia/Dubai"

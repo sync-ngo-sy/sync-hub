@@ -1,10 +1,13 @@
 import { Navigate, createHashRouter } from "react-router-dom";
+import { AuthGate } from "@/app/AuthGate";
 import { AppShell } from "@/app/layout/AppShell";
 import { EmptyState } from "@/components/ui";
 import { CandidateDossierPage } from "@/screens/CandidateDossierPage";
 import { IntelligentComparisonPage } from "@/screens/IntelligentComparisonPage";
 import { IntelligenceHubPage } from "@/screens/IntelligenceHubPage";
 import { InsightsDashboardPage } from "@/screens/InsightsDashboardPage";
+import { JobMatchingRunPage, JobPostingCreatePage, JobPostingDetailPage, JobPostingEditPage, JobPostingsPage } from "@/screens/JobPostingsPage";
+import { PublicJobBoardPage, PublicJobDetailPage } from "@/screens/PublicJobBoardPage";
 import { SearchConfigurationPage } from "@/screens/SearchConfigurationPage";
 import { SearchDiscoveryPage } from "@/screens/SearchDiscoveryPage";
 import { OpsAlertsPage } from "@/screens/admin/OpsAlertsPage";
@@ -16,10 +19,20 @@ import { AccountProvisioningPage } from "@/screens/admin/AccountProvisioningPage
 import { PlatformAdminDashboardPage } from "@/screens/admin/PlatformAdminDashboardPage";
 import { PlatformRuntimeSettingsPage } from "@/screens/admin/PlatformRuntimeSettingsPage";
 
+function ProtectedShell() {
+  return (
+    <AuthGate>
+      <AppShell />
+    </AuthGate>
+  );
+}
+
 export const router = createHashRouter([
+  { path: "/careers", element: <PublicJobBoardPage /> },
+  { path: "/careers/:slug", element: <PublicJobDetailPage /> },
   {
     path: "/",
-    element: <AppShell />,
+    element: <ProtectedShell />,
     children: [
       {
         index: true,
@@ -27,6 +40,11 @@ export const router = createHashRouter([
       },
       { path: "search", element: <SearchDiscoveryPage /> },
       { path: "chat", element: <IntelligenceHubPage /> },
+      { path: "jobs", element: <JobPostingsPage /> },
+      { path: "jobs/new", element: <JobPostingCreatePage /> },
+      { path: "jobs/:jobId/edit", element: <JobPostingEditPage /> },
+      { path: "jobs/:jobId", element: <JobPostingDetailPage /> },
+      { path: "jobs/:jobId/runs/:runId", element: <JobMatchingRunPage /> },
       { path: "dossier/:candidateId", element: <CandidateDossierPage /> },
       { path: "compare", element: <IntelligentComparisonPage /> },
       { path: "insights", element: <InsightsDashboardPage /> },

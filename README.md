@@ -4,7 +4,7 @@ Offline-first CV search, ranking, and candidate analysis for recruiter workflows
 
 ## What this repo contains
 
-- `cvs/`: optional ignored local CV source folder for private development data.
+- `cvs/`: sample CV files for local development and pipeline validation.
 - `workspaces/`: git-safe tenant folder skeletons; real CV files placed here stay ignored.
 - `supabase/`: online backend layer for auth, Postgres, `pgvector`, RLS, and retrieval APIs.
 - `worker/`: offline ingestion and AI processing on a laptop or dedicated operator machine.
@@ -50,7 +50,7 @@ The system is intentionally split into two planes:
 
 ## Expected data flow
 
-# cv-intel
+# sync-hub
 
 `CV files -> parse -> extract JSON -> normalize -> chunk -> embed -> summarize -> sync -> search -> rank -> analyze`
 
@@ -140,14 +140,17 @@ python3 -m unittest discover -s worker/tests -t worker
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker discover ./workspaces/<tenant-slug> --tenant-id <tenant-id>
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest ./workspaces/<tenant-slug> --tenant-id <tenant-id> --no-sync
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker compare --tenant-id <tenant-id> --candidate-id <id-1> --candidate-id <id-2> --no-sync
+PYTHONPATH=worker/src python3 -m cv_intelligence_worker public-applications --limit 25
 ```
 
 Current worker behavior:
 
-- The worker reads from local files and directories only.
+- The worker reads from local files/directories for manual ingestion, and can drain queued public application CV uploads from Supabase Storage with `public-applications`.
 - It accepts any file/folder path passed to `discover` or `ingest`.
 - If you pass a directory, it recursively scans supported files under that directory.
 - There is no hard per-run CV limit today. One run processes every supported file discovered under the provided inputs.
+- Public application CV uploads are queued by the `public-jobs` Edge Function. The worker is not a daemon by default; run `public-applications` manually or schedule it with your process manager.
+- Public application parsing uses the same extraction configuration as normal CV ingestion. Set `GEMINI_API_KEY` or the `CV_MODEL_*` variables before draining the queue; otherwise the worker will fail queued applications rather than silently using heuristic extraction.
 - `CV_INGEST_CONCURRENCY` controls how many CVs are parsed, extracted, and embedded in parallel.
 - `CV_BATCH_SIZE` controls how many completed bundles are flushed to Supabase at a time; it is not a run cap.
 - `CV_SUPABASE_BATCH_SIZE` controls the maximum row count per Supabase upsert request.
@@ -314,13 +317,12 @@ This creates or updates folders like:
 /Users/example/Library/CloudStorage/GoogleDrive-user@example.com/My Drive/cv-intelligence/CV Intelligence/beta
 ```
 
-### Seeding a workspace from private local CVs
+### Seeding a workspace from the sample `cvs/` folder
 
-Private CVs must stay outside git. To seed a local workspace, copy your private files into an ignored workspace folder:
+The repo keeps a small local sample corpus in `./cvs` for testing. If you want to seed the `demo` workspace folder with those same files, copy them into `workspaces/demo/`:
 
 ```bash
-mkdir -p ./workspaces/demo
-cp -f /path/to/private-cvs/*.pdf ./workspaces/demo/
+cp -f ./cvs/*.pdf ./workspaces/demo/
 ```
 
 Then ingest the seeded workspace folder into the local `demo` tenant:
@@ -413,6 +415,31 @@ Use these browser-safe values when pointing the frontend at a local Supabase sta
 ```bash
 VITE_SUPABASE_URL=http://127.0.0.1:54321
 VITE_SUPABASE_ANON_KEY=<local-anon-key>
+VITE_API_BASE_URL=/functions/v1
+VITE_ENABLE_LOCAL_SUPABASE_PROXY=true
+```
+
+For a fully local job-board smoke test, run the database reset and functions runtime first:
+
+```bash
+supabase start
+supabase db reset
+supabase functions serve
+cd frontend && VITE_ENABLE_LOCAL_SUPABASE_PROXY=true npm run dev -- --host 127.0.0.1 --port 5175
+```
+
+`supabase/seed.sql` inserts a local public job and one sample application. The frontend calls local Supabase REST RPCs for `/careers`, with the local `public-jobs` Edge Function kept as a fallback; it should not need the mock job fixtures when the Supabase env vars are present.
+
+Run the public job RPC regression smoke test after `supabase db reset`:
+
+```bash
+node scripts/check-public-jobs-rpc.mjs
+```
+
+Run the upload queue smoke test while `supabase functions serve` is running:
+
+```bash
+node scripts/check-public-jobs-upload.mjs
 ```
 
 What the frontend now expects in live mode:

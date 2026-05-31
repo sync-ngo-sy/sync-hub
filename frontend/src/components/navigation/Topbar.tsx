@@ -14,6 +14,11 @@ const routeMeta: Array<{ test: (path: string) => boolean; title: string; subtitl
     subtitle: "Grounded recruiter Q&A over corpus-derived or explicitly scoped candidate sets",
   },
   {
+    test: (path) => path.startsWith("/jobs"),
+    title: "Job Postings",
+    subtitle: "Internal roles, AI requirement extraction, persisted candidate matching runs, and named shortlists",
+  },
+  {
     test: (path) => path.startsWith("/dossier"),
     title: "Candidate Dossier",
     subtitle: "Grounded profile view with timeline, skills, and supporting evidence",

@@ -21,6 +21,9 @@ verify_jwt = true
 [functions.platform]
 verify_jwt = true
 
+[functions.public-jobs]
+verify_jwt = false
+
 [functions.compare]
 verify_jwt = true
 
