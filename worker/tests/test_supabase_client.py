@@ -50,6 +50,16 @@ class FlakySupabaseClient(RecordingSupabaseClient):
         return super().upsert(table, rows, on_conflict)
 
 
+class RequestRecordingSupabaseClient(SupabaseClient):
+    def __init__(self, config: WorkerConfig) -> None:
+        super().__init__(config)
+        self.requests = []
+
+    def _request(self, method: str, path: str, *, data=None, headers=None):
+        self.requests.append((method, path, data, headers))
+        return []
+
+
 class SupabaseClientTests(unittest.TestCase):
     def test_stable_document_id_depends_on_tenant_path_and_content_hash(self) -> None:
         first = stable_document_id("tenant-1", "/tmp/first.pdf", "sha-1")
@@ -142,6 +152,27 @@ class SupabaseClientTests(unittest.TestCase):
             chunk_calls = [rows for table, rows, _on_conflict in client.upsert_calls if table == "candidate_chunks"]
             self.assertGreaterEqual(len(chunk_calls), 2)
             self.assertTrue(all(len(rows) >= 1 for rows in chunk_calls))
+
+    def test_queued_public_applications_include_stale_parsing_retry(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+        client.queued_public_job_applications(limit=7, retry_stale_minutes=45)
+        self.assertEqual("GET", client.requests[0][0])
+        path = client.requests[0][1]
+        self.assertIn("limit=7", path)
+        self.assertIn("resume_ingestion_status.eq.queued", path)
+        self.assertIn("resume_ingestion_status.eq.parsing", path)
+        self.assertIn("updated_at.lt.", path)
+
+    def test_processing_run_update_can_be_scoped_to_public_application(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+        client.update_processing_runs_for_source("source-1", {"status": "completed"}, application_id="application-1")
+        self.assertEqual("PATCH", client.requests[0][0])
+        path = client.requests[0][1]
+        self.assertIn("source_document_id=eq.source-1", path)
+        self.assertIn("metadata_json-%3E%3Ejob_application_id=eq.application-1", path)
+        self.assertEqual({"status": "completed"}, client.requests[0][2])
 
 
 if __name__ == "__main__":

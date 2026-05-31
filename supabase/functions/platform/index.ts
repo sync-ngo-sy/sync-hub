@@ -1,5 +1,7 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { createAuthedClient } from "../_shared/client.ts";
+import { generateStructuredObject } from "../_shared/llm.ts";
+import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
 import {
   addUserToTenant,
   assertPlatformAdmin,
@@ -13,6 +15,7 @@ import {
 } from "../_shared/platformRuntimeSettings.ts";
 import {
   normalizeLocationValue,
+  normalizeSeniorityValue,
   normalizeSkillList,
 } from "../_shared/searchTaxonomy.ts";
 
@@ -27,14 +30,13 @@ type SupabaseQueryResult = {
   count?: number | null;
 };
 type SupabaseQueryLike = PromiseLike<SupabaseQueryResult> & {
-  select: (...args: unknown[]) => SupabaseQueryLike;
-  in: (...args: unknown[]) => SupabaseQueryLike;
-  eq: (...args: unknown[]) => SupabaseQueryLike;
-  not: (...args: unknown[]) => SupabaseQueryLike;
-  like: (...args: unknown[]) => SupabaseQueryLike;
-  ilike: (...args: unknown[]) => SupabaseQueryLike;
-  order: (...args: unknown[]) => SupabaseQueryLike;
-  limit: (...args: unknown[]) => SupabaseQueryLike;
+  eq: (column: string, value: unknown) => SupabaseQueryLike;
+  not: (column: string, operator: string, value: unknown) => SupabaseQueryLike;
+  like: (column: string, pattern: string) => SupabaseQueryLike;
+  ilike: (column: string, pattern: string) => SupabaseQueryLike;
+};
+type TenantFilterableQuery<T> = T & {
+  in: (column: string, values: readonly string[]) => T;
 };
 type GcsServiceAccountCredentials = {
   client_email?: string;
@@ -112,6 +114,10 @@ function asStringArray(value: unknown) {
       ),
     )
     : [];
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
 }
 
 function asRecord(value: unknown): JsonRecord {
@@ -525,12 +531,14 @@ async function getWorkspaceStats(
     : data;
 }
 
-function withTenantFilter(
-  query: SupabaseQueryLike,
+function withTenantFilter<T>(
+  query: T,
   tenantIds: string[],
   column = "tenant_id",
 ) {
-  return tenantIds.length ? query.in(column, tenantIds) : query;
+  return tenantIds.length
+    ? (query as TenantFilterableQuery<T>).in(column, tenantIds)
+    : query;
 }
 
 async function countRows(
@@ -541,7 +549,10 @@ async function countRows(
 ) {
   let query = supabase
     .from(table)
-    .select("*", { count: "exact", head: true });
+    .select("*", {
+      count: "exact",
+      head: true,
+    }) as unknown as SupabaseQueryLike;
   query = withTenantFilter(query, tenantIds);
   if (apply) {
     query = apply(query);
@@ -2605,6 +2616,1407 @@ async function clearShortlistItems(
   return { ok: true };
 }
 
+const jobPostingSelect = [
+  "id",
+  "tenant_id",
+  "title",
+  "employer_name",
+  "employer_country",
+  "employer_region",
+  "job_description",
+  "required_skills",
+  "preferred_skills",
+  "seniority_level",
+  "employment_type",
+  "posted_date",
+  "application_deadline",
+  "status",
+  "location_info",
+  "key_responsibilities",
+  "ai_profile",
+  "ai_confidence",
+  "created_by_user_id",
+  "updated_by_user_id",
+  "closed_at",
+  "closed_by_user_id",
+  "is_public",
+  "public_slug",
+  "public_title",
+  "public_summary",
+  "public_description",
+  "public_location",
+  "public_apply_enabled",
+  "public_published_at",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+const matchingRunSelect = [
+  "id",
+  "tenant_id",
+  "job_posting_id",
+  "initiated_by_user_id",
+  "status",
+  "requested_limit",
+  "semantic_pool_size",
+  "rerank_pool_size",
+  "retrieved_count",
+  "filtered_count",
+  "reranked_count",
+  "completed_count",
+  "failure_reason",
+  "matching_config",
+  "job_profile",
+  "embedding_provider",
+  "embedding_version",
+  "started_at",
+  "completed_at",
+  "created_at",
+].join(", ");
+
+const matchingResultSelect = [
+  "id",
+  "tenant_id",
+  "matching_run_id",
+  "job_posting_id",
+  "candidate_id",
+  "candidate_source_tenant_id",
+  "rank",
+  "semantic_score",
+  "ai_score",
+  "final_score",
+  "matched_skills",
+  "missing_skills",
+  "seniority_alignment",
+  "experience_summary",
+  "match_explanation",
+  "scoring_breakdown",
+  "hard_filter_payload",
+  "candidate_snapshot",
+  "created_at",
+].join(", ");
+
+const jobShortlistSelect = [
+  "id",
+  "tenant_id",
+  "job_posting_id",
+  "matching_run_id",
+  "name",
+  "description",
+  "owner_user_id",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+const jobApplicationSelect = [
+  "id",
+  "tenant_id",
+  "job_posting_id",
+  "candidate_id",
+  "candidate_source_tenant_id",
+  "applicant_name",
+  "applicant_email",
+  "applicant_phone",
+  "applicant_location",
+  "linkedin_url",
+  "portfolio_url",
+  "resume_storage_path",
+  "resume_source_document_id",
+  "resume_original_filename",
+  "resume_ingestion_status",
+  "resume_ingestion_error",
+  "candidate_hub_visibility",
+  "cover_note",
+  "consent_given",
+  "status",
+  "source",
+  "submitted_at",
+  "reviewed_by_user_id",
+  "reviewed_at",
+  "metadata_json",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+function clampInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+function normalizeStatus(value: unknown) {
+  const normalized = String(value ?? "draft").trim().toLowerCase();
+  return normalized === "active" || normalized === "closed"
+    ? normalized
+    : "draft";
+}
+
+function normalizePublicSlug(value: unknown) {
+  const raw = asString(value);
+  if (!raw) {
+    return null;
+  }
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return slug || null;
+}
+
+function normalizeRegion(value: unknown) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized === "GCC" || normalized === "EU" || normalized === "USA"
+    ? normalized
+    : null;
+}
+
+function normalizeEmploymentType(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+  const compact = normalized.toLowerCase().replace(/[_\s]+/g, "-");
+  const map: Record<string, string> = {
+    fulltime: "Full-time",
+    "full-time": "Full-time",
+    parttime: "Part-time",
+    "part-time": "Part-time",
+    contract: "Contract",
+    temporary: "Temporary",
+    internship: "Internship",
+    freelance: "Freelance",
+    permanent: "Full-time",
+  };
+  return map[compact] ?? `${normalized[0].toUpperCase()}${normalized.slice(1)}`;
+}
+
+function normalizeJobSeniority(value: unknown) {
+  const raw = asString(value);
+  if (!raw) {
+    return "";
+  }
+  const normalized = normalizeSeniorityValue(raw);
+  if (normalized === "staff-plus") {
+    return "Lead";
+  }
+  if (normalized === "senior") {
+    return "Senior";
+  }
+  if (normalized === "mid") {
+    return "Mid";
+  }
+  if (normalized === "junior") {
+    return /intern/i.test(raw) ? "Intern" : "Junior";
+  }
+  return raw;
+}
+
+function seniorityRank(value: unknown) {
+  const normalized = normalizeJobSeniority(value).toLowerCase();
+  if (normalized.includes("executive")) {
+    return 7;
+  }
+  if (normalized.includes("principal")) {
+    return 6;
+  }
+  if (
+    normalized.includes("lead") || normalized.includes("architect") ||
+    normalized.includes("staff")
+  ) {
+    return 5;
+  }
+  if (normalized.includes("senior")) {
+    return 4;
+  }
+  if (normalized.includes("mid") || normalized.includes("intermediate")) {
+    return 3;
+  }
+  if (normalized.includes("junior")) {
+    return 2;
+  }
+  if (normalized.includes("intern")) {
+    return 1;
+  }
+  return 0;
+}
+
+function seniorityAlignment(candidate: unknown, required: unknown) {
+  const candidateRank = seniorityRank(candidate);
+  const requiredRank = seniorityRank(required);
+  if (!candidateRank || !requiredRank) {
+    return "Partial Match";
+  }
+  if (candidateRank === requiredRank) {
+    return "Exact Match";
+  }
+  if (
+    Math.abs(candidateRank - requiredRank) === 1 || candidateRank > requiredRank
+  ) {
+    return "Partial Match";
+  }
+  return "Mismatch";
+}
+
+function normalizeSkillSet(value: unknown) {
+  return normalizeSkillList(asStringArray(value)).slice(0, 40);
+}
+
+function extractSkillsFromText(text: string) {
+  return normalizeSkillList(
+    [
+      ...text.matchAll(
+        /\b(?:React|TypeScript|JavaScript|Node(?:\.js)?|Python|Java|C#|\.NET|Angular|Vue|Next(?:\.js)?|SQL|PostgreSQL|MySQL|MongoDB|AWS|Azure|Google Cloud|GCP|Docker|Kubernetes|Terraform|GraphQL|REST(?: APIs?)?|PHP|Laravel|Django|FastAPI|Flask|Flutter|React Native|Swift|Kotlin|Linux|Redis|Kafka|TensorFlow|PyTorch|Pandas|NumPy)\b/gi,
+      ),
+    ].map((match) => match[0]),
+  );
+}
+
+function heuristicJobExtraction(
+  input: {
+    title: string | null;
+    jobDescription: string;
+    employerRegion: string | null;
+  },
+) {
+  const text = input.jobDescription;
+  const lower = text.toLowerCase();
+  const allSkills = extractSkillsFromText(text);
+  const preferred = allSkills.filter((skill) => {
+    const index = lower.indexOf(skill.toLowerCase());
+    const window = index >= 0
+      ? lower.slice(Math.max(0, index - 80), index + 120)
+      : "";
+    return /preferred|nice to have|plus|bonus|advantage/.test(window);
+  });
+  const required = allSkills.filter((skill) => !preferred.includes(skill));
+  const seniority = normalizeJobSeniority(input.title ?? text) ||
+    (/\blead|architect|principal\b/i.test(text)
+      ? "Lead"
+      : /\bsenior|sr\b/i.test(text)
+      ? "Senior"
+      : /\bjunior|entry|graduate\b/i.test(text)
+      ? "Junior"
+      : "Mid");
+  const employmentType = /contract|contractor/i.test(text)
+    ? "Contract"
+    : /part[-\s]?time/i.test(text)
+    ? "Part-time"
+    : /intern/i.test(text)
+    ? "Internship"
+    : /freelance/i.test(text)
+    ? "Freelance"
+    : "Full-time";
+  const locationCountry =
+    normalizeLocationValue(text, { allowFallback: false }) ??
+      (input.employerRegion === "GCC"
+        ? "United Arab Emirates"
+        : input.employerRegion === "USA"
+        ? "United States"
+        : null);
+  const remotePolicy = /remote/i.test(text)
+    ? "Remote"
+    : /hybrid/i.test(text)
+    ? "Hybrid"
+    : /onsite|on-site/i.test(text)
+    ? "Onsite"
+    : "Unspecified";
+  const responsibilities = text
+    .split(/\n|(?:^|\s)[*-]\s+/)
+    .map((line) => line.trim().replace(/^[-*]\s*/, ""))
+    .filter((line) =>
+      line.length >= 24 &&
+      /\b(?:build|develop|design|lead|manage|deliver|collaborate|implement|maintain|support|create|drive)\b/i
+        .test(line)
+    )
+    .slice(0, 6);
+
+  return {
+    requiredSkills: required.map((name) => ({
+      name,
+      confidence: 0.72,
+      evidence: name,
+    })),
+    preferredSkills: preferred.map((name) => ({
+      name,
+      confidence: 0.66,
+      evidence: name,
+    })),
+    seniorityLevel: {
+      value: seniority,
+      confidence: 0.64,
+      evidence: input.title ?? "Job description seniority signals",
+    },
+    employmentType: {
+      value: employmentType,
+      confidence: 0.7,
+      evidence: "Employment type inferred from job description",
+    },
+    location: {
+      country: locationCountry,
+      city: null,
+      region: input.employerRegion,
+      remotePolicy,
+      confidence: locationCountry ? 0.62 : 0.38,
+    },
+    keyResponsibilities: responsibilities,
+    warnings: required.length ? [] : [{
+      type: "MISSING",
+      message:
+        "No explicit known technical skills were detected; review required skills manually.",
+    }],
+  };
+}
+
+const jobExtractionSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    requiredSkills: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          confidence: { type: "number" },
+          evidence: { type: "string" },
+        },
+        required: ["name", "confidence", "evidence"],
+      },
+    },
+    preferredSkills: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          confidence: { type: "number" },
+          evidence: { type: "string" },
+        },
+        required: ["name", "confidence", "evidence"],
+      },
+    },
+    seniorityLevel: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        value: { type: "string" },
+        confidence: { type: "number" },
+        evidence: { type: "string" },
+      },
+      required: ["value", "confidence", "evidence"],
+    },
+    employmentType: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        value: { type: "string" },
+        confidence: { type: "number" },
+        evidence: { type: "string" },
+      },
+      required: ["value", "confidence", "evidence"],
+    },
+    location: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        country: { type: ["string", "null"] },
+        city: { type: ["string", "null"] },
+        region: { type: ["string", "null"] },
+        remotePolicy: { type: "string" },
+        confidence: { type: "number" },
+      },
+      required: ["country", "city", "region", "remotePolicy", "confidence"],
+    },
+    keyResponsibilities: { type: "array", items: { type: "string" } },
+    warnings: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          type: { type: "string" },
+          message: { type: "string" },
+        },
+        required: ["type", "message"],
+      },
+    },
+  },
+  required: [
+    "requiredSkills",
+    "preferredSkills",
+    "seniorityLevel",
+    "employmentType",
+    "location",
+    "keyResponsibilities",
+    "warnings",
+  ],
+};
+
+type JobExtractionPayload = ReturnType<typeof heuristicJobExtraction>;
+
+async function extractJobDescription(
+  input: {
+    title: string | null;
+    jobDescription: string;
+    employerRegion: string | null;
+  },
+) {
+  const fallback = heuristicJobExtraction(input);
+  try {
+    const result = await generateStructuredObject<JobExtractionPayload>({
+      schemaName: "job_description_extraction",
+      schema: jobExtractionSchema,
+      temperature: 0,
+      systemPrompt:
+        "Extract recruitment job requirements from a job description. Return strict JSON only. Separate required skills from preferred skills. Do not invent skills or employer details. Flag ambiguity in warnings.",
+      userPrompt: JSON.stringify({
+        title: input.title,
+        employerRegion: input.employerRegion,
+        jobDescription: input.jobDescription,
+      }),
+    });
+    if (!result?.object) {
+      return {
+        payload: fallback,
+        provider: "heuristic",
+        model: "local-fallback",
+      };
+    }
+    return {
+      payload: result.object,
+      provider: result.provider,
+      model: result.model,
+    };
+  } catch {
+    return {
+      payload: fallback,
+      provider: "heuristic",
+      model: "local-fallback",
+    };
+  }
+}
+
+function extractionToJobFields(payload: JobExtractionPayload) {
+  const requiredSkills = normalizeSkillList(
+    payload.requiredSkills.map((skill) => skill.name),
+  ).slice(0, 32);
+  const preferredSkills = normalizeSkillList(
+    payload.preferredSkills.map((skill) => skill.name),
+  )
+    .filter((skill) => !requiredSkills.includes(skill))
+    .slice(0, 32);
+  return {
+    requiredSkills,
+    preferredSkills,
+    seniorityLevel: normalizeJobSeniority(payload.seniorityLevel.value),
+    employmentType: normalizeEmploymentType(payload.employmentType.value),
+    locationInfo: asRecord(payload.location),
+    keyResponsibilities: payload.keyResponsibilities.map((item) => item.trim())
+      .filter(Boolean).slice(0, 10),
+    aiConfidence: {
+      requiredSkills: payload.requiredSkills.map((skill) => ({
+        name: skill.name,
+        confidence: skill.confidence,
+      })),
+      preferredSkills: payload.preferredSkills.map((skill) => ({
+        name: skill.name,
+        confidence: skill.confidence,
+      })),
+      seniorityLevel: payload.seniorityLevel.confidence,
+      employmentType: payload.employmentType.confidence,
+      location: payload.location.confidence,
+    },
+  };
+}
+
+async function writeAuditEvent(
+  supabase: ReturnType<typeof createAuthedClient>,
+  input: {
+    tenantId: string;
+    actorUserId: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    payload?: JsonRecord;
+  },
+) {
+  await supabase.from("audit_events").insert({
+    tenant_id: input.tenantId,
+    actor_user_id: input.actorUserId,
+    action: input.action,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    payload: input.payload ?? {},
+  });
+}
+
+async function listJobPostings(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+  body: JsonRecord,
+) {
+  let query = supabase
+    .from("job_postings")
+    .select(jobPostingSelect)
+    .order("updated_at", { ascending: false });
+  if (tenantIds.length) {
+    query = query.in("tenant_id", tenantIds);
+  }
+  const status = normalizeStatus(body.status);
+  if (body.status && status) {
+    query = query.eq("status", status);
+  }
+  const { data, error } = await query.limit(
+    clampInteger(body.limit, 100, 1, 500),
+  );
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+async function getJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  jobId: string,
+) {
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const { data, error } = await supabase.from("job_postings").select(
+    jobPostingSelect,
+  ).eq("id", jobId).maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    throw new Error(`Job posting ${jobId} was not found.`);
+  }
+  return data;
+}
+
+async function saveJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const job = asRecord(body.job);
+  const jobId = asString(job.id);
+  const existing = jobId
+    ? await getJobPosting(supabase, jobId) as unknown as JsonRecord
+    : null;
+  const tenantId = asString(job.tenant_id) ?? asString(job.tenantId) ??
+    asString(existing?.tenant_id);
+  if (!tenantId) {
+    throw new Error("tenant_id is required");
+  }
+
+  const status = normalizeStatus(job.status ?? existing?.status);
+  const currentStatus = normalizeStatus(existing?.status);
+  const title = asString(job.title) ?? asString(existing?.title) ?? "";
+  const employerName = asString(job.employer_name) ??
+    asString(job.employerName) ?? asString(existing?.employer_name) ?? "";
+  const employerCountry = asString(job.employer_country) ??
+    asString(job.employerCountry) ?? asString(existing?.employer_country) ?? "";
+  const employerRegion = normalizeRegion(
+    job.employer_region ?? job.employerRegion ?? existing?.employer_region,
+  );
+  const jobDescription = asString(job.job_description) ??
+    asString(job.jobDescription) ?? asString(existing?.job_description) ?? "";
+  const requiredSkills = normalizeSkillSet(
+    job.required_skills ?? job.requiredSkills ?? existing?.required_skills,
+  );
+  const preferredSkills = normalizeSkillSet(
+    job.preferred_skills ?? job.preferredSkills ?? existing?.preferred_skills,
+  )
+    .filter((skill) => !requiredSkills.includes(skill));
+  const seniorityLevel = normalizeJobSeniority(
+    job.seniority_level ?? job.seniorityLevel ?? existing?.seniority_level,
+  );
+  const employmentType = normalizeEmploymentType(
+    job.employment_type ?? job.employmentType ?? existing?.employment_type,
+  );
+  const deadline = asString(job.application_deadline) ??
+    asString(job.applicationDeadline) ??
+    asString(existing?.application_deadline);
+  const isPublic = typeof job.is_public === "boolean"
+    ? job.is_public
+    : typeof job.isPublic === "boolean"
+    ? job.isPublic
+    : existing?.is_public === true;
+  const publicSlug = normalizePublicSlug(
+    job.public_slug ?? job.publicSlug ?? existing?.public_slug,
+  );
+  const publicTitle = asString(job.public_title) ?? asString(job.publicTitle) ??
+    asString(existing?.public_title) ?? title;
+  const publicSummary = asString(job.public_summary) ??
+    asString(job.publicSummary) ?? asString(existing?.public_summary);
+  const publicDescription = asString(job.public_description) ??
+    asString(job.publicDescription) ?? asString(existing?.public_description);
+  const publicLocation = asString(job.public_location) ??
+    asString(job.publicLocation) ?? asString(existing?.public_location);
+  const publicApplyEnabled = typeof job.public_apply_enabled === "boolean"
+    ? job.public_apply_enabled
+    : typeof job.publicApplyEnabled === "boolean"
+    ? job.publicApplyEnabled
+    : existing?.public_apply_enabled !== false;
+  if (deadline) {
+    const deadlineDate = new Date(`${deadline}T00:00:00Z`);
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (Number.isFinite(deadlineDate.getTime()) && deadlineDate < today) {
+      throw new Error("application_deadline must be today or a future date");
+    }
+  }
+  if (
+    status === "active" &&
+    (!title || !employerName || !employerCountry || !employerRegion ||
+      !jobDescription || !requiredSkills.length || !seniorityLevel ||
+      !employmentType)
+  ) {
+    throw new Error(
+      "Publishing requires title, employer, region, description, required skills, seniority, and employment type.",
+    );
+  }
+  if (
+    isPublic && status === "active" &&
+    (!publicSlug || !publicTitle || !publicDescription)
+  ) {
+    throw new Error(
+      "Public jobs require a public slug, public title, and redacted public description.",
+    );
+  }
+  const now = new Date().toISOString();
+
+  const payload = {
+    tenant_id: tenantId,
+    title,
+    employer_name: employerName,
+    employer_country: employerCountry,
+    employer_region: employerRegion ?? "GCC",
+    job_description: jobDescription,
+    required_skills: requiredSkills,
+    preferred_skills: preferredSkills,
+    seniority_level: seniorityLevel,
+    employment_type: employmentType,
+    application_deadline: deadline,
+    status,
+    posted_date: status === "active" && currentStatus !== "active"
+      ? now.slice(0, 10)
+      : asString(existing?.posted_date),
+    location_info: asRecord(
+      job.location_info ?? job.locationInfo ?? existing?.location_info,
+    ),
+    key_responsibilities: asStringArray(
+      job.key_responsibilities ?? job.keyResponsibilities ??
+        existing?.key_responsibilities,
+    ).slice(0, 12),
+    ai_profile: asRecord(
+      job.ai_profile ?? job.aiProfile ?? existing?.ai_profile,
+    ),
+    ai_confidence: asRecord(
+      job.ai_confidence ?? job.aiConfidence ?? existing?.ai_confidence,
+    ),
+    created_by_user_id: asString(existing?.created_by_user_id) ?? userId,
+    updated_by_user_id: userId,
+    closed_at: status === "closed" && currentStatus !== "closed"
+      ? now
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_at),
+    closed_by_user_id: status === "closed" && currentStatus !== "closed"
+      ? userId
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_by_user_id),
+    is_public: isPublic,
+    public_slug: publicSlug,
+    public_title: publicTitle,
+    public_summary: publicSummary,
+    public_description: publicDescription,
+    public_location: publicLocation,
+    public_apply_enabled: publicApplyEnabled,
+    public_published_at: isPublic && status === "active"
+      ? asString(existing?.public_published_at) ?? now
+      : null,
+  };
+
+  const mutation = jobId
+    ? supabase.from("job_postings").update(payload).eq("id", jobId).select(
+      jobPostingSelect,
+    ).single()
+    : supabase.from("job_postings").insert(payload).select(jobPostingSelect)
+      .single();
+  const { data, error } = await mutation;
+  if (error) {
+    throw error;
+  }
+  const savedJob = asRecord(data);
+  const savedJobId = asString(savedJob.id) ?? "";
+  await writeAuditEvent(supabase, {
+    tenantId,
+    actorUserId: userId,
+    action: jobId
+      ? "JOB_UPDATED"
+      : status === "active"
+      ? "JOB_PUBLISHED"
+      : "JOB_CREATED",
+    entityType: "job_posting",
+    entityId: savedJobId,
+    payload: { status, requiredSkills, preferredSkills },
+  });
+  return savedJob;
+}
+
+async function extractJobPosting(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const jobId = asString(body.job_id);
+  const job = jobId
+    ? await getJobPosting(supabase, jobId) as unknown as JsonRecord
+    : null;
+  const tenantId = asString(body.tenant_id) ?? asString(job?.tenant_id);
+  const title = asString(body.title) ?? asString(job?.title);
+  const employerRegion = normalizeRegion(
+    body.employer_region ?? job?.employer_region,
+  );
+  const jobDescription = asString(body.job_description) ??
+    asString(body.jobDescription) ?? asString(job?.job_description);
+  if (!tenantId || !jobDescription) {
+    throw new Error("tenant_id and job_description are required");
+  }
+
+  const { payload, provider, model } = await extractJobDescription({
+    title,
+    jobDescription,
+    employerRegion,
+  });
+  const fields = extractionToJobFields(payload);
+  const inputHash = await sha256Hex(
+    JSON.stringify({ title, employerRegion, jobDescription }),
+  );
+  const extraction = {
+    ...payload,
+    ...fields,
+    modelProvider: provider,
+    modelName: model,
+    promptVersion: "job-extraction-v1",
+    inputHash,
+  };
+  const { error } = await supabase.from("job_ai_extractions").insert({
+    tenant_id: tenantId,
+    job_posting_id: jobId,
+    model_provider: provider,
+    model_name: model,
+    prompt_version: "job-extraction-v1",
+    input_hash: inputHash,
+    extracted_payload: payload,
+    confidence_payload: fields.aiConfidence,
+    warnings: payload.warnings,
+    created_by_user_id: userId,
+  });
+  if (error) {
+    throw error;
+  }
+  await writeAuditEvent(supabase, {
+    tenantId,
+    actorUserId: userId,
+    action: "AI_EXTRACTION_COMPLETED",
+    entityType: jobId ? "job_posting" : "job_extraction",
+    entityId: jobId ?? inputHash,
+    payload: {
+      modelProvider: provider,
+      modelName: model,
+      warningCount: payload.warnings.length,
+    },
+  });
+  return extraction;
+}
+
+function buildJobProfile(job: JsonRecord) {
+  const location = asRecord(job.location_info);
+  const lines = [
+    `Title: ${asString(job.title) ?? ""}`,
+    `Required Skills: ${asStringArray(job.required_skills).join(", ")}`,
+    `Preferred Skills: ${asStringArray(job.preferred_skills).join(", ")}`,
+    `Seniority: ${asString(job.seniority_level) ?? ""}`,
+    `Employment Type: ${asString(job.employment_type) ?? ""}`,
+    `Location: ${
+      asString(location.country) ?? asString(job.employer_country) ?? ""
+    } ${asString(location.remotePolicy) ?? ""}`,
+    `Responsibilities: ${asStringArray(job.key_responsibilities).join("; ")}`,
+    `Description: ${asString(job.job_description) ?? ""}`,
+  ];
+  return lines.filter((line) => line.replace(/^[^:]+:\s*/, "").trim()).join(
+    "\n",
+  );
+}
+
+function textIncludesSkill(candidateSkills: string[], requiredSkill: string) {
+  const normalized = requiredSkill.toLowerCase();
+  return candidateSkills.some((skill) => skill.toLowerCase() === normalized);
+}
+
+function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
+  const requiredSkills = asStringArray(job.required_skills);
+  const preferredSkills = asStringArray(job.preferred_skills);
+  const matchedFilters = asRecord(candidate.matched_filters);
+  const candidateSkills = normalizeSkillList([
+    ...asStringArray(matchedFilters.matched_skills),
+    ...asStringArray(asRecord(candidate.candidate_snapshot).top_skills),
+  ]);
+  const matchedSkills = requiredSkills.filter((skill) =>
+    textIncludesSkill(candidateSkills, skill)
+  );
+  const missingSkills = requiredSkills.filter((skill) =>
+    !textIncludesSkill(candidateSkills, skill)
+  );
+  const preferredCoverage =
+    preferredSkills.filter((skill) => textIncludesSkill(candidateSkills, skill))
+      .length / Math.max(1, preferredSkills.length);
+  const requiredCoverage = matchedSkills.length /
+    Math.max(1, requiredSkills.length);
+  const semanticScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        (asNumber(candidate.match_rate) ?? asNumber(candidate.score) ?? 0) *
+          (asNumber(candidate.match_rate) === null ? 100 : 1),
+      ),
+    ),
+  );
+  const alignment = seniorityAlignment(
+    candidate.seniority,
+    job.seniority_level,
+  );
+  const seniorityScore = alignment === "Exact Match"
+    ? 100
+    : alignment === "Partial Match"
+    ? 74
+    : 35;
+  const experienceYears = asNumber(candidate.years_experience) ?? 0;
+  const requiredYears = seniorityRank(job.seniority_level) >= 4
+    ? 5
+    : seniorityRank(job.seniority_level) >= 3
+    ? 3
+    : 1;
+  const experienceScore = Math.min(
+    100,
+    Math.round((experienceYears / Math.max(1, requiredYears)) * 100),
+  );
+  const aiScore = Math.round(
+    (0.3 * requiredCoverage * 100) +
+      (0.25 * Math.min(100, experienceScore)) +
+      (0.15 * seniorityScore) +
+      (0.1 * semanticScore) +
+      (0.1 * preferredCoverage * 100) +
+      7,
+  );
+  const finalScore = Math.max(
+    0,
+    Math.min(100, Math.round((0.2 * semanticScore) + (0.8 * aiScore))),
+  );
+  return {
+    semanticScore,
+    aiScore,
+    finalScore,
+    matchedSkills,
+    missingSkills,
+    seniorityAlignment: alignment,
+    experienceSummary: `${String(candidate.name ?? "Candidate")} has ${
+      experienceYears || "unspecified"
+    } years of experience and is indexed as ${
+      String(candidate.seniority ?? "unknown")
+    } seniority.`,
+    matchExplanation: matchedSkills.length
+      ? `Matches ${matchedSkills.length} required skill${
+        matchedSkills.length === 1 ? "" : "s"
+      } for ${String(job.title ?? "this role")}; ${
+        missingSkills.length
+          ? `missing ${missingSkills.join(", ")}.`
+          : "no required skill gaps detected."
+      }`
+      : `Semantic match found for ${
+        String(job.title ?? "this role")
+      }, but required skill coverage needs recruiter review.`,
+    scoringBreakdown: {
+      requiredSkillAlignment: Math.round(requiredCoverage * 30),
+      relevantWorkExperience: Math.round(Math.min(25, experienceScore * 0.25)),
+      seniorityFit: Math.round(seniorityScore * 0.15),
+      domainRelevance: Math.round(semanticScore * 0.1),
+      preferredSkillCoverage: Math.round(preferredCoverage * 10),
+      employmentHistoryQuality: 7,
+    },
+  };
+}
+
+async function startJobMatchingRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const jobId = asString(body.job_id);
+  const job = await getJobPosting(
+    supabase,
+    jobId ?? "",
+  ) as unknown as JsonRecord;
+  if (normalizeStatus(job.status) !== "active") {
+    throw new Error("Only active job postings can be matched.");
+  }
+  const limit = clampInteger(body.limit, 20, 1, 100);
+  const semanticPoolSize = clampInteger(
+    body.semantic_pool_size ?? body.semanticPoolSize,
+    200,
+    limit,
+    500,
+  );
+  const rerankPoolSize = clampInteger(
+    body.rerank_pool_size ?? body.rerankPoolSize,
+    50,
+    limit,
+    100,
+  );
+  const profileText = buildJobProfile(job);
+  const embeddingPayload = await buildQueryEmbedding(profileText);
+  const matchingConfig = {
+    limit,
+    semanticPoolSize,
+    rerankPoolSize,
+    mandatoryCriteria: asRecord(
+      body.mandatory_criteria ?? body.mandatoryCriteria,
+    ),
+  };
+  const runInsert = await supabase.from("job_matching_runs").insert({
+    tenant_id: job.tenant_id,
+    job_posting_id: job.id,
+    initiated_by_user_id: userId,
+    status: "running",
+    requested_limit: limit,
+    semantic_pool_size: semanticPoolSize,
+    rerank_pool_size: rerankPoolSize,
+    matching_config: matchingConfig,
+    job_profile: {
+      text: profileText,
+      requiredSkills: job.required_skills,
+      preferredSkills: job.preferred_skills,
+      seniorityLevel: job.seniority_level,
+      employmentType: job.employment_type,
+      locationInfo: job.location_info,
+    },
+    embedding_provider: embeddingPayload.provider,
+    embedding_version: embeddingPayload.embeddingVersion,
+    started_at: new Date().toISOString(),
+  }).select(matchingRunSelect).single();
+  if (runInsert.error) {
+    throw runInsert.error;
+  }
+  const insertedRun = asRecord(runInsert.data);
+  const insertedRunId = asString(insertedRun.id) ?? "";
+
+  await writeAuditEvent(supabase, {
+    tenantId: String(job.tenant_id),
+    actorUserId: userId,
+    action: "MATCHING_RUN_STARTED",
+    entityType: "job_matching_run",
+    entityId: insertedRunId,
+    payload: matchingConfig,
+  });
+
+  try {
+    const mandatory = asRecord(matchingConfig.mandatoryCriteria);
+    const location = asString(asRecord(job.location_info).country) ??
+      asString(job.employer_country);
+    const rpcPayload = {
+      p_q: profileText,
+      p_query_embedding: embeddingPayload.embedding,
+      p_limit: Math.max(semanticPoolSize, rerankPoolSize),
+      p_offset: 0,
+      p_role: asString(job.title),
+      p_seniority: normalizeSeniorityValue(asString(job.seniority_level)) ??
+        null,
+      p_min_years: null,
+      p_skills: asStringArray(job.required_skills),
+      p_embedding_version: null,
+      p_rank_version: "job-match-v1",
+      p_tenant_ids: null,
+      p_filter_role: null,
+      p_filter_seniority: normalizeSeniorityValue(
+        asString(mandatory.minimum_seniority ?? mandatory.minimumSeniority),
+      ) ?? null,
+      p_filter_min_years: asNumber(
+        mandatory.minimum_years ?? mandatory.minimumYears,
+      ),
+      p_filter_skills: asStringArray(
+        mandatory.required_skills ?? mandatory.requiredSkills,
+      ),
+      p_filter_companies: [],
+      p_filter_location: asString(mandatory.location) ?? null,
+    };
+    let { data: rawCandidates, error } = await supabase.rpc(
+      "search_candidates_with_rate_v1",
+      rpcPayload,
+    );
+    if (
+      error && `${error.message}`.includes("search_candidates_with_rate_v1")
+    ) {
+      const fallback = await supabase.rpc("search_candidates_v1", rpcPayload);
+      rawCandidates = fallback.data;
+      error = fallback.error;
+    }
+    if (error) {
+      throw error;
+    }
+
+    const candidates = ((rawCandidates ?? []) as JsonRecord[])
+      .filter((candidate) => {
+        if (
+          !location ||
+          !asString(mandatory.location_required ?? mandatory.locationRequired)
+        ) {
+          return true;
+        }
+        return String(candidate.location ?? "").toLowerCase().includes(
+          location.toLowerCase(),
+        );
+      })
+      .slice(0, rerankPoolSize)
+      .map((candidate) => {
+        const score = scoreCandidateForJob(candidate, job);
+        return { candidate, score };
+      })
+      .sort((left, right) => right.score.finalScore - left.score.finalScore)
+      .slice(0, limit);
+
+    if (candidates.length) {
+      const rows = candidates.map(({ candidate, score }, index) => ({
+        tenant_id: job.tenant_id,
+        matching_run_id: insertedRunId,
+        job_posting_id: job.id,
+        candidate_id: candidate.candidate_id,
+        candidate_source_tenant_id: asString(candidate.tenant_id) ??
+          asString(job.tenant_id),
+        rank: index + 1,
+        semantic_score: score.semanticScore,
+        ai_score: score.aiScore,
+        final_score: score.finalScore,
+        matched_skills: score.matchedSkills,
+        missing_skills: score.missingSkills,
+        seniority_alignment: score.seniorityAlignment,
+        experience_summary: score.experienceSummary,
+        match_explanation: score.matchExplanation,
+        scoring_breakdown: score.scoringBreakdown,
+        hard_filter_payload: {
+          mandatoryCriteria: matchingConfig.mandatoryCriteria,
+          evidence: candidate.evidence,
+          matchedFilters: candidate.matched_filters,
+        },
+        candidate_snapshot: {
+          tenant_id: candidate.tenant_id,
+          candidate_id: candidate.candidate_id,
+          name: candidate.name,
+          current_title: candidate.current_title,
+          location: candidate.location,
+          years_experience: candidate.years_experience,
+          seniority: candidate.seniority,
+          primary_role: candidate.primary_role,
+          summary_short: candidate.summary_short,
+          match_rate: candidate.match_rate,
+          subscores: candidate.subscores,
+        },
+      }));
+      const insertResults = await supabase.from("job_matching_results").insert(
+        rows,
+      );
+      if (insertResults.error) {
+        throw insertResults.error;
+      }
+    }
+
+    const completedAt = new Date().toISOString();
+    const update = await supabase.from("job_matching_runs").update({
+      status: "completed",
+      retrieved_count: (rawCandidates ?? []).length,
+      filtered_count: Math.max(
+        0,
+        (rawCandidates ?? []).length - candidates.length,
+      ),
+      reranked_count: Math.min((rawCandidates ?? []).length, rerankPoolSize),
+      completed_count: candidates.length,
+      completed_at: completedAt,
+    }).eq("id", insertedRunId).select(matchingRunSelect).single();
+    if (update.error) {
+      throw update.error;
+    }
+    await writeAuditEvent(supabase, {
+      tenantId: String(job.tenant_id),
+      actorUserId: userId,
+      action: "MATCHING_RUN_COMPLETED",
+      entityType: "job_matching_run",
+      entityId: insertedRunId,
+      payload: {
+        completedCount: candidates.length,
+        retrievedCount: (rawCandidates ?? []).length,
+      },
+    });
+    return getMatchingRun(supabase, insertedRunId);
+  } catch (error) {
+    await supabase.from("job_matching_runs").update({
+      status: "failed",
+      failure_reason: describeError(error),
+      completed_at: new Date().toISOString(),
+    }).eq("id", insertedRunId);
+    await writeAuditEvent(supabase, {
+      tenantId: String(job.tenant_id),
+      actorUserId: userId,
+      action: "MATCHING_RUN_FAILED",
+      entityType: "job_matching_run",
+      entityId: insertedRunId,
+      payload: { error: describeError(error) },
+    });
+    throw error;
+  }
+}
+
+async function listMatchingRuns(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const jobId = asString(body.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const { data, error } = await supabase
+    .from("job_matching_runs")
+    .select(matchingRunSelect)
+    .eq("job_posting_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(clampInteger(body.limit, 50, 1, 200));
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+async function getMatchingRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  runId: string,
+) {
+  if (!runId) {
+    throw new Error("run_id is required");
+  }
+  const [runResult, resultsResult] = await Promise.all([
+    supabase.from("job_matching_runs").select(matchingRunSelect).eq("id", runId)
+      .maybeSingle(),
+    supabase.from("job_matching_results").select(matchingResultSelect).eq(
+      "matching_run_id",
+      runId,
+    ).order("rank", { ascending: true }),
+  ]);
+  if (runResult.error) {
+    throw runResult.error;
+  }
+  if (!runResult.data) {
+    throw new Error(`Matching run ${runId} was not found.`);
+  }
+  if (resultsResult.error) {
+    throw resultsResult.error;
+  }
+  return {
+    run: runResult.data,
+    results: resultsResult.data ?? [],
+  };
+}
+
+async function listJobApplications(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const jobId = asString(body.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const { data, error } = await supabase
+    .from("job_applications")
+    .select(jobApplicationSelect)
+    .eq("job_posting_id", jobId)
+    .order("submitted_at", { ascending: false })
+    .limit(clampInteger(body.limit, 100, 1, 500));
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+function normalizeApplicationStatus(value: unknown) {
+  const status = String(value ?? "").trim().toLowerCase();
+  return ["new", "reviewing", "shortlisted", "rejected", "withdrawn"].includes(
+      status,
+    )
+    ? status
+    : null;
+}
+
+async function updateJobApplicationStatus(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const applicationId = asString(body.application_id);
+  const status = normalizeApplicationStatus(body.status);
+  if (!applicationId || !status) {
+    throw new Error("application_id and valid status are required");
+  }
+  const { data, error } = await supabase
+    .from("job_applications")
+    .update({
+      status,
+      reviewed_by_user_id: userId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", applicationId)
+    .select(jobApplicationSelect)
+    .single();
+  if (error) {
+    throw error;
+  }
+  const application = asRecord(data);
+  await supabase.from("job_application_events").insert({
+    tenant_id: application.tenant_id,
+    application_id: applicationId,
+    actor_user_id: userId,
+    event_type: "STATUS_UPDATED",
+    payload: { status },
+  });
+  return data;
+}
+
+async function listJobShortlists(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const jobId = asString(body.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const { data, error } = await supabase
+    .from("job_shortlists")
+    .select(jobShortlistSelect)
+    .eq("job_posting_id", jobId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+async function getJobShortlist(
+  supabase: ReturnType<typeof createAuthedClient>,
+  shortlistId: string,
+) {
+  if (!shortlistId) {
+    throw new Error("shortlist_id is required");
+  }
+  const [shortlistResult, candidatesResult] = await Promise.all([
+    supabase.from("job_shortlists").select(jobShortlistSelect).eq(
+      "id",
+      shortlistId,
+    ).maybeSingle(),
+    supabase.from("job_shortlist_candidates").select("*").eq(
+      "shortlist_id",
+      shortlistId,
+    ).order("saved_rank", { ascending: true }),
+  ]);
+  if (shortlistResult.error) {
+    throw shortlistResult.error;
+  }
+  if (!shortlistResult.data) {
+    throw new Error(`Shortlist ${shortlistId} was not found.`);
+  }
+  if (candidatesResult.error) {
+    throw candidatesResult.error;
+  }
+  return {
+    shortlist: shortlistResult.data,
+    candidates: candidatesResult.data ?? [],
+  };
+}
+
+async function saveJobShortlist(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const jobId = asString(body.job_id);
+  const runId = asString(body.run_id);
+  const name = asString(body.name);
+  if (!jobId || !name) {
+    throw new Error("job_id and name are required");
+  }
+  const job = await getJobPosting(supabase, jobId) as unknown as JsonRecord;
+  const runDetail = runId ? await getMatchingRun(supabase, runId) : null;
+  const inputCandidates = asStringArray(body.candidate_ids);
+  const resultRows = (asArray(runDetail?.results) as JsonRecord[])
+    .filter((result) =>
+      !inputCandidates.length ||
+      inputCandidates.includes(String(result.candidate_id))
+    );
+  const shortlistResult = await supabase.from("job_shortlists").insert({
+    tenant_id: job.tenant_id,
+    job_posting_id: jobId,
+    matching_run_id: runId,
+    name,
+    description: asString(body.description) ?? "",
+    owner_user_id: userId,
+  }).select(jobShortlistSelect).single();
+  if (shortlistResult.error) {
+    throw shortlistResult.error;
+  }
+  const savedShortlist = asRecord(shortlistResult.data);
+  const savedShortlistId = asString(savedShortlist.id) ?? "";
+  if (resultRows.length) {
+    const insert = await supabase.from("job_shortlist_candidates").insert(
+      resultRows.map((result) => ({
+        tenant_id: job.tenant_id,
+        shortlist_id: savedShortlistId,
+        candidate_id: result.candidate_id,
+        candidate_source_tenant_id:
+          asString(result.candidate_source_tenant_id) ??
+            asString(asRecord(result.candidate_snapshot).tenant_id) ??
+            asString(job.tenant_id),
+        saved_rank: result.rank,
+        saved_score: result.final_score,
+        saved_result_payload: result,
+        added_by_user_id: userId,
+      })),
+    );
+    if (insert.error) {
+      throw insert.error;
+    }
+  }
+  await writeAuditEvent(supabase, {
+    tenantId: String(job.tenant_id),
+    actorUserId: userId,
+    action: "SHORTLIST_CREATED",
+    entityType: "job_shortlist",
+    entityId: savedShortlistId,
+    payload: { jobId, runId, candidateCount: resultRows.length },
+  });
+  return getJobShortlist(supabase, savedShortlistId);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -2700,6 +4112,45 @@ Deno.serve(async (req) => {
           200,
           await clearShortlistItems(supabase, tenantIds),
         );
+      case "job_postings":
+        return jsonResponse(
+          200,
+          await listJobPostings(supabase, tenantIds, body),
+        );
+      case "job_posting":
+        return jsonResponse(
+          200,
+          await getJobPosting(supabase, asString(body.job_id) ?? ""),
+        );
+      case "save_job_posting":
+        return jsonResponse(200, await saveJobPosting(supabase, body));
+      case "extract_job_posting":
+        return jsonResponse(200, await extractJobPosting(supabase, body));
+      case "start_job_matching_run":
+        return jsonResponse(200, await startJobMatchingRun(supabase, body));
+      case "matching_runs":
+        return jsonResponse(200, await listMatchingRuns(supabase, body));
+      case "matching_run":
+        return jsonResponse(
+          200,
+          await getMatchingRun(supabase, asString(body.run_id) ?? ""),
+        );
+      case "job_applications":
+        return jsonResponse(200, await listJobApplications(supabase, body));
+      case "update_job_application_status":
+        return jsonResponse(
+          200,
+          await updateJobApplicationStatus(supabase, body),
+        );
+      case "job_shortlists":
+        return jsonResponse(200, await listJobShortlists(supabase, body));
+      case "job_shortlist":
+        return jsonResponse(
+          200,
+          await getJobShortlist(supabase, asString(body.shortlist_id) ?? ""),
+        );
+      case "save_job_shortlist":
+        return jsonResponse(200, await saveJobShortlist(supabase, body));
       case "list_admin_tenants": {
         await assertPlatformAdmin(supabase);
         const admin = createServiceClient();
@@ -2721,7 +4172,10 @@ Deno.serve(async (req) => {
       }
       case "save_platform_runtime_config": {
         const user = await assertPlatformAdmin(supabase);
-        const settings = asRecord(body.settings);
+        const settings = asRecord(body.settings) as Record<
+          string,
+          string | null | undefined
+        >;
         try {
           return jsonResponse(
             200,

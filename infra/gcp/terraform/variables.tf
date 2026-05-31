@@ -109,7 +109,7 @@ variable "worker_env" {
 }
 
 variable "worker_args" {
-  description = "Command arguments passed to the worker image. Use [\"manatal-sync\", \"--pretty\"] for Manatal sync."
+  description = "Command arguments passed to the worker image. Use [\"public-applications\", \"--limit\", \"25\", \"--retry-stale-minutes\", \"30\", \"--pretty\"] for public application CV ingestion."
   type        = list(string)
   default     = ["ingest", "--pretty"]
 }
@@ -121,7 +121,6 @@ variable "worker_secret_env" {
     SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key"
     GEMINI_API_KEY            = "gemini-api-key"
     CV_MODEL_API_KEY          = "gemini-api-key"
-    MANATAL_API_TOKEN         = "manatal-api-token"
   }
 }
 

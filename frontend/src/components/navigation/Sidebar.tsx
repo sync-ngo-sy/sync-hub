@@ -8,6 +8,7 @@ import {
   FileText,
   GitCompareArrows,
   Home,
+  BriefcaseBusiness,
   LineChart,
   LayoutDashboard,
   Search,
@@ -23,6 +24,7 @@ import { SyncBrand, TenantBadge } from "@/components/ui";
 
 const productRoutes = [
   { to: "/search", label: "Search & Discovery", icon: Search },
+  { to: "/jobs", label: "Job Postings", icon: BriefcaseBusiness },
   { to: "/insights", label: "Insights", icon: LineChart },
   { to: "/chat", label: "General Agent", icon: Bot },
   { to: "/compare", label: "Intelligent Comparison", icon: GitCompareArrows },
@@ -76,6 +78,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           const Icon = route.icon;
           const active =
             location.pathname === route.to ||
+            (route.to === "/jobs" && location.pathname.startsWith("/jobs")) ||
             (route.to.startsWith("/dossier") && location.pathname.startsWith("/dossier"));
 
           return (

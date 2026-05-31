@@ -12,6 +12,7 @@ from unittest import mock
 
 from cv_intelligence_worker.cli import main
 from cv_intelligence_worker.extraction import heuristic_extract_profile
+from cv_intelligence_worker.public_applications import PublicApplicationIngestionResult
 from cv_intelligence_worker.supabase import SupabaseSyncStats
 
 
@@ -135,6 +136,44 @@ class CliTests(unittest.TestCase):
             with redirect_stdout(buffer):
                 exit_code = main(["manatal-sync", "--tenant-id", "tenant-1", "--candidate-id", "candidate-1"])
         self.assertEqual(2, exit_code)
+
+    def test_public_applications_outputs_queue_summary(self) -> None:
+        result = PublicApplicationIngestionResult(
+            queued=2,
+            parsed=2,
+            failed=0,
+            application_ids=["application-1", "application-2"],
+            candidate_ids=["candidate-1", "candidate-2"],
+        )
+        buffer = io.StringIO()
+        with mock.patch.dict(os.environ, {"SUPABASE_URL": "http://example.test", "SUPABASE_SERVICE_ROLE_KEY": "test-service-role"}):
+            with mock.patch("cv_intelligence_worker.cli.PublicApplicationIngestion") as ingestion_cls:
+                ingestion_cls.return_value.run.return_value = result
+                with redirect_stdout(buffer):
+                    exit_code = main(["public-applications", "--limit", "2", "--no-progress"])
+        self.assertEqual(0, exit_code)
+        output = json.loads(buffer.getvalue())
+        self.assertEqual(2, output["queued"])
+        self.assertEqual(["candidate-1", "candidate-2"], output["candidate_ids"])
+        ingestion_cls.return_value.run.assert_called_once()
+        self.assertEqual(2, ingestion_cls.return_value.run.call_args.kwargs["limit"])
+
+    def test_public_applications_fails_when_any_application_fails(self) -> None:
+        result = PublicApplicationIngestionResult(
+            queued=1,
+            parsed=0,
+            failed=1,
+            application_ids=["application-1"],
+            failures=[{"application_id": "application-1", "error": "bad cv"}],
+        )
+        buffer = io.StringIO()
+        with mock.patch.dict(os.environ, {"SUPABASE_URL": "http://example.test", "SUPABASE_SERVICE_ROLE_KEY": "test-service-role"}):
+            with mock.patch("cv_intelligence_worker.cli.PublicApplicationIngestion") as ingestion_cls:
+                ingestion_cls.return_value.run.return_value = result
+                with redirect_stdout(buffer):
+                    exit_code = main(["public-applications", "--limit", "1", "--no-progress"])
+        self.assertEqual(2, exit_code)
+        self.assertEqual("bad cv", json.loads(buffer.getvalue())["failures"][0]["error"])
 
 
 if __name__ == "__main__":
