@@ -99,6 +99,65 @@ export type SearchResponse = {
   };
 };
 
+export type CandidateListGroupBy = "status" | "role" | "source" | "location";
+
+export type CandidateListItem = {
+  tenantId: string;
+  candidateId: string;
+  name: string;
+  email?: string | null;
+  location: string;
+  primaryRole: string;
+  appliedRole?: string | null;
+  stage: string;
+  stageKey: string;
+  source: string;
+  seniority: string;
+  updatedAt: string;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+};
+
+export type CandidateListGroup = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+export type CandidateListFilterOptions = {
+  statuses: string[];
+  roles: string[];
+  sources: string[];
+  locations: string[];
+};
+
+export type CandidateListFilters = {
+  query?: string;
+  status?: string;
+  role?: string;
+  source?: string;
+  location?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  groupBy?: CandidateListGroupBy | "";
+};
+
+export type CandidateListOptions = {
+  pageSize?: number;
+  pageIndex?: number;
+  filters?: CandidateListFilters;
+};
+
+export type CandidateListResponse = {
+  items: CandidateListItem[];
+  itemsTotalCount: number;
+  pageLimit: number;
+  pageOffset: number;
+  groupBy: CandidateListGroupBy | "" | null;
+  groups: CandidateListGroup[];
+  filterOptions: CandidateListFilterOptions;
+};
+
 export type CandidateShortlistItem = {
   userId: string;
   tenantId: string;

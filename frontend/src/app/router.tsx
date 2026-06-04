@@ -9,6 +9,7 @@ import { InsightsDashboardPage } from "@/screens/InsightsDashboardPage";
 import { JobMatchingRunPage, JobPostingCreatePage, JobPostingDetailPage, JobPostingEditPage, JobPostingsPage } from "@/screens/JobPostingsPage";
 import { PublicJobBoardPage, PublicJobDetailPage } from "@/screens/PublicJobBoardPage";
 import { SearchConfigurationPage } from "@/screens/SearchConfigurationPage";
+import { CandidateListingPage } from "@/screens/CandidateListingPage";
 import { SearchDiscoveryPage } from "@/screens/SearchDiscoveryPage";
 import { OpsAlertsPage } from "@/screens/admin/OpsAlertsPage";
 import { ManatalSyncStatusPage } from "@/screens/admin/ManatalSyncStatusPage";
@@ -39,6 +40,7 @@ export const router = createHashRouter([
         element: <Navigate to="/search" replace />,
       },
       { path: "search", element: <SearchDiscoveryPage /> },
+      { path: "candidates", element: <CandidateListingPage /> },
       { path: "chat", element: <IntelligenceHubPage /> },
       { path: "jobs", element: <JobPostingsPage /> },
       { path: "jobs/new", element: <JobPostingCreatePage /> },

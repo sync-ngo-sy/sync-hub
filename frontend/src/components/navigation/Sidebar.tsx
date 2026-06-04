@@ -12,6 +12,7 @@ import {
   LineChart,
   LayoutDashboard,
   Search,
+  Users,
   SlidersHorizontal,
   Settings2,
   UserPlus,
@@ -24,6 +25,7 @@ import { SyncBrand, TenantBadge } from "@/components/ui";
 
 const productRoutes = [
   { to: "/search", label: "Search & Discovery", icon: Search },
+  { to: "/candidates", label: "Candidates", icon: Users },
   { to: "/jobs", label: "Job Postings", icon: BriefcaseBusiness },
   { to: "/insights", label: "Insights", icon: LineChart },
   { to: "/chat", label: "General Agent", icon: Bot },

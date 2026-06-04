@@ -7,6 +7,12 @@ import type {
   AnalyticsSnapshot,
   AskResponse,
   CandidateDetail,
+  CandidateListFilters,
+  CandidateListGroup,
+  CandidateListGroupBy,
+  CandidateListItem,
+  CandidateListOptions,
+  CandidateListResponse,
   CandidateShortlistInput,
   CandidateShortlistItem,
   ComparisonResponse,
@@ -89,6 +95,7 @@ const USE_INSIGHTS_PLATFORM_API = import.meta.env.VITE_USE_INSIGHTS_PLATFORM_API
 
 type PlatformApi = {
   search: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchResponse>;
+  listCandidates: (tenantIds?: string[], options?: CandidateListOptions) => Promise<CandidateListResponse>;
   searchDebug: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchDebugResponse>;
   getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
   getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;
@@ -448,6 +455,166 @@ function mapRemoteWorkspaceRollup(row: JsonRecord) {
     averageParse: toNumber(row.averageParse),
     needsReview: toNumber(row.needsReview),
     failed: toNumber(row.failed),
+  };
+}
+
+function mapRemoteCandidateListItem(row: JsonRecord): CandidateListItem {
+  return {
+    tenantId: String(row.tenantId ?? ""),
+    candidateId: String(row.candidateId ?? ""),
+    name: String(row.name ?? "Unnamed candidate"),
+    email: typeof row.email === "string" ? row.email : null,
+    location: String(row.location ?? ""),
+    primaryRole: String(row.primaryRole ?? ""),
+    appliedRole: typeof row.appliedRole === "string" ? row.appliedRole : null,
+    stage: String(row.stage ?? "Unknown"),
+    stageKey: String(row.stageKey ?? "unknown"),
+    source: String(row.source ?? "unknown"),
+    seniority: String(row.seniority ?? ""),
+    updatedAt: String(row.updatedAt ?? ""),
+    groupKey: typeof row.groupKey === "string" ? row.groupKey : null,
+    groupLabel: typeof row.groupLabel === "string" ? row.groupLabel : null,
+  };
+}
+
+function mapRemoteCandidateListResponse(payload: JsonRecord): CandidateListResponse {
+  const groupByRaw = String(payload.groupBy ?? "");
+  const groupBy = (groupByRaw === "status" || groupByRaw === "role" || groupByRaw === "source" || groupByRaw === "location"
+    ? groupByRaw
+    : "") as CandidateListGroupBy | "";
+  const filterOptions = asRecord(payload.filterOptions);
+  return {
+    items: asArray(payload.items).map((item) => mapRemoteCandidateListItem(asRecord(item))),
+    itemsTotalCount: toNumber(payload.itemsTotalCount),
+    pageLimit: toNumber(payload.pageLimit),
+    pageOffset: toNumber(payload.pageOffset),
+    groupBy: groupBy || null,
+    groups: asArray(payload.groups).map((item) => {
+      const row = asRecord(item);
+      return {
+        key: String(row.key ?? ""),
+        label: String(row.label ?? ""),
+        count: toNumber(row.count),
+      };
+    }),
+    filterOptions: {
+      statuses: toStringArray(filterOptions.statuses),
+      roles: toStringArray(filterOptions.roles),
+      sources: toStringArray(filterOptions.sources),
+      locations: toStringArray(filterOptions.locations),
+    },
+  };
+}
+
+async function fetchCandidatesListRpc(tenantIds: string[], options: CandidateListOptions = {}): Promise<CandidateListResponse> {
+  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
+  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
+  const filters = options.filters ?? {};
+  const payload = await invokePlatform<JsonRecord>("candidates_list", {
+    tenant_ids: tenantIds,
+    limit: pageSize,
+    offset: pageIndex * pageSize,
+    query: filters.query?.trim() || null,
+    status: filters.status || null,
+    role: filters.role || null,
+    source: filters.source || null,
+    location: filters.location || null,
+    updated_from: filters.updatedFrom || null,
+    updated_to: filters.updatedTo || null,
+    group_by: filters.groupBy || null,
+  });
+  return mapRemoteCandidateListResponse(payload);
+}
+
+function buildMockCandidatesList(options: CandidateListOptions = {}): CandidateListResponse {
+  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
+  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
+  const filters = options.filters ?? {};
+  const groupBy = (filters.groupBy ?? "") as CandidateListGroupBy | "";
+  const allResults = searchCandidates("", {}, { limit: 100, offset: 0 }).results;
+  const query = filters.query?.trim().toLowerCase() ?? "";
+
+  const baseItems: CandidateListItem[] = allResults.map((candidate) => {
+    const stageKey = candidate.stage.toLowerCase().replace(/\s+/g, "_");
+    const roleLabel = candidate.primaryRole || "Unassigned role";
+    const locationLabel = candidate.location.trim() || "Unknown location";
+    const sourceLabel = "mock_upload";
+    return {
+      tenantId: "mock-tenant",
+      candidateId: candidate.candidateId,
+      name: candidate.name,
+      email: null,
+      location: candidate.location,
+      primaryRole: candidate.primaryRole,
+      appliedRole: candidate.primaryRole,
+      stage: candidate.stage,
+      stageKey,
+      source: sourceLabel,
+      seniority: candidate.seniority,
+      updatedAt: new Date().toISOString(),
+      groupKey: groupBy === "status" ? stageKey : groupBy === "role" ? roleLabel : groupBy === "source" ? sourceLabel : groupBy === "location" ? locationLabel : null,
+      groupLabel: groupBy === "status" ? candidate.stage : groupBy === "role" ? roleLabel : groupBy === "source" ? "Mock upload" : groupBy === "location" ? locationLabel : null,
+    };
+  });
+
+  const filtered = baseItems.filter((item) => {
+    if (query && !`${item.name} ${item.email ?? ""}`.toLowerCase().includes(query)) {
+      return false;
+    }
+    if (filters.status && item.stageKey !== filters.status) {
+      return false;
+    }
+    if (filters.role) {
+      const roleQuery = filters.role.toLowerCase();
+      if (!`${item.primaryRole} ${item.appliedRole ?? ""}`.toLowerCase().includes(roleQuery)) {
+        return false;
+      }
+    }
+    if (filters.source && item.source !== filters.source) {
+      return false;
+    }
+    if (filters.location && !item.location.toLowerCase().includes(filters.location.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  filtered.sort((left, right) => {
+    const groupCompare = String(left.groupKey ?? "").localeCompare(String(right.groupKey ?? ""));
+    if (groupCompare !== 0) {
+      return groupCompare;
+    }
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+
+  const offset = pageIndex * pageSize;
+  const items = filtered.slice(offset, offset + pageSize);
+  const groupCounts = new Map<string, CandidateListGroup>();
+  for (const item of filtered) {
+    if (!item.groupKey || !item.groupLabel) {
+      continue;
+    }
+    const current = groupCounts.get(item.groupKey);
+    if (current) {
+      current.count += 1;
+    } else {
+      groupCounts.set(item.groupKey, { key: item.groupKey, label: item.groupLabel, count: 1 });
+    }
+  }
+
+  return {
+    items,
+    itemsTotalCount: filtered.length,
+    pageLimit: pageSize,
+    pageOffset: offset,
+    groupBy: groupBy || null,
+    groups: Array.from(groupCounts.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
+    filterOptions: {
+      statuses: Array.from(new Set(baseItems.map((item) => item.stageKey))).sort(),
+      roles: Array.from(new Set(baseItems.map((item) => item.primaryRole).filter(Boolean))).sort(),
+      sources: Array.from(new Set(baseItems.map((item) => item.source))).sort(),
+      locations: Array.from(new Set(baseItems.map((item) => item.location).filter(Boolean))).sort(),
+    },
   };
 }
 
@@ -2514,6 +2681,10 @@ function createMockApi(): PlatformApi {
       await wait(180);
       return searchCandidates(query, filters, options);
     },
+    async listCandidates(_tenantIds, options) {
+      await wait(120);
+      return buildMockCandidatesList(options);
+    },
     async searchDebug(query, filters, options, tenantIds) {
       await wait(180);
       const response = searchCandidates(query, filters, options);
@@ -3038,6 +3209,17 @@ function createRemoteApi(): PlatformApi {
         return mapRemoteSearch(payload);
       } catch (functionError) {
         throw new Error(`Live search failed. Edge Function error: ${errorMessage(functionError)}.`);
+      }
+    },
+    async listCandidates(tenantIds, options) {
+      if (!supabase || !tenantIds?.length) {
+        return buildMockCandidatesList(options);
+      }
+
+      try {
+        return await fetchCandidatesListRpc(tenantIds, options);
+      } catch (error) {
+        throw new Error(`Unable to load candidates: ${errorMessage(error)}`);
       }
     },
     async searchDebug(query, filters, options, tenantIds) {
