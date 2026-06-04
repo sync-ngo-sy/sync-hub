@@ -1,15 +1,31 @@
 import { useEffect, useState } from "react";
 import { Database, FolderSync, RefreshCw } from "lucide-react";
-import { dataConnectors as fallbackConnectors, indexingJobs as fallbackJobs } from "@/data/mockData";
-import type { DataConnector } from "@/lib/contracts";
+import type { DataConnector, IndexingJob } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { PageIntro, Panel, ProgressBar, Tag } from "@/components/ui";
 
 export function DataManagementPage() {
-  const [connectors, setConnectors] = useState<DataConnector[]>(fallbackConnectors);
+  const [connectors, setConnectors] = useState<DataConnector[]>([]);
+  const [indexingJobs, setIndexingJobs] = useState<IndexingJob[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    platformApi.getDataConnectors().then(setConnectors);
+    let active = true;
+    Promise.all([platformApi.getDataConnectors(), platformApi.getIndexingWorkbench()])
+      .then(([nextConnectors, workbench]) => {
+        if (active) {
+          setConnectors(nextConnectors);
+          setIndexingJobs(workbench.queues);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -27,6 +43,7 @@ export function DataManagementPage() {
               <Database size={16} />
               <h3>Connected sources</h3>
             </div>
+            {loading && !connectors.length ? <p className="muted">Loading connected sources...</p> : null}
             {connectors.map((connector) => (
               <div key={connector.name} className="evidence-card">
                 <div className="signal-row">
@@ -51,7 +68,9 @@ export function DataManagementPage() {
               <FolderSync size={16} />
               <h3>Active jobs</h3>
             </div>
-            {fallbackJobs.map((job) => (
+            {loading && !indexingJobs.length ? <p className="muted">Loading indexing jobs...</p> : null}
+            {!loading && !indexingJobs.length ? <p className="muted">No active indexing jobs.</p> : null}
+            {indexingJobs.map((job) => (
               <div key={job.name} className="evidence-card">
                 <div className="signal-row">
                   <strong>{job.name}</strong>

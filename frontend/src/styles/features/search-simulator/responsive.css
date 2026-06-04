@@ -1,0 +1,42 @@
+@media (max-width: 1100px) {
+  .simulator-layout,
+  .simulator-explainer-grid,
+  .simulator-top-result-grid,
+  .simulator-insight-grid,
+  .simulator-result-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .simulator-overview-grid,
+  .simulator-insight-grid--compact,
+  .simulator-subscore-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .simulator-view-switch {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .simulator-overview-grid,
+  .simulator-insight-grid--compact,
+  .simulator-filters-grid,
+  .simulator-subscore-grid,
+  .simulator-result-summary,
+  .sync-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+
+  .simulator-detail-list > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .simulator-result-score {
+    align-items: flex-start;
+  }
+}

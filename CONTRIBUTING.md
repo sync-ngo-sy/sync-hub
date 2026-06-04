@@ -71,6 +71,7 @@ cd frontend && npm audit --audit-level=high
 - Do not commit secrets, local `.env` files, tenant data, private CVs, generated caches, or Terraform state.
 - Use clear PR titles such as `fix(worker): report duplicate ingestion progress`.
 - Call out migrations, data backfills, or manual deployment steps in the PR description.
+- For frontend PRs, run the Codex review skill in [.codex/skills/cv-intel-react-review](.codex/skills/cv-intel-react-review/SKILL.md). See [docs/codex-react-review-skill.md](docs/codex-react-review-skill.md).
 
 ## Coding Standards
 
@@ -80,3 +81,4 @@ cd frontend && npm audit --audit-level=high
 - Keep tenant isolation, RLS, and service-role key boundaries explicit in code review.
 - Prefer deterministic, evidence-grounded behavior for ranking and retrieval. Use LLMs only where the existing architecture expects them.
 - Follow the clean-code guidance in [docs/clean-code-guidelines.md](docs/clean-code-guidelines.md) when refactoring or adding new modules.
+- Preserve the frontend architecture captured in the Codex React review skill: feature folders, thin screens, lazy mock/demo data, ordered CSS modules, accessible controls, and file-size review thresholds.

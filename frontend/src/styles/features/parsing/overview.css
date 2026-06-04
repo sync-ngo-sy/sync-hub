@@ -1,0 +1,115 @@
+.parsing-table {
+  overflow: auto;
+}
+
+.parsing-table-controls,
+.parsing-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.parsing-search-field {
+  flex: 1 1 320px;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.parsing-search-field > span {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.parsing-search-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.parsing-search-control svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-soft);
+  pointer-events: none;
+}
+
+.parsing-search-control .form-input {
+  width: 100%;
+  padding-left: 38px;
+  padding-right: 48px;
+}
+
+.parsing-search-clear {
+  position: absolute;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.parsing-search-clear svg {
+  position: static;
+  pointer-events: auto;
+}
+
+.parsing-page-size {
+  min-width: 124px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.parsing-page-size span,
+.parsing-pagination > span {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.table-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-card th,
+.table-card td {
+  padding: 15px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: left;
+}
+
+.table-card th {
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.table-card tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.table-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.table-link-button:focus-visible {
+  outline: 2px solid rgba(80, 193, 184, 0.7);
+  outline-offset: 3px;
+}

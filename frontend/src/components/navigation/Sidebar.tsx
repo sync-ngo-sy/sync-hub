@@ -18,6 +18,9 @@ import {
   UserPlus,
   RefreshCw,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, Home, X } from "lucide-react";
+import { adminNavigation, workspaceNavigation } from "@/app/routeRegistry";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
@@ -53,6 +56,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const { currentTenant, userEmail, isAdmin } = useAuth();
   const isAdminRoute = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const [adminOpen, setAdminOpen] = useState(isAdminRoute);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (isAdminRoute) {
@@ -60,11 +64,30 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     }
   }, [isAdminRoute]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    closeButtonRef.current?.focus();
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose, open]);
+
+  const inertProps = open ? {} : ({ inert: "" } as Record<string, string>);
+
   return (
-    <aside className={cn("sidebar", open && "sidebar--open")}>
+    <aside id="app-sidebar" className={cn("sidebar", open && "sidebar--open")} aria-hidden={!open} {...inertProps}>
       <div className="sidebar__header">
         <SyncBrand />
-        <button className="icon-button sidebar__close" onClick={onClose} aria-label="Close navigation" type="button">
+        <button ref={closeButtonRef} className="icon-button sidebar__close" onClick={onClose} aria-label="Close navigation" type="button">
           <X size={18} />
         </button>
       </div>
@@ -76,12 +99,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
       <div className="sidebar__group">
         <span className="sidebar__heading">Workspace</span>
-        {productRoutes.map((route) => {
+        {workspaceNavigation.map((route) => {
           const Icon = route.icon;
-          const active =
-            location.pathname === route.to ||
-            (route.to === "/jobs" && location.pathname.startsWith("/jobs")) ||
-            (route.to.startsWith("/dossier") && location.pathname.startsWith("/dossier"));
+          const active = route.match(location.pathname);
 
           return (
             <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>
@@ -105,23 +125,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </button>
           {adminOpen ? (
             <div className="sidebar__section-content">
-              {operationsRoutes.map((route) => {
+              {adminNavigation.map((route) => {
                 const Icon = route.icon;
-                const active =
-                  route.to === "/admin"
-                    ? location.pathname === route.to || location.pathname === "/admin/dashboard"
-                    : route.to === "/admin/alerts" || route.to === "/admin/accounts" || route.to === "/admin/settings"
-                    ? location.pathname === route.to
-                    : route.to === "/admin/manatal-sync"
-                    ? location.pathname === route.to
-                    : route.to === "/admin/manatal-sync"
-                    ? location.pathname === route.to
-                    : route.to === "/admin/search-simulator"
-                    ? location.pathname === route.to
-                    : route.to === "/admin/parsing/lab"
-                    ? location.pathname === route.to
-                    : location.pathname === route.to ||
-                      (location.pathname.startsWith("/admin/parsing/") && !location.pathname.startsWith("/admin/parsing/lab"));
+                const active = route.match(location.pathname);
 
                 return (
                   <Link key={route.to} to={route.to} className={cn("sidebar__link", active && "sidebar__link--active")} onClick={onClose}>

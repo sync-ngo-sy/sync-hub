@@ -1,29 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ArrowUp, BookmarkCheck, BookmarkPlus, BriefcaseBusiness, Building2, CheckCircle2, Download, Eye, FileText, MapPin, MessageSquareText, Search, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Users, X } from "lucide-react";
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { PlatformScopeControl } from "@/components/PlatformScopeControl";
-import { FilterMultiSelect } from "@/components/FilterMultiSelect";
-import { PickerDropdown } from "@/components/PickerDropdown";
-import { defaultSearchQuery } from "@/data/mockData";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { CandidatePreviewDrawer } from "@/features/search/components/CandidatePreviewDrawer";
+import { CandidateResultCard } from "@/features/search/components/CandidateResultCard";
+import { InfiniteSearchStatus } from "@/features/search/components/InfiniteSearchStatus";
+import { SearchCommandPanel } from "@/features/search/components/SearchCommandPanel";
+import { SearchPageHeader } from "@/features/search/components/SearchPageHeader";
+import { SearchSummaryBar } from "@/features/search/components/SearchSummaryBar";
+import { ShortlistDrawer } from "@/features/search/components/ShortlistDrawer";
+import { ShortlistTray } from "@/features/search/components/ShortlistTray";
+import { WorkspaceStatsStrip } from "@/features/search/components/WorkspaceStatsStrip";
+import { useCandidateShortlist } from "@/features/search/hooks/useCandidateShortlist";
 import { buildChatHref } from "@/lib/chatAgent";
-import type { CandidateSearchResult, CandidateShortlistInput, CandidateShortlistItem, SearchFilterOptions, SearchFilters, SearchResponse, WorkspaceStats } from "@/lib/contracts";
+import type { CandidateSearchResult, SearchFilters, SearchResponse } from "@/lib/contracts";
 import { useAuth } from "@/lib/auth";
-import { formatYearsExperience } from "@/lib/experience";
 import { platformApi } from "@/lib/platformApi";
 import { usePlatformScope } from "@/lib/platformScope";
-import { deriveSearchFilters, parseSkillText } from "@/lib/queryIntent";
-import { Avatar, EmptyState, Panel, ScorePill, Tag } from "@/components/ui";
-
+import { deriveSearchFilters } from "@/lib/queryIntent";
+import { EmptyState } from "@/components/ui";
 import {
   PAGE_SIZE,
-  SearchProcessingState,
   type SearchRequest,
   type SearchSortOption,
   downloadCsv,
   readStoredSearchState,
   shortlistKey,
   writeStoredSearchState,
+} from "@/features/search/searchState";
+import {
+  SearchProcessingState,
 } from "@/screens/SearchDiscoveryPage.helpers";
 
 export function SearchDiscoveryPage() {
@@ -42,7 +46,6 @@ export function SearchDiscoveryPage() {
     () => new Map(workspaceOptions.map((workspace) => [workspace.id, workspace.name])),
     [workspaceOptions],
   );
-  const queryClient = useQueryClient();
   const [initialSearchState] = useState(readStoredSearchState);
   const queryInputRef = useRef<HTMLInputElement | null>(null);
   const intentAppliedKeyRef = useRef<string | null>(null);
@@ -54,15 +57,11 @@ export function SearchDiscoveryPage() {
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>(initialSearchState.request?.filters.companies ?? []);
   const [sortBy, setSortBy] = useState<SearchSortOption>(initialSearchState.sortBy);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [shortlistPendingKeys, setShortlistPendingKeys] = useState<Set<string>>(new Set());
-  const [shortlistError, setShortlistError] = useState<string | null>(null);
-  const [shortlistDrawerOpen, setShortlistDrawerOpen] = useState(false);
   const [previewCandidate, setPreviewCandidate] = useState<CandidateSearchResult | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [request, setRequest] = useState<SearchRequest | null>(initialSearchState.request);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const scopeKey = resolvedTenantIds.join("|");
-  const shortlistQueryKey = useMemo(() => ["shortlist", scopeKey] as const, [scopeKey]);
   const filterOptionsQuery = useQuery({
     queryKey: ["search-filter-options", scopeKey],
     queryFn: () => platformApi.getSearchFilterOptions(resolvedTenantIds),
@@ -74,12 +73,6 @@ export function SearchDiscoveryPage() {
     queryFn: () => platformApi.getWorkspaceStats(resolvedTenantIds),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
-  });
-  const shortlistQuery = useQuery({
-    queryKey: shortlistQueryKey,
-    queryFn: () => platformApi.getShortlist(resolvedTenantIds),
-    placeholderData: keepPreviousData,
-    staleTime: 60 * 1000,
   });
   const searchResultsQuery = useInfiniteQuery({
     queryKey: ["search-results", scopeKey, request?.query ?? "", request?.limit ?? PAGE_SIZE, request?.filters ?? {}],
@@ -137,13 +130,16 @@ export function SearchDiscoveryPage() {
   const filterOptions = filterOptionsQuery.data ?? null;
   const workspaceStats = workspaceStatsQuery.data ?? null;
   const loadingWorkspaceStats = workspaceStatsQuery.isLoading && !workspaceStats;
-  const shortlistItems = shortlistQuery.data ?? [];
-  const loadingShortlist = shortlistQuery.isLoading && !shortlistQuery.data;
+  const shortlist = useCandidateShortlist({
+    currentTenant,
+    currentWorkspace,
+    draftQuery: query,
+    requestQuery: request?.query,
+    resolvedTenantIds,
+    scopeKey,
+  });
+  const shortlistItems = shortlist.items;
   const hasExecutedSearch = request !== null;
-  const shortlistKeys = useMemo(
-    () => new Set(shortlistItems.map((item) => shortlistKey(item.tenantId, item.candidateId))),
-    [shortlistItems],
-  );
   const sortedResults = useMemo(() => {
     const results = response?.results ?? [];
 
@@ -163,24 +159,8 @@ export function SearchDiscoveryPage() {
   }, [response?.results, sortBy]);
 
   useEffect(() => {
-    if (!shortlistItems.length && !shortlistError) {
-      setShortlistDrawerOpen(false);
-    }
-  }, [shortlistItems.length, shortlistError]);
-
-  useEffect(() => {
-    setShortlistDrawerOpen(false);
     setPreviewCandidate(null);
-    setShortlistError(null);
   }, [scopeKey]);
-
-  useEffect(() => {
-    if (shortlistQuery.error) {
-      setShortlistError(String(shortlistQuery.error));
-    } else if (!shortlistPendingKeys.size) {
-      setShortlistError(null);
-    }
-  }, [shortlistPendingKeys.size, shortlistQuery.error]);
 
   useEffect(() => {
     writeStoredSearchState(request, sortBy);
@@ -233,33 +213,6 @@ export function SearchDiscoveryPage() {
     return () => observer.disconnect();
   }, [error, loadingInitial, loadingMore, request, response?.nextCursor, searchResultsQuery.fetchNextPage, searchResultsQuery.hasNextPage]);
 
-  const saveShortlistMutation = useMutation({
-    mutationFn: (item: CandidateShortlistInput) => platformApi.saveShortlistItem(item),
-    onSuccess: (saved) => {
-      queryClient.setQueryData<CandidateShortlistItem[]>(shortlistQueryKey, (current = []) => {
-        const key = shortlistKey(saved.tenantId, saved.candidateId);
-        const withoutExisting = current.filter((item) => shortlistKey(item.tenantId, item.candidateId) !== key);
-        return [saved, ...withoutExisting];
-      });
-    },
-  });
-
-  const removeShortlistMutation = useMutation({
-    mutationFn: (item: { candidateId: string; tenantId: string }) => platformApi.removeShortlistItem(item.candidateId, item.tenantId),
-    onSuccess: (_result, item) => {
-      queryClient.setQueryData<CandidateShortlistItem[]>(shortlistQueryKey, (current = []) =>
-        current.filter((shortlistItem) => shortlistKey(shortlistItem.tenantId, shortlistItem.candidateId) !== shortlistKey(item.tenantId, item.candidateId)),
-      );
-    },
-  });
-
-  const clearShortlistMutation = useMutation({
-    mutationFn: () => platformApi.clearShortlist(resolvedTenantIds),
-    onSuccess: () => {
-      queryClient.setQueryData<CandidateShortlistItem[]>(shortlistQueryKey, []);
-    },
-  });
-
   function handleExecute() {
     const normalizedQuery = query.trim();
     const hasStructuredInput = Boolean(seniority || minYears > 0 || location.trim() || selectedSkills.length || selectedCompanies.length);
@@ -305,126 +258,6 @@ export function SearchDiscoveryPage() {
     setLocation("");
     setSelectedSkills([]);
     setSelectedCompanies([]);
-  }
-
-  function resolveCandidateTenantId(candidate: CandidateSearchResult) {
-    return candidate.tenantId ?? currentWorkspace?.id ?? currentTenant?.id ?? resolvedTenantIds[0] ?? null;
-  }
-
-  function buildShortlistInput(candidate: CandidateSearchResult, tenantId: string): CandidateShortlistInput {
-    return {
-      tenantId,
-      candidateId: candidate.candidateId,
-      candidateName: candidate.name,
-      currentTitle: candidate.currentTitle,
-      location: candidate.location,
-      yearsExperience: candidate.yearsExperience,
-      seniority: candidate.seniority,
-      primaryRole: candidate.primaryRole,
-      topSkills: candidate.topSkills,
-      matchRate: candidate.backendMatchRate,
-      sourceQuery: request?.query ?? query.trim(),
-      searchSnapshot: {
-        headline: candidate.headline,
-        shortSummary: candidate.shortSummary,
-        matchSignals: candidate.matchSignals,
-        matchNarrative: candidate.matchNarrative,
-        stage: candidate.stage,
-      },
-    };
-  }
-
-  async function handleToggleShortlist(candidate: CandidateSearchResult) {
-    const tenantId = resolveCandidateTenantId(candidate);
-    if (!tenantId) {
-      setShortlistError("Select a workspace before adding candidates to your shortlist.");
-      return;
-    }
-
-    const key = shortlistKey(tenantId, candidate.candidateId);
-    const isShortlisted = shortlistKeys.has(key);
-    setShortlistError(null);
-    setShortlistPendingKeys((current) => new Set(current).add(key));
-
-    try {
-      if (isShortlisted) {
-        await removeShortlistMutation.mutateAsync({ candidateId: candidate.candidateId, tenantId });
-      } else {
-        await saveShortlistMutation.mutateAsync(buildShortlistInput(candidate, tenantId));
-      }
-    } catch (nextError) {
-      setShortlistError(`Shortlist update failed: ${String(nextError)}`);
-    } finally {
-      setShortlistPendingKeys((current) => {
-        const next = new Set(current);
-        next.delete(key);
-        return next;
-      });
-    }
-  }
-
-  async function handleRemoveShortlistItem(item: CandidateShortlistItem) {
-    const key = shortlistKey(item.tenantId, item.candidateId);
-    setShortlistError(null);
-    setShortlistPendingKeys((current) => new Set(current).add(key));
-    try {
-      await removeShortlistMutation.mutateAsync({ candidateId: item.candidateId, tenantId: item.tenantId });
-    } catch (nextError) {
-      setShortlistError(`Shortlist update failed: ${String(nextError)}`);
-    } finally {
-      setShortlistPendingKeys((current) => {
-        const next = new Set(current);
-        next.delete(key);
-        return next;
-      });
-    }
-  }
-
-  async function handleOpenShortlistCv(item: CandidateShortlistItem) {
-    const key = `cv:${shortlistKey(item.tenantId, item.candidateId)}`;
-    setShortlistError(null);
-    setShortlistPendingKeys((current) => new Set(current).add(key));
-
-    try {
-      const documentUrl = await platformApi.getOriginalDocumentUrl(null, item.cvUrl, {
-        candidateId: item.candidateId,
-        tenantId: item.tenantId,
-      });
-      if (!documentUrl) {
-        throw new Error("The original CV is not available from browser-accessible storage yet.");
-      }
-      window.open(documentUrl, "_blank", "noopener,noreferrer");
-    } catch (nextError) {
-      setShortlistError(`Could not open CV: ${String(nextError)}`);
-    } finally {
-      setShortlistPendingKeys((current) => {
-        const next = new Set(current);
-        next.delete(key);
-        return next;
-      });
-    }
-  }
-
-  async function handleClearShortlist() {
-    if (!shortlistItems.length) {
-      return;
-    }
-
-    const pendingKey = "clear-shortlist";
-    setShortlistError(null);
-    setShortlistPendingKeys((current) => new Set(current).add(pendingKey));
-    try {
-      await clearShortlistMutation.mutateAsync();
-      setShortlistDrawerOpen(false);
-    } catch (nextError) {
-      setShortlistError(`Could not clear shortlist: ${String(nextError)}`);
-    } finally {
-      setShortlistPendingKeys((current) => {
-        const next = new Set(current);
-        next.delete(pendingKey);
-        return next;
-      });
-    }
   }
 
   function handleExportShortlist() {
@@ -475,473 +308,95 @@ export function SearchDiscoveryPage() {
     shortlistCandidateIds.length
       ? buildChatHref(shortlistCandidateIds.slice(0, 8), "Which candidate in my shortlist is the strongest fit and why?")
       : null;
-  const clearingShortlist = shortlistPendingKeys.has("clear-shortlist");
-  const previewTenantId = previewCandidate ? resolveCandidateTenantId(previewCandidate) : null;
+  const previewTenantId = previewCandidate ? shortlist.resolveCandidateTenantId(previewCandidate) : null;
   const previewShortlistKey = previewCandidate && previewTenantId ? shortlistKey(previewTenantId, previewCandidate.candidateId) : "";
-  const previewIsShortlisted = previewShortlistKey ? shortlistKeys.has(previewShortlistKey) : false;
-  const previewShortlistPending = previewShortlistKey ? shortlistPendingKeys.has(previewShortlistKey) : false;
+  const previewIsShortlisted = previewShortlistKey ? shortlist.keys.has(previewShortlistKey) : false;
+  const previewShortlistPending = previewShortlistKey ? shortlist.pendingKeys.has(previewShortlistKey) : false;
   const previewPartnerId = previewCandidate
     ? sortedResults.find((candidate) => candidate.candidateId !== previewCandidate.candidateId)?.candidateId
     : null;
-  const workspaceStatsPanel = loadingWorkspaceStats ? (
-    <div className="search-metrics-strip" aria-busy="true" aria-label="Loading workspace statistics">
-      {["cv-pool", "candidate-profiles", "workspace"].map((item) => (
-        <div key={item} className="search-metric search-metric--loading">
-          <span className="stat-card__skeleton search-metric__icon" />
-          <div>
-            <span className="stat-card__skeleton search-metric__label" />
-            <span className="stat-card__skeleton search-metric__value" />
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : workspaceStats ? (
-    <div className="search-metrics-strip" aria-label="Search corpus summary">
-      <div className="search-metric">
-        <span className="search-metric__icon">
-          <FileText size={16} />
-        </span>
-        <div>
-          <span>CV Pool</span>
-          <strong>{workspaceStats.documentCount.toLocaleString()}</strong>
-          <small>indexed documents</small>
-        </div>
-      </div>
-
-      <div className="search-metric">
-        <span className="search-metric__icon search-metric__icon--secondary">
-          <Users size={16} />
-        </span>
-        <div>
-          <span>Candidate Profiles</span>
-          <strong>{workspaceStats.candidateCount.toLocaleString()}</strong>
-          <small>searchable</small>
-        </div>
-      </div>
-
-      <div className="search-metric">
-        <span className="search-metric__icon search-metric__icon--tertiary">
-          {isAllScope ? <ShieldCheck size={16} /> : currentWorkspace ? <Building2 size={16} /> : <ShieldCheck size={16} />}
-        </span>
-        <div>
-          <span>Workspace</span>
-          <strong>{isAllScope ? "All workspaces" : currentWorkspace?.name ?? currentTenant?.name ?? "Demo Workspace"}</strong>
-          <small>{isAllScope ? `${workspaceOptions.length} workspaces` : currentWorkspace ? `${currentWorkspace.role} access` : "tenant-scoped pool"}</small>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
   return (
     <div className="page-stack search-page">
-      <section className="search-page-header" aria-labelledby="search-page-title">
-        <div className="search-page-header__copy">
-          <span className="eyebrow">Candidate search</span>
-          <h1 id="search-page-title">Search candidates</h1>
-        </div>
+      <SearchPageHeader
+        currentWorkspace={currentWorkspace}
+        isPlatformAdmin={isPlatformAdmin}
+        scopeMode={scopeMode}
+        shortlistCount={shortlistItems.length}
+        workspaceOptions={workspaceOptions}
+        onChangeScopeMode={setScopeMode}
+        onChangeWorkspace={setWorkspaceId}
+        onOpenShortlist={() => shortlist.setDrawerOpen(true)}
+      />
 
-        <div className="search-page-header__actions">
-          {shortlistItems.length ? (
-            <button
-              className="button button--secondary search-shortlist-button"
-              type="button"
-              onClick={() => setShortlistDrawerOpen(true)}
-              aria-label={`Open shortlist with ${shortlistItems.length} candidates`}
-            >
-              <BookmarkCheck size={16} />
-              <span>Shortlist</span>
-              <strong>{shortlistItems.length}</strong>
-            </button>
-          ) : null}
-          <PlatformScopeControl
-            isPlatformAdmin={isPlatformAdmin}
-            scopeMode={scopeMode}
-            onChangeScopeMode={setScopeMode}
-            currentWorkspace={currentWorkspace}
-            workspaceOptions={workspaceOptions}
-            onChangeWorkspace={setWorkspaceId}
-          />
-        </div>
-      </section>
+      <WorkspaceStatsStrip
+        currentTenant={currentTenant}
+        currentWorkspace={currentWorkspace}
+        isAllScope={isAllScope}
+        loading={loadingWorkspaceStats}
+        stats={workspaceStats}
+        workspaceCount={workspaceOptions.length}
+      />
 
-      {workspaceStatsPanel}
+      <SearchCommandPanel
+        activeFilterCount={activeFilterCount}
+        companies={selectedCompanies}
+        filterOptions={filterOptions}
+        filtersOpen={filtersOpen}
+        loading={loadingInitial || loadingMore}
+        location={location}
+        minYears={minYears}
+        query={query}
+        queryInputRef={queryInputRef}
+        seniority={seniority}
+        skills={selectedSkills}
+        onClearFilters={handleClearFilters}
+        onExecute={handleExecute}
+        onSetCompanies={setSelectedCompanies}
+        onSetFiltersOpen={setFiltersOpen}
+        onSetLocation={setLocation}
+        onSetMinYears={setMinYears}
+        onSetQuery={setQuery}
+        onSetSeniority={setSeniority}
+        onSetSkills={setSelectedSkills}
+      />
 
-      <form
-        className="search-console-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          handleExecute();
-        }}
-      >
-        <Panel className="search-command-panel">
-          <div className="search-command-bar">
-            <label className="search-field">
-              <Sparkles size={18} />
-              <input
-                ref={queryInputRef}
-                aria-label="Search candidates"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={defaultSearchQuery}
-              />
-            </label>
-            <button
-              className="button button--secondary search-filter-toggle"
-              type="button"
-              aria-expanded={filtersOpen}
-              aria-controls="search-filter-region"
-              onClick={() => setFiltersOpen((value) => !value)}
-            >
-              <SlidersHorizontal size={16} />
-              Filters
-              {activeFilterCount ? <strong>{activeFilterCount}</strong> : null}
-            </button>
-            <button className="button button--primary search-submit-button" type="submit" disabled={loadingInitial || loadingMore}>
-              <Search size={16} />
-              {loadingInitial ? "Searching..." : "Search"}
-            </button>
-          </div>
+      <ShortlistTray
+        clearing={shortlist.clearing}
+        count={shortlistItems.length}
+        error={shortlist.error}
+        onClear={shortlist.clear}
+        onExport={handleExportShortlist}
+        onOpen={() => shortlist.setDrawerOpen(true)}
+      />
 
-          {filtersOpen ? (
-            <div id="search-filter-region" className="search-filter-region">
-              <div className="search-filter-toolbar">
-                <div className="search-filter-toolbar__title">
-                  <SlidersHorizontal size={16} />
-                  <strong>Filters</strong>
-                  <span>{activeFilterCount ? `${activeFilterCount} active` : "All candidates"}</span>
-                </div>
-                {activeFilterCount ? (
-                  <button className="button button--secondary button--compact" type="button" onClick={handleClearFilters}>
-                    <X size={14} />
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="search-filters-grid">
-                <label className="search-filter-field">
-                  <span>Seniority</span>
-                  <PickerDropdown
-                    value={seniority}
-                    options={filterOptions?.seniority ?? []}
-                    onChange={setSeniority}
-                    placeholder="Any seniority"
-                    emptyLabel="No seniority values available"
-                  />
-                </label>
-
-                <label className="search-filter-field">
-                  <span>Min years</span>
-                  <input className="form-input" type="number" value={minYears} min={0} onChange={(event) => setMinYears(Number(event.target.value))} />
-                </label>
-
-                <label className="search-filter-field">
-                  <span>Location</span>
-                  <PickerDropdown
-                    value={location}
-                    options={(filterOptions?.locations ?? []).map((option) => ({ value: option, label: option }))}
-                    onChange={setLocation}
-                    placeholder="Any location"
-                    emptyLabel="No indexed locations available"
-                  />
-                </label>
-
-                <label className="search-filter-field search-filter-field--wide">
-                  <span>Skills</span>
-                  <FilterMultiSelect
-                    options={filterOptions?.skills ?? []}
-                    values={selectedSkills}
-                    onChange={setSelectedSkills}
-                    placeholder="Any skill"
-                    searchPlaceholder="Search skills"
-                    normalizeInput={parseSkillText}
-                    emptyLabel="No skills match"
-                  />
-                </label>
-
-                <label className="search-filter-field search-filter-field--wide">
-                  <span>Companies</span>
-                  <FilterMultiSelect
-                    options={filterOptions?.companies ?? []}
-                    values={selectedCompanies}
-                    onChange={setSelectedCompanies}
-                    placeholder="Any company"
-                    searchPlaceholder="Search companies"
-                    emptyLabel="No companies match"
-                  />
-                </label>
-              </div>
-            </div>
-          ) : null}
-        </Panel>
-      </form>
-
-      {shortlistItems.length || shortlistError ? (
-        <Panel className="shortlist-tray">
-          <div className="shortlist-tray__main">
-            <span className="shortlist-tray__icon">
-              <BookmarkCheck size={18} />
-            </span>
-            <div>
-              <strong>{shortlistItems.length ? `${shortlistItems.length} shortlisted` : "Shortlist needs attention"}</strong>
-              <p>{shortlistError ?? "Saved to your account. Review the list before exporting."}</p>
-            </div>
-          </div>
-          <div className="shortlist-tray__actions">
-            <button className="button button--primary" type="button" onClick={() => setShortlistDrawerOpen(true)} disabled={!shortlistItems.length}>
-              <BookmarkCheck size={16} />
-              Review
-            </button>
-            <button className="button button--secondary" type="button" onClick={handleExportShortlist} disabled={!shortlistItems.length}>
-              <Download size={16} />
-              Export CSV
-            </button>
-            <button className="button button--secondary" type="button" onClick={handleClearShortlist} disabled={!shortlistItems.length || clearingShortlist}>
-              <Trash2 size={16} />
-              {clearingShortlist ? "Clearing..." : "Clear"}
-            </button>
-          </div>
-        </Panel>
-      ) : null}
-
-      {shortlistDrawerOpen ? (
-        <>
-          <div className="shortlist-drawer-backdrop" onClick={() => setShortlistDrawerOpen(false)} />
-          <aside className="shortlist-drawer" role="dialog" aria-modal="true" aria-labelledby="shortlist-drawer-title">
-            <div className="shortlist-drawer__header">
-              <div className="stack">
-                <span className="eyebrow">Saved shortlist</span>
-                <h2 id="shortlist-drawer-title">{shortlistItems.length} candidates</h2>
-                <p className="muted">Account-level selections for the active workspace scope.</p>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setShortlistDrawerOpen(false)} aria-label="Close shortlist drawer">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="shortlist-drawer__body">
-              {shortlistError ? <p className="shortlist-drawer__error">{shortlistError}</p> : null}
-              {loadingShortlist ? (
-                <p className="muted">Loading saved candidates...</p>
-              ) : !shortlistItems.length ? (
-                <p className="muted">No candidates saved yet.</p>
-              ) : (
-                <div className="shortlist-drawer__list">
-                  {shortlistItems.map((item) => {
-                    const key = shortlistKey(item.tenantId, item.candidateId);
-                    const removing = shortlistPendingKeys.has(key);
-                    const openingCv = shortlistPendingKeys.has(`cv:${key}`);
-                    return (
-                      <article key={key} className="shortlist-drawer-card">
-                        <div className="shortlist-drawer-card__header">
-                          <div className="candidate-card__identity">
-                            <Avatar name={item.candidateName} hue={item.candidateName.length * 17} size="sm" />
-                            <div className="stack">
-                              <strong>{item.candidateName}</strong>
-                              <p>{item.currentTitle}</p>
-                            </div>
-                          </div>
-                          {item.matchRate !== null ? <ScorePill score={item.matchRate} label="Match" /> : null}
-                        </div>
-
-                        <div className="meta-list shortlist-drawer-card__meta">
-                          <span className="tag">
-                            <MapPin size={14} />
-                            {item.location}
-                          </span>
-                          {item.yearsExperience !== null ? (
-                            <span className="tag">
-                              <BriefcaseBusiness size={14} />
-                              {formatYearsExperience(item.yearsExperience)}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {item.topSkills.length ? (
-                          <div className="skill-list">
-                            {item.topSkills.slice(0, 4).map((skill) => (
-                              <Tag key={skill} tone="primary">
-                                {skill}
-                              </Tag>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        <div className="shortlist-drawer-card__actions">
-                          <Link className="button button--secondary button--compact" to={`/dossier/${item.candidateId}`} onClick={() => setShortlistDrawerOpen(false)}>
-                            View
-                          </Link>
-                          {item.cvUrl ? (
-                            <button className="button button--secondary button--compact" type="button" onClick={() => void handleOpenShortlistCv(item)} disabled={openingCv}>
-                              <FileText size={14} />
-                              {openingCv ? "Opening..." : "CV"}
-                            </button>
-                          ) : null}
-                          <button
-                            className="button button--secondary button--compact"
-                            type="button"
-                            onClick={() => void handleRemoveShortlistItem(item)}
-                            disabled={removing}
-                          >
-                            <Trash2 size={14} />
-                            {removing ? "Removing..." : "Remove"}
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="shortlist-drawer__footer">
-              {shortlistChatHref ? (
-                <Link className="button button--secondary" to={shortlistChatHref}>
-                  Ask Agent
-                  <MessageSquareText size={16} />
-                </Link>
-              ) : null}
-              {shortlistCompareHref ? (
-                <Link className="button button--primary" to={shortlistCompareHref}>
-                  Compare
-                  <ArrowRight size={16} />
-                </Link>
-              ) : null}
-              <button className="button button--secondary" type="button" onClick={handleExportShortlist} disabled={!shortlistItems.length}>
-                <Download size={16} />
-                Export CSV
-              </button>
-              <button className="button button--secondary" type="button" onClick={handleClearShortlist} disabled={!shortlistItems.length || clearingShortlist}>
-                <Trash2 size={16} />
-                {clearingShortlist ? "Clearing..." : "Clear"}
-              </button>
-            </div>
-          </aside>
-        </>
+      {shortlist.drawerOpen ? (
+        <ShortlistDrawer
+          chatHref={shortlistChatHref}
+          clearing={shortlist.clearing}
+          compareHref={shortlistCompareHref}
+          error={shortlist.error}
+          items={shortlistItems}
+          loading={shortlist.loading}
+          pendingKeys={shortlist.pendingKeys}
+          onClear={shortlist.clear}
+          onClose={() => shortlist.setDrawerOpen(false)}
+          onExport={handleExportShortlist}
+          onOpenCv={(item) => void shortlist.openCv(item)}
+          onRemove={(item) => void shortlist.removeItem(item)}
+        />
       ) : null}
 
       {previewCandidate ? (
-        <>
-          <div className="candidate-preview-drawer-backdrop" onClick={() => setPreviewCandidate(null)} />
-          <aside className="candidate-preview-drawer" role="dialog" aria-modal="true" aria-labelledby="candidate-preview-title">
-            <div className="candidate-preview-drawer__header">
-              <div className="candidate-card__identity">
-                <Avatar name={previewCandidate.name} hue={previewCandidate.avatarHue} size="lg" />
-                <div className="stack">
-                  <span className="eyebrow">Sneak peek</span>
-                  <h2 id="candidate-preview-title">{previewCandidate.name}</h2>
-                  <p>{previewCandidate.currentTitle}</p>
-                </div>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setPreviewCandidate(null)} aria-label="Close candidate overview">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="candidate-preview-drawer__body">
-              <div className="candidate-preview-drawer__score-row">
-                <ScorePill score={previewCandidate.backendMatchRate} label="Match rate" />
-                <div className="skill-list">
-                  <Tag>{previewCandidate.seniority}</Tag>
-                  <Tag>{previewCandidate.primaryRole}</Tag>
-                  <Tag tone="success">{previewCandidate.stage}</Tag>
-                </div>
-              </div>
-
-              <div className="meta-list candidate-preview-drawer__meta">
-                <span className="tag">
-                  <MapPin size={14} />
-                  {previewCandidate.location}
-                </span>
-                <span className="tag">
-                  <BriefcaseBusiness size={14} />
-                  {formatYearsExperience(previewCandidate.yearsExperience)}
-                </span>
-              </div>
-
-              <section className="candidate-preview-section">
-                <span className="eyebrow">Overview</span>
-                <p>{previewCandidate.shortSummary || previewCandidate.headline || previewCandidate.matchNarrative}</p>
-              </section>
-
-              {previewCandidate.matchNarrative ? (
-                <section className="candidate-preview-section">
-                  <span className="eyebrow">Why this match</span>
-                  <p>{previewCandidate.matchNarrative}</p>
-                </section>
-              ) : null}
-
-              <section className="candidate-preview-section">
-                <span className="eyebrow">Top skills</span>
-                <div className="skill-list">
-                  {previewCandidate.topSkills.slice(0, 8).map((skill) => (
-                    <Tag key={skill} tone="primary">
-                      {skill}
-                    </Tag>
-                  ))}
-                </div>
-              </section>
-
-              {previewCandidate.strengths.length ? (
-                <section className="candidate-preview-section">
-                  <span className="eyebrow">Strengths</span>
-                  <ul className="bullet-list">
-                    {previewCandidate.strengths.slice(0, 3).map((strength) => (
-                      <li key={strength}>{strength}</li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-
-              {previewCandidate.risks.length ? (
-                <section className="candidate-preview-section">
-                  <span className="eyebrow">Watchouts</span>
-                  <ul className="bullet-list">
-                    {previewCandidate.risks.slice(0, 2).map((risk) => (
-                      <li key={risk}>{risk}</li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-            </div>
-
-            <div className="candidate-preview-drawer__footer">
-              <button
-                className={previewIsShortlisted ? "button button--primary" : "button button--secondary"}
-                type="button"
-                aria-pressed={previewIsShortlisted}
-                disabled={previewShortlistPending || !previewTenantId}
-                onClick={() => void handleToggleShortlist(previewCandidate)}
-              >
-                {previewIsShortlisted ? <BookmarkCheck size={16} /> : <BookmarkPlus size={16} />}
-                {previewShortlistPending ? "Saving..." : previewIsShortlisted ? "Shortlisted" : "Shortlist"}
-              </button>
-              <Link
-                className="button button--primary"
-                to={`/dossier/${previewCandidate.candidateId}`}
-                state={{
-                  searchMatchScore: previewCandidate.matchScore,
-                  searchMatchSignals: previewCandidate.matchSignals,
-                  searchQuery: request?.query ?? query,
-                }}
-                onClick={() => setPreviewCandidate(null)}
-              >
-                View Dossier
-                <ArrowRight size={16} />
-              </Link>
-              <Link className="button button--secondary" to={buildChatHref([previewCandidate.candidateId], "Why is this candidate a strong fit?")}>
-                Ask Agent
-                <MessageSquareText size={16} />
-              </Link>
-              {previewPartnerId ? (
-                <Link className="button button--secondary" to={`/compare?ids=${previewCandidate.candidateId},${previewPartnerId}`}>
-                  Compare
-                  <ArrowRight size={16} />
-                </Link>
-              ) : null}
-            </div>
-          </aside>
-        </>
+        <CandidatePreviewDrawer
+          candidate={previewCandidate}
+          isShortlisted={previewIsShortlisted}
+          partnerId={previewPartnerId}
+          searchQuery={request?.query ?? query}
+          shortlistPending={previewShortlistPending}
+          tenantId={previewTenantId}
+          onClose={() => setPreviewCandidate(null)}
+          onToggleShortlist={(candidate) => void shortlist.toggleCandidate(candidate)}
+        />
       ) : null}
 
       {!hasExecutedSearch ? null : loadingInitial && request ? (
@@ -955,194 +410,49 @@ export function SearchDiscoveryPage() {
         />
       ) : (
         <>
-          <Panel className="search-summary-bar">
-            <div className="search-summary-bar__main">
-              <strong>Loaded {response.results.length} candidates</strong>
-              <p>
-                Results append automatically as you scroll. Sort applies to the loaded result set without changing the active search frame.
-              </p>
-              {topChatHref || topCompareHref ? (
-                <div className="search-summary-actions">
-                  {topChatHref ? (
-                    <Link className="button button--secondary" to={topChatHref}>
-                      Ask Agent
-                      <MessageSquareText size={16} />
-                    </Link>
-                  ) : null}
-                  {topCompareHref ? (
-                    <Link className="button button--primary" to={topCompareHref}>
-                      Compare Top Matches
-                      <ArrowRight size={16} />
-                    </Link>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="search-summary-bar__controls">
-              <label className="search-sort">
-                <span>Sort by</span>
-                <select className="form-select" value={sortBy} onChange={(event) => setSortBy(event.target.value as SearchSortOption)}>
-                  <option value="best-match">Best match</option>
-                  <option value="experience-desc">Most experience</option>
-                  <option value="experience-asc">Least experience</option>
-                  <option value="name-asc">Name A-Z</option>
-                  <option value="name-desc">Name Z-A</option>
-                </select>
-              </label>
-            </div>
-          </Panel>
+          <SearchSummaryBar
+            compareHref={topCompareHref}
+            count={response.results.length}
+            sortBy={sortBy}
+            topChatHref={topChatHref}
+            onSortChange={setSortBy}
+          />
 
           <div className="candidate-results">
             {sortedResults.map((candidate) => {
               const partnerId = sortedResults.find((item) => item.candidateId !== candidate.candidateId)?.candidateId;
-              const candidateTenantId = resolveCandidateTenantId(candidate);
+              const candidateTenantId = shortlist.resolveCandidateTenantId(candidate);
               const candidateShortlistKey = candidateTenantId ? shortlistKey(candidateTenantId, candidate.candidateId) : "";
-              const isShortlisted = candidateShortlistKey ? shortlistKeys.has(candidateShortlistKey) : false;
-              const shortlistPending = candidateShortlistKey ? shortlistPendingKeys.has(candidateShortlistKey) : false;
+              const isShortlisted = candidateShortlistKey ? shortlist.keys.has(candidateShortlistKey) : false;
+              const shortlistPending = candidateShortlistKey ? shortlist.pendingKeys.has(candidateShortlistKey) : false;
 
               return (
-                <Panel key={candidate.candidateId} className="candidate-card">
-                  <div className="candidate-card__header">
-                    <div className="candidate-card__identity">
-                      <Avatar name={candidate.name} hue={candidate.avatarHue} />
-                      <div className="stack">
-                        <h3>{candidate.name}</h3>
-                        <p>{candidate.currentTitle}</p>
-                        <div className="skill-list">
-                          {isAllScope && candidate.tenantId ? <Tag>{workspaceNameById.get(candidate.tenantId) ?? "Workspace"}</Tag> : null}
-                          <Tag>{candidate.seniority}</Tag>
-                          <Tag>{candidate.primaryRole}</Tag>
-                          <Tag tone="success">{candidate.stage}</Tag>
-                        </div>
-                      </div>
-                    </div>
-                    <ScorePill score={candidate.backendMatchRate} label="Match rate" />
-                  </div>
-
-                  <div className="meta-list">
-                    <span className="tag">
-                      <MapPin size={14} />
-                      {candidate.location}
-                    </span>
-                    <span className="tag">
-                      <BriefcaseBusiness size={14} />
-                      {formatYearsExperience(candidate.yearsExperience)}
-                    </span>
-                  </div>
-
-                  <div className="skill-list">
-                    {candidate.topSkills.slice(0, 5).map((skill) => (
-                      <Tag key={skill} tone="primary">
-                        {skill}
-                      </Tag>
-                    ))}
-                  </div>
-
-	                  <div className="skill-list">
-                    <button className="button button--secondary" type="button" onClick={() => setPreviewCandidate(candidate)}>
-                      <Eye size={16} />
-                      Quick overview
-                    </button>
-                    <button
-                      className={[
-                        "button",
-                        isShortlisted ? "button--primary shortlist-action-button shortlist-action-button--active" : "button--secondary shortlist-action-button",
-                      ].join(" ")}
-                      type="button"
-                      aria-pressed={isShortlisted}
-                      disabled={shortlistPending || !candidateTenantId}
-                      onClick={() => void handleToggleShortlist(candidate)}
-                    >
-                      {isShortlisted ? <BookmarkCheck size={16} /> : <BookmarkPlus size={16} />}
-                      {shortlistPending ? "Saving..." : isShortlisted ? "Shortlisted" : "Shortlist"}
-                    </button>
-                    <Link
-                      className="button button--secondary"
-                      to={`/dossier/${candidate.candidateId}`}
-                      state={{
-                        searchMatchScore: candidate.matchScore,
-                        searchMatchSignals: candidate.matchSignals,
-                        searchQuery: request?.query ?? query,
-                      }}
-                    >
-                      View Dossier
-                    </Link>
-                    <Link
-                      className="button button--secondary"
-                      to={buildChatHref([candidate.candidateId], "Why is this candidate a strong fit?")}
-                    >
-                      Ask Agent
-                    </Link>
-                    {partnerId ? (
-                      <Link className="button button--primary" to={`/compare?ids=${candidate.candidateId},${partnerId}`}>
-                        Compare
-                      </Link>
-                    ) : null}
-                  </div>
-                </Panel>
+                <CandidateResultCard
+                  key={candidate.candidateId}
+                  candidate={candidate}
+                  candidateTenantId={candidateTenantId}
+                  isShortlisted={isShortlisted}
+                  partnerId={partnerId}
+                  searchQuery={request?.query ?? query}
+                  shortlistPending={shortlistPending}
+                  workspaceLabel={isAllScope && candidate.tenantId ? workspaceNameById.get(candidate.tenantId) ?? "Workspace" : null}
+                  onPreview={setPreviewCandidate}
+                  onToggleShortlist={(nextCandidate) => void shortlist.toggleCandidate(nextCandidate)}
+                />
               );
             })}
           </div>
 
           <div ref={loadMoreRef} className="infinite-scroll-sentinel">
-            {error ? (
-              <Panel className="infinite-scroll-panel">
-                <strong>Could not load more results</strong>
-                <p>{error}</p>
-                {request && response.nextCursor !== null ? (
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => void searchResultsQuery.fetchNextPage()}
-                    disabled={loadingMore}
-                  >
-                    Retry
-                  </button>
-                ) : null}
-              </Panel>
-            ) : loadingMore ? (
-              <Panel className="infinite-scroll-panel">
-                <strong>Loading more candidates</strong>
-                <p>Fetching the next ranked slice from the search index.</p>
-              </Panel>
-            ) : response.nextCursor !== null ? (
-              <Panel className="infinite-scroll-panel">
-                <strong>Keep scrolling</strong>
-                <p>The next page will load automatically as this section enters the viewport.</p>
-              </Panel>
-            ) : (
-              <Panel className="infinite-scroll-panel infinite-scroll-panel--complete">
-                <div className="infinite-scroll-panel__badge">
-                  <CheckCircle2 size={16} />
-                  <span>Search complete</span>
-                </div>
-                <strong>{response.results.length} ranked candidates loaded</strong>
-                <p>You’ve reached the end of this ranked result set. Broaden the search frame or adjust filters to surface more profiles.</p>
-                <div className="infinite-scroll-panel__actions">
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => {
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                  >
-                    <ArrowUp size={14} />
-                    Back to Top
-                  </button>
-                  <button
-                    className="button button--secondary"
-                    type="button"
-                    onClick={() => {
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                      window.setTimeout(() => queryInputRef.current?.focus(), 180);
-                    }}
-                  >
-                    Refine Search
-                  </button>
-                </div>
-              </Panel>
-            )}
+            <InfiniteSearchStatus
+              error={error}
+              loadingMore={loadingMore}
+              nextCursor={response.nextCursor}
+              queryInputRef={queryInputRef}
+              request={request}
+              resultCount={response.results.length}
+              onRetry={() => void searchResultsQuery.fetchNextPage()}
+            />
           </div>
         </>
       )}

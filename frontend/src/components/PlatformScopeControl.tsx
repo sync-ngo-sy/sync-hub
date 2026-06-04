@@ -58,7 +58,7 @@ export function PlatformScopeControl({
               ? "button button--primary platform-scope-control__workspace-trigger"
               : "button button--secondary platform-scope-control__workspace-trigger"}
             type="button"
-            aria-haspopup="menu"
+            aria-haspopup="listbox"
             aria-expanded={workspaceMenuOpen}
             onClick={() => {
               onChangeScopeMode("current");
@@ -81,7 +81,7 @@ export function PlatformScopeControl({
           </button>
 
           {workspaceMenuOpen ? (
-            <div className="platform-scope-control__workspace-menu" role="menu">
+            <div className="platform-scope-control__workspace-menu" role="listbox">
               {workspaceOptions.map((workspace) => {
                 const isSelected = workspace.id === currentWorkspace?.id;
 
@@ -89,8 +89,8 @@ export function PlatformScopeControl({
                   <button
                     key={workspace.id}
                     type="button"
-                    role="menuitemradio"
-                    aria-checked={isSelected}
+                    role="option"
+                    aria-selected={isSelected}
                     className={`platform-scope-control__workspace-option${isSelected ? " platform-scope-control__workspace-option--active" : ""}`}
                     onClick={() => {
                       onChangeWorkspace(workspace.id);

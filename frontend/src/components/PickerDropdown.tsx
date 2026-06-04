@@ -59,7 +59,7 @@ export function PickerDropdown({
       <button
         type="button"
         className={cn("picker-dropdown__trigger", open && "picker-dropdown__trigger--open")}
-        aria-haspopup="menu"
+        aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -72,13 +72,13 @@ export function PickerDropdown({
       {open ? (
         <div
           className={cn("picker-dropdown__menu", menuPlacement.direction === "above" && "picker-dropdown__menu--above")}
-          role="menu"
+          role="listbox"
           style={{ maxHeight: menuPlacement.maxHeight }}
         >
           <button
             type="button"
-            role="menuitemradio"
-            aria-checked={!value}
+            role="option"
+            aria-selected={!value}
             className={cn("picker-dropdown__option", !value && "picker-dropdown__option--active")}
             onClick={() => {
               onChange("");
@@ -97,8 +97,8 @@ export function PickerDropdown({
                 <button
                   key={option.value}
                   type="button"
-                  role="menuitemradio"
-                  aria-checked={isSelected}
+                  role="option"
+                  aria-selected={isSelected}
                   className={cn("picker-dropdown__option", isSelected && "picker-dropdown__option--active")}
                   onClick={() => {
                     onChange(option.value);

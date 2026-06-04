@@ -1,6 +1,7 @@
 import { Navigate, createHashRouter } from "react-router-dom";
 import { AuthGate } from "@/app/AuthGate";
 import { AppShell } from "@/app/layout/AppShell";
+import { protectedRoutes, publicRoutes } from "@/app/routeRegistry";
 import { EmptyState } from "@/components/ui";
 import { CandidateDossierPage } from "@/screens/CandidateDossierPage";
 import { IntelligentComparisonPage } from "@/screens/IntelligentComparisonPage";
@@ -29,8 +30,7 @@ function ProtectedShell() {
 }
 
 export const router = createHashRouter([
-  { path: "/careers", element: <PublicJobBoardPage /> },
-  { path: "/careers/:slug", element: <PublicJobDetailPage /> },
+  ...publicRoutes,
   {
     path: "/",
     element: <ProtectedShell />,
@@ -39,6 +39,7 @@ export const router = createHashRouter([
         index: true,
         element: <Navigate to="/search" replace />,
       },
+      ...protectedRoutes,
       { path: "search", element: <SearchDiscoveryPage /> },
       { path: "candidates", element: <CandidateListingPage /> },
       { path: "chat", element: <IntelligenceHubPage /> },

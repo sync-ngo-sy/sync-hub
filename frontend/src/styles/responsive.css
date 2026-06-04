@@ -1,0 +1,354 @@
+.sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  display: block;
+  z-index: 18;
+  border: 0;
+  background: rgba(6, 8, 12, 0.6);
+}
+
+@media (max-width: 1200px) {
+  .auth-layout,
+  .hero-grid,
+  .detail-grid,
+  .admin-grid,
+  .comparison-grid,
+  .chat-layout,
+  .candidate-results,
+  .stats-grid,
+  .three-column-grid,
+  .two-column-grid,
+  .parsing-field-grid,
+  .parsing-profile-grid,
+  .parsing-content-grid,
+  .parser-form-grid,
+  .parser-toggle-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-summary-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .shortlist-tray {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .job-family-donut,
+  .pyramid-row {
+    grid-template-columns: 1fr;
+  }
+
+  .shortlist-tray__actions {
+    justify-content: flex-start;
+  }
+
+  .shortlist-drawer {
+    width: min(500px, 100vw);
+  }
+
+  .candidate-preview-drawer {
+    width: min(560px, 100vw);
+  }
+
+  .chat-thread-panel__header,
+  .chat-composer__actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chat-page__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chat-page__actions {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .context-drawer {
+    width: min(460px, 100vw);
+  }
+
+  .search-filters-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .search-filter-field {
+    grid-column: span 2;
+  }
+
+  .search-filter-field--wide {
+    grid-column: span 3;
+  }
+
+  .search-stats-grid,
+  .search-metrics-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(86vw, 320px);
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+  }
+
+  .sidebar--open {
+    transform: translateX(0);
+  }
+
+  .sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    display: block;
+    z-index: 18;
+    border: 0;
+    background: rgba(6, 8, 12, 0.6);
+  }
+
+  .topbar {
+    padding-inline: 20px;
+  }
+
+  .topbar__menu {
+    display: grid;
+  }
+
+  .app-shell__content {
+    padding: 18px 18px 24px;
+  }
+
+  .page-intro {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .search-toolbar {
+    flex-direction: column;
+  }
+
+  .search-command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .search-processing-panel,
+  .search-processing-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .search-submit-button {
+    width: 100%;
+  }
+
+  .search-filter-toggle {
+    width: 100%;
+  }
+
+  .shortlist-tray__main {
+    align-items: flex-start;
+  }
+
+  .shortlist-tray__actions,
+  .shortlist-tray__actions .button {
+    width: 100%;
+  }
+
+  .search-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dossier-skeleton__intro,
+  .candidate-profile__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dossier-skeleton__actions {
+    justify-content: flex-start;
+  }
+
+  .dossier-skeleton__button {
+    width: min(100%, 180px);
+  }
+
+  .dossier-skeleton__identity {
+    width: 100%;
+  }
+
+  .search-page-header__actions {
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .search-page-header__actions > * {
+    max-width: 100%;
+  }
+
+  .shortlist-drawer {
+    padding: 20px;
+  }
+
+  .candidate-preview-drawer {
+    padding: 20px;
+  }
+
+  .candidate-preview-drawer__header,
+  .candidate-preview-drawer__score-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shortlist-drawer__footer,
+  .shortlist-drawer__footer .button,
+  .candidate-preview-drawer__footer,
+  .candidate-preview-drawer__footer .button {
+    width: 100%;
+  }
+
+  .search-filter-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .search-filters-grid,
+  .search-stats-grid,
+  .search-metrics-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .search-filter-field,
+  .search-filter-field--wide {
+    grid-column: auto;
+  }
+
+  .auth-screen {
+    padding: 20px;
+  }
+
+  .auth-panel {
+    padding: 24px;
+  }
+
+  .auth-panel--hero {
+    min-height: auto;
+  }
+
+  .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .parsing-table-controls {
+    align-items: stretch;
+  }
+
+  .parsing-search-field {
+    max-width: none;
+  }
+
+  .parsing-detail-skeleton__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes statCardSkeleton {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes searchScan {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  55%,
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes searchRing {
+  from {
+    transform: rotate(0deg) scale(1);
+    border-top-color: rgba(80, 193, 184, 0.72);
+  }
+
+  to {
+    transform: rotate(360deg) scale(1);
+    border-top-color: rgba(80, 193, 184, 0.72);
+  }
+}
+
+@keyframes searchCorePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+@keyframes searchNodeFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes searchStepPulse {
+  0%,
+  100% {
+    border-color: rgba(80, 193, 184, 0.14);
+    color: var(--text-muted);
+  }
+
+  50% {
+    border-color: rgba(80, 193, 184, 0.36);
+    color: var(--text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card__skeleton,
+  .search-processing-panel::after,
+  .search-processing-ring,
+  .search-processing-core,
+  .search-processing-node,
+  .search-processing-step {
+    animation: none;
+  }
+}

@@ -1,16 +1,38 @@
 import { useEffect, useState } from "react";
 import { SlidersHorizontal, Sparkles } from "lucide-react";
-import { indexingWorkbench as fallbackWorkbench } from "@/data/mockData";
 import type { IndexingWorkbench } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { PageIntro, Panel, ProgressBar, Tag } from "@/components/ui";
 
 export function IndexingWorkbenchPage() {
-  const [workbench, setWorkbench] = useState<IndexingWorkbench>(fallbackWorkbench);
+  const [workbench, setWorkbench] = useState<IndexingWorkbench | null>(null);
 
   useEffect(() => {
-    platformApi.getIndexingWorkbench().then(setWorkbench);
+    let active = true;
+    platformApi.getIndexingWorkbench().then((nextWorkbench) => {
+      if (active) {
+        setWorkbench(nextWorkbench);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  if (!workbench) {
+    return (
+      <div className="page-stack">
+        <PageIntro
+          eyebrow="Search configuration"
+          title="Search configuration"
+          description="Inspect the ranking blend, indexing queues, and quality diagnostics that shape retrieval behavior. This screen is the operator-facing control surface behind the sync-style prototype."
+        />
+        <Panel className="table-card">
+          <p className="muted">Loading search configuration...</p>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">

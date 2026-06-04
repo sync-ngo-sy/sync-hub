@@ -1,0 +1,18 @@
+:root {
+  color-scheme: dark;
+  --bg: #39393a;
+  --panel: rgba(68, 68, 70, 0.84);
+  --border: rgba(80, 193, 184, 0.16);
+  --border-strong: rgba(80, 193, 184, 0.3);
+  --text: #f6fbfa;
+  --text-muted: #b9d3d1;
+  --text-soft: #88aaa7;
+  --primary: #50c1b8;
+  --primary-strong: #00857e;
+  --tertiary: #00857e;
+  --success: #73e0a8;
+  --warning: #ffcf7a;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --radius: 22px;
+  --font-sans: "Alexandria", sans-serif;
+}

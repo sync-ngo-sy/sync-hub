@@ -14,21 +14,15 @@ import type {
   CandidateListOptions,
   CandidateListResponse,
   CandidateShortlistInput,
-  CandidateShortlistItem,
   ComparisonResponse,
   DataConnector,
   EmployerRegion,
-  InsightsGapAnalysis,
-  InsightsDashboardOptions,
-  InsightsDashboardSnapshot,
   IndexingWorkbench,
-  JobApplication,
   JobApplicationStatus,
   JobCandidateMatch,
   JobExtractionResult,
   JobMatchingRun,
   JobMatchingRunDetail,
-  JobPosting,
   JobPostingInput,
   JobPostingStatus,
   JobShortlist,
@@ -46,48 +40,65 @@ import type {
   ParsingOverview,
   ParserProfile,
   ParserProfileInput,
-  SearchFilterOptions,
-  SearchFilters,
-  SearchDebugResponse,
-  SearchQueryOptions,
-  SearchResponse,
   SystemHealth,
   WorkspaceStats,
 } from "@/lib/contracts";
 import {
-  accessRoster,
-  analyticsSnapshot,
-  askCandidates,
-  compareCandidates,
-  dataConnectors,
-  defaultCompareIds,
-  defaultIntelligenceIds,
-  getCandidate,
-  getParserProfiles,
-  getParsingDocument,
-  getWorkspaceStats as getMockWorkspaceStats,
-  insightsDashboardSnapshot,
-  indexingWorkbench,
-  opsAlerts,
-  parsingOverview,
-  publishParserProfile,
-  saveParserProfile,
-  searchCandidates,
-  systemHealth,
-} from "@/data/mockData";
+  isBrowserOpenableSource,
+  isGcsSource,
+  mapEvidenceSnippet,
+  mapRemoteCandidate,
+} from "@/features/candidates/apiMappers";
+import {
+  fetchInsightsDashboardFromRpc,
+  fetchInsightsDashboardFromSearchCache,
+  fetchInsightsGapAnalysisFromRpc,
+  mapRemoteInsightsDashboard,
+  mapRemoteInsightsGapAnalysis,
+} from "@/features/insights/api";
+import {
+  jobPostingPayload,
+  mapPublicReceipt,
+  mapRemoteJobApplication,
+  mapRemoteJobExtraction,
+  mapRemoteJobMatchingRun,
+  mapRemoteJobMatchingRunDetail,
+  mapRemoteJobPosting,
+  mapRemoteJobShortlist,
+  mapRemoteJobShortlistDetail,
+  mapRemotePublicJob,
+  publicApplicationPayload,
+} from "@/features/jobs/apiMappers";
+import {
+  createEmptySearchFilterOptions,
+  mapRemoteSearch,
+  mapRemoteSearchDebug,
+  mapRemoteShortlistItem,
+  mapSearchFilterOptions,
+  normalizeSearchFilters,
+  shortlistInputPayload,
+} from "@/features/search/apiMappers";
+import { countRemoteRows } from "@/lib/api/countRows";
+import { asArray, asRecord, errorMessage, nullableString, toNumber, toStringArray, type JsonRecord } from "@/lib/api/json";
+import { invokeFunction, invokePlatform } from "@/lib/api/platformClient";
 import {
   buildParsingDocumentDetail,
   buildParsingOverview,
-  type ParsingCandidateRow,
-  type ParsingProcessingRunRow,
-  type ParsingProfileRow,
-  type ParsingSourceDocumentRow,
 } from "@/lib/parsingQuality";
-import { candidateHasGapSkill, resolveGapRequirements } from "@/lib/insightsGap";
-import { formatSeniorityValue, normalizeLocationValue, normalizeSeniorityValue, normalizeSkillList, SEARCH_SENIORITY_TABLE, SEARCH_SKILL_TABLE } from "@/lib/searchTaxonomy";
+import type {
+  CandidateChunkRow,
+  CandidateDossierRow,
+  CandidateSearchFacetRow,
+  CandidateShortlistRow,
+  ParserProfileRow,
+  ParsingCandidateRow,
+  ParsingProcessingRunRow,
+  ParsingProfileRow,
+  ParsingRemoteSnapshot,
+  ParsingSourceDocumentRow,
+} from "@/lib/api/platformRows";
+import type { OriginalDocumentUrlContext, ParsingOverviewOptions, PlatformApi } from "@/lib/platformApiTypes";
 import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
-
-type JsonRecord = Record<string, unknown>;
 
 const MAX_VISIBLE_CITATIONS = 3;
 const MAX_CONTEXT_BLOCKS = 6;
@@ -309,50 +320,35 @@ type CandidateShortlistRow = {
 
 const STORAGE_BUCKET = "cv-originals";
 const SEARCH_FACET_CACHE_TTL_MS = 60_000;
-const SEARCH_REST_PAGE_SIZE = 1000;
 
 const searchFacetRowsCache = new Map<string, { expiresAt: number; promise: Promise<CandidateSearchFacetRow[]> }>();
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+type PlatformApiMethod = (...args: unknown[]) => Promise<unknown>;
+
+let mockApiPromise: Promise<PlatformApi> | null = null;
+
+async function getMockApi() {
+  mockApiPromise ??= import("@/lib/api/mockPlatformApi").then(({ createMockApi }) => createMockApi());
+  return mockApiPromise;
 }
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
-}
+function createLazyMockApi(): PlatformApi {
+  return new Proxy({} as PlatformApi, {
+    get(_target, property) {
+      if (typeof property !== "string") {
+        return undefined;
+      }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function toStringArray(value: unknown): string[] {
-  return asArray(value)
-    .map((item) => String(item).trim())
-    .filter(Boolean);
-}
-
-function toNumber(value: unknown, fallback = 0) {
-  const normalized = Number(value);
-  return Number.isFinite(normalized) ? normalized : fallback;
-}
-
-function errorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (error && typeof error === "object") {
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return String(error);
-    }
-  }
-  return String(error);
-}
-
-function isTimeoutError(error: unknown) {
-  const message = errorMessage(error).toLowerCase();
-  return message.includes("statement timeout") || message.includes("57014") || message.includes("canceling statement");
+      return async (...args: unknown[]) => {
+        const api = await getMockApi();
+        const method = api[property as keyof PlatformApi];
+        if (typeof method !== "function") {
+          throw new Error(`Mock API method ${property} is not implemented.`);
+        }
+        return (method as PlatformApiMethod)(...args);
+      };
+    },
+  });
 }
 
 function tenantCacheKey(tenantIds?: string[]) {
@@ -655,522 +651,12 @@ async function fetchParsingOverviewRpc(tenantIds: string[], options: ParsingOver
   );
 }
 
-function normalizeSearchText(value: unknown) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeQuery(query: string) {
-  return normalizeSearchText(query)
-    .split(/[^a-z0-9+#.]+/i)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2)
-    .slice(0, 12);
-}
-
-function includesAllNeedles(haystack: string, needles: string[]) {
-  return needles.every((needle) => haystack.includes(normalizeSearchText(needle)));
-}
-
-const GENERIC_TITLE_QUERY_TOKENS = new Set([
-  "candidate",
-  "developer",
-  "development",
-  "dev",
-  "engineer",
-  "engineering",
-  "expert",
-  "junior",
-  "lead",
-  "manager",
-  "mid",
-  "person",
-  "people",
-  "principal",
-  "role",
-  "senior",
-  "software",
-  "specialist",
-  "staff",
-]);
-
-function roleSearchAliases(role: string | null | undefined) {
-  switch (role) {
-    case "frontend":
-      return ["frontend", "front end", "front-end", "web developer", "web application engineer", "ui developer"];
-    case "backend":
-      return ["backend", "back end", "back-end", "api developer", "server developer", "server engineer"];
-    case "full-stack":
-      return ["full-stack", "full stack", "fullstack"];
-    case "mobile":
-      return ["mobile", "android", "ios", "flutter", "react native"];
-    case "devops":
-      return ["devops", "sre", "kubernetes", "terraform", "platform"];
-    case "data":
-      return ["data", "analytics", "etl", "bi"];
-    case "ml":
-      return ["ml", "ai", "machine learning", "llm"];
-    case "qa":
-      return ["qa", "quality", "test", "automation"];
-    case "security":
-      return ["security", "cybersecurity", "soc"];
-    default:
-      return role ? [role] : [];
-  }
-}
-
-function roleSkillAliases(role: string | null | undefined) {
-  switch (role) {
-    case "frontend":
-      return ["react", "angular", "vue", "next.js", "nextjs", "javascript", "typescript", "html", "css", "tailwind", "bootstrap"];
-    case "backend":
-      return ["node.js", "node", "django", "flask", ".net", "asp.net", "java", "php", "laravel", "api", "rest api", "postgresql", "mysql"];
-    case "full-stack":
-      return ["react", "angular", "vue", "node.js", "node", ".net", "django", "laravel", "javascript", "typescript"];
-    case "mobile":
-      return ["android", "ios", "flutter", "react native", "swift", "kotlin", "dart"];
-    case "devops":
-      return ["kubernetes", "terraform", "docker", "aws", "azure", "ci/cd"];
-    case "data":
-      return ["data analysis", "analytics", "etl", "bi", "sql", "python", "pandas"];
-    case "ml":
-      return ["machine learning", "ml", "ai", "llm", "tensorflow", "pytorch"];
-    case "qa":
-      return ["qa", "quality assurance", "testing", "automation testing", "selenium"];
-    case "security":
-      return ["security", "cybersecurity", "soc", "penetration testing"];
-    default:
-      return [];
-  }
-}
-
-function roleCompatibilityScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const primaryRole = normalizeSearchText(row.primary_role);
-  if (!role || !primaryRole) {
-    return 0;
-  }
-  const normalizedRole = normalizeSearchText(role);
-  if (primaryRole === "full stack" && (normalizedRole === "frontend" || normalizedRole === "backend")) {
-    return 0.78;
-  }
-  if (normalizedRole === "full stack" && primaryRole === "full stack") {
-    return 0.78;
-  }
-  return 0;
-}
-
-function aliasHitCount(text: string, aliases: string[]) {
-  return new Set(aliases.map(normalizeSearchText).filter((alias) => alias && text.includes(alias))).size;
-}
-
-function genericEngineeringTitleScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const title = normalizeSearchText(row.current_title);
-  if (!title || !role) {
-    return 0;
-  }
-  if (role === "frontend" && /\b(?:software|ui|front end|frontend)\b/.test(title)) {
-    return 0.66;
-  }
-  if (role === "backend" && /\b(?:software|backend|back end|api|server)\b/.test(title)) {
-    return 0.66;
-  }
-  return 0;
-}
-
-function roleMatchScore(row: CandidateSearchRow, role: string | null | undefined) {
-  const aliases = roleSearchAliases(role).map(normalizeSearchText).filter(Boolean);
-  if (!aliases.length) {
-    return 0;
-  }
-  const titleText = normalizeSearchText(row.current_title);
-  if (aliases.some((alias) => titleText.includes(alias))) {
-    return 1;
-  }
-
-  const skillHits = aliasHitCount(normalizeSearchText(toStringArray(row.skills).join(" ")), roleSkillAliases(role));
-  const supportScore = Math.max(genericEngineeringTitleScore(row, role), roleCompatibilityScore(row, role) * 0.86);
-  if (skillHits >= 2 && supportScore > 0) {
-    return Math.max(0.72, supportScore);
-  }
-  if (skillHits > 0 && supportScore > 0) {
-    return Math.max(supportScore, 0.58);
-  }
-  return 0;
-}
-
-function titleIntentScore(row: CandidateSearchRow, query: string, role: string | null | undefined) {
-  const title = normalizeSearchText(row.current_title);
-  const skillsText = normalizeSearchText(toStringArray(row.skills).join(" "));
-  const aliases = roleSearchAliases(role).map(normalizeSearchText).filter(Boolean);
-  const focusTokens = tokenizeQuery(query).filter((token) => !GENERIC_TITLE_QUERY_TOKENS.has(token));
-
-  if (aliases.some((alias) => title.includes(alias))) {
-    return 1;
-  }
-
-  const titleTokenScore = focusTokens.length
-    ? focusTokens.filter((token) => title.includes(token)).length / focusTokens.length
-    : 0;
-  const skillHits = aliasHitCount(skillsText, roleSkillAliases(role));
-  const skillAliasScore = skillHits >= 2 ? 0.72 : skillHits === 1 ? 0.58 : 0;
-  const skillTokenScore = focusTokens.length
-    ? 0.68 * (focusTokens.filter((token) => skillsText.includes(token)).length / focusTokens.length)
-    : 0;
-
-  return Math.max(titleTokenScore, skillAliasScore, skillTokenScore, genericEngineeringTitleScore(row, role));
-}
-
-function rowMatchesFastFilters(row: CandidateSearchRow, filters: ReturnType<typeof normalizeSearchFilters>) {
-  const skills = normalizeSkillList(toStringArray(row.skills)).map(normalizeSearchText);
-  const companies = toStringArray(row.companies).map(normalizeSearchText);
-  const location = normalizeSearchText(normalizeLocationValue(row.location) ?? row.location);
-  const filterLocation = normalizeSearchText(normalizeLocationValue(filters.location) ?? filters.location);
-
-  if (filters.role && roleMatchScore(row, filters.role) <= 0) {
-    return false;
-  }
-  if (filters.seniority && normalizeSearchText(row.seniority) !== normalizeSearchText(filters.seniority)) {
-    return false;
-  }
-  if (filters.min_years_experience !== null && toNumber(row.years_experience) < filters.min_years_experience) {
-    return false;
-  }
-  if (filters.location && !location.includes(filterLocation) && !normalizeSearchText(row.location).includes(normalizeSearchText(filters.location))) {
-    return false;
-  }
-  if (filters.skills.length && !filters.skills.some((skill) => skills.includes(normalizeSearchText(skill)))) {
-    return false;
-  }
-  if (filters.companies.length && !filters.companies.some((company) => companies.includes(normalizeSearchText(company)))) {
-    return false;
-  }
-  return true;
-}
-
-function fastRowScore(row: CandidateSearchRow, query: string, filters: ReturnType<typeof normalizeSearchFilters>) {
-  const tokens = tokenizeQuery(query);
-  const name = normalizeSearchText(row.name);
-  const title = normalizeSearchText(row.current_title);
-  const skills = normalizeSkillList(toStringArray(row.skills)).join(" ");
-  const companies = toStringArray(row.companies).join(" ");
-  const summary = normalizeSearchText(`${row.summary_short ?? ""} ${row.stored_short_summary ?? ""}`);
-  const haystack = normalizeSearchText(`${name} ${title} ${skills} ${companies} ${summary} ${row.location ?? ""}`);
-  const titleScore = titleIntentScore(row, query, filters.role);
-  const roleScore = roleMatchScore(row, filters.role);
-
-  if (tokens.length && !includesAllNeedles(haystack, tokens)) {
-    if (!filters.role || titleScore < 0.5) {
-      return 0;
-    }
-  }
-
-  let score = tokens.length ? 0.08 : 0.25;
-  for (const token of tokens) {
-    if (name.includes(token)) {
-      score += 0.34;
-    }
-    if (title.includes(token)) {
-      score += 0.22;
-    }
-    if (normalizeSearchText(skills).includes(token)) {
-      score += 0.16;
-    }
-    if (normalizeSearchText(companies).includes(token)) {
-      score += 0.12;
-    }
-    if (summary.includes(token)) {
-      score += 0.06;
-    }
-  }
-
-  if (filters.role && title.includes(normalizeSearchText(filters.role))) {
-    score += 0.14;
-  }
-  score = Math.max(score, titleScore * 0.82, roleScore * 0.76);
-  if (filters.skills.length) {
-    const skillSet = new Set(normalizeSkillList(toStringArray(row.skills)).map(normalizeSearchText));
-    score += 0.18 * (filters.skills.filter((skill) => skillSet.has(normalizeSearchText(skill))).length / filters.skills.length);
-  }
-  if (filters.min_years_experience !== null) {
-    score += 0.08 * Math.min(1, toNumber(row.years_experience) / Math.max(1, filters.min_years_experience));
-  }
-
-  if (filters.role && roleScore <= 0 && titleScore < 0.5) {
-    score *= 0.35;
-  }
-
-  if (filters.role && titleScore >= 0.9) {
-    score += 0.06;
-  }
-
-  return Math.min(0.99, score);
-}
-
-function mapFastSearchRow(row: CandidateSearchRow, score: number): SearchResponse["results"][number] {
-  const matchRate = Math.round(Math.max(1, Math.min(99, score * 100)));
-  const summary = String(row.summary_short ?? row.stored_short_summary ?? "");
-  return {
-    tenantId: row.tenant_id,
-    candidateId: row.candidate_id,
-    name: String(row.name ?? "Unknown candidate"),
-    currentTitle: String(row.current_title ?? "Candidate"),
-    headline: summary || String(row.headline ?? row.current_title ?? "Candidate"),
-    location: String(row.location ?? "Unknown"),
-    yearsExperience: toNumber(row.years_experience),
-    seniority: String(row.seniority ?? "unknown"),
-    primaryRole: String(row.primary_role ?? "generalist"),
-    topSkills: toStringArray(row.skills).slice(0, 8),
-    matchScore: matchRate,
-    backendMatchRate: matchRate,
-    backendScoreRaw: score,
-    matchSignals: {
-      semantic: 0,
-      skill: 0,
-      experience: 0,
-    },
-    shortSummary: summary,
-    strengths: [],
-    risks: [],
-    recommendedRoles: [],
-    stage: "Retrieved",
-    avatarHue: hueFromId(row.candidate_id),
-    matchNarrative: summary || "Fast fallback result from candidate profile fields.",
-  };
-}
-
-async function runFastRestSearch(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-): Promise<SearchResponse> {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Backend search fallback is unavailable; use the search Edge Function.");
-}
-
-function hueFromId(seed: string) {
-  return seed.split("").reduce((memo, character) => memo + character.charCodeAt(0), 0) % 360;
-}
-
-function dedupeSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
-}
-
-function countDistinctEmployers(rows: CandidateTimelineRow[]) {
-  return new Set(
-    rows.flatMap((row) =>
-      asArray(row.timeline_json)
-        .map((entry) => String(asRecord(entry).company ?? asRecord(entry).employer ?? "").trim())
-        .filter(Boolean)
-    ),
-  ).size;
-}
-
-function normalizeSearchFilters(filters: SearchFilters) {
-  return {
-    role: filters.role?.trim() || null,
-    seniority: normalizeSeniorityValue(filters.seniority) ?? null,
-    min_years_experience:
-      typeof filters.minYearsExperience === "number" && filters.minYearsExperience > 0
-        ? filters.minYearsExperience
-        : null,
-    location: normalizeLocationValue(filters.location, { allowFallback: false }) ?? null,
-    skills: normalizeSkillList(filters.skills ?? []),
-    companies: dedupeSorted((filters.companies ?? []).map((company) => company.trim())),
-  };
-}
-
-function mapSearchIntentFilters(record: JsonRecord): SearchFilters {
-  return {
-    role: typeof record.role === "string" ? record.role : undefined,
-    seniority: typeof record.seniority === "string" ? record.seniority : undefined,
-    minYearsExperience: typeof record.min_years_experience === "number" ? record.min_years_experience : 0,
-    location: typeof record.location === "string" ? record.location : undefined,
-    skills: toStringArray(record.skills),
-    companies: toStringArray(record.companies),
-  };
-}
-
-function createEmptySearchFilterOptions(): SearchFilterOptions {
-  return {
-    seniority: [],
-    skills: [],
-    companies: [],
-    locations: [],
-  };
-}
-
 function createEmptyWorkspaceStats(): WorkspaceStats {
   return {
     documentCount: 0,
     candidateCount: 0,
     companyCount: 0,
   };
-}
-
-function buildSearchRpcPayload(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
-  const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
-
-  return {
-    p_q: query,
-    p_query_embedding: null,
-    p_limit: limit,
-    p_offset: offset,
-    p_role: filters.role,
-    p_seniority: filters.seniority,
-    p_min_years: filters.min_years_experience,
-    p_skills: filters.skills,
-    p_embedding_version: null,
-    p_rank_version: "v2-rate",
-    p_tenant_ids: tenantIds?.length ? tenantIds : null,
-    p_filter_role: filters.role,
-    p_filter_seniority: filters.seniority,
-    p_filter_min_years: filters.min_years_experience,
-    p_filter_skills: filters.skills,
-    p_filter_companies: filters.companies,
-    p_filter_location: filters.location,
-  };
-}
-
-async function runDirectSearchRpc(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Direct Supabase search RPC fallback has been disabled; use the search Edge Function.");
-}
-
-async function runDirectSearchDebugRpc(
-  query: string,
-  filters: ReturnType<typeof normalizeSearchFilters>,
-  options?: SearchQueryOptions,
-  tenantIds?: string[],
-) {
-  void query;
-  void filters;
-  void options;
-  void tenantIds;
-  throw new Error("Direct Supabase search debug RPC fallback has been disabled; use the search-debug Edge Function.");
-}
-
-function normalizeBackendMatchScore(rawScore: unknown) {
-  const normalized = Math.max(0, Math.min(1, toNumber(rawScore)));
-  return Math.round((1 - Math.exp(-6 * normalized)) * 100);
-}
-
-function calibrateBackendMatchRate(rawScore: unknown, subscores: JsonRecord = {}) {
-  const retrievalSignal = Math.max(
-    toNumber(subscores.semantic_similarity),
-    Math.min(1, toNumber(subscores.max_chunk_rrf) * 40),
-    Math.min(1, toNumber(subscores.avg_top3_chunk_rrf) * 45),
-  );
-  const weightedSignal = Math.max(
-    Math.max(0, toNumber(rawScore)),
-    (0.5 * retrievalSignal)
-      + (0.14 * toNumber(subscores.role_match))
-      + (0.12 * toNumber(subscores.skill_match))
-      + (0.08 * toNumber(subscores.experience_match))
-      + (0.06 * toNumber(subscores.seniority_match))
-      + (0.07 * toNumber(subscores.name_match))
-      + (0.03 * toNumber(subscores.company_match)),
-  );
-
-  if (weightedSignal <= 0) {
-    return 0;
-  }
-  return Math.min(99, Math.max(1, Math.round((1 - Math.exp(-3.2 * weightedSignal)) * 100)));
-}
-
-function backendMatchRate(record: JsonRecord, subscores: JsonRecord) {
-  const backendRate = toNumber(record.match_rate, NaN);
-  if (Number.isFinite(backendRate) && backendRate >= 0) {
-    return Math.round(Math.max(0, Math.min(100, backendRate)));
-  }
-  return calibrateBackendMatchRate(record.score, subscores) || normalizeBackendMatchScore(record.score);
-}
-
-function mapEvidenceSnippet(payload: JsonRecord, fallbackIndex: number): CandidateDetail["evidence"][number] {
-  return {
-    id: String(payload.chunk_id ?? payload.id ?? `e-${fallbackIndex}`),
-    chunkType: String(payload.chunk_type ?? payload.chunkType ?? "summary") as CandidateDetail["evidence"][number]["chunkType"],
-    excerpt: String(payload.text ?? payload.excerpt ?? ""),
-    relevance: Math.max(0, Math.min(1, toNumber(payload.semantic_similarity ?? payload.relevance ?? payload.lexical_score, 0.72))),
-  };
-}
-
-function mapDebugEvidenceSnippet(payload: JsonRecord, fallbackIndex: number) {
-  return {
-    id: String(payload.chunk_id ?? payload.id ?? `e-${fallbackIndex}`),
-    chunkType: String(payload.chunk_type ?? payload.chunkType ?? "summary"),
-    excerpt: String(payload.text ?? payload.excerpt ?? ""),
-    relevance: Math.max(0, Math.min(1, toNumber(payload.semantic_similarity ?? payload.relevance ?? payload.lexical_score, 0.72))),
-  };
-}
-
-async function invokeFunction<T>(name: string, body: JsonRecord): Promise<T> {
-  if (!supabase) {
-    throw new Error("Missing Supabase browser client configuration.");
-  }
-
-  const { data, error } = await supabase.functions.invoke(name, { body });
-
-  if (error) {
-    const response = typeof error === "object" && error !== null && "context" in error ? (error as { context?: Response }).context : null;
-    if (response instanceof Response) {
-      try {
-        const payload = await response.clone().json() as JsonRecord;
-        const detail = String(payload.details ?? payload.error ?? payload.message ?? response.statusText).trim();
-        throw new Error(detail || `Function ${name} failed with status ${response.status}.`);
-      } catch {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || `Function ${name} failed with status ${response.status}.`);
-      }
-    }
-    if (error instanceof Error && error.name === "FunctionsFetchError") {
-      throw new Error("Supabase Edge Functions are unreachable. Start or redeploy the local functions runtime, then try again.");
-    }
-    throw error;
-  }
-
-  return data as T;
-}
-
-async function invokePlatform<T>(action: string, body: JsonRecord = {}): Promise<T> {
-  return invokeFunction<T>("platform", { action, ...body });
-}
-
-async function fetchParsingSnapshot(tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
-  if (!supabase) {
-    throw new Error("Missing Supabase browser client configuration.");
-  }
-
-  if (!tenantIds.length) {
-    return {
-      documents: [],
-      candidates: [],
-      profiles: [],
-      runs: [],
-    };
-  }
-
-  return fetchParsingOverviewSnapshotRpc(tenantIds);
 }
 
 async function fetchParsingDocumentSnapshot(documentId: string, tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
@@ -1184,24 +670,6 @@ async function fetchParsingDocumentSnapshot(documentId: string, tenantIds: strin
     profiles: asArray(payload.profiles) as ParsingProfileRow[],
     runs: asArray(payload.runs) as ParsingProcessingRunRow[],
   };
-}
-
-async function countRemoteRows(table: string, tenantIds: string[], apply?: (query: any) => any): Promise<number> {
-  if (!supabase) {
-    return 0;
-  }
-  let query: any = supabase.from(table).select("*", { count: "exact", head: true });
-  if (tenantIds.length) {
-    query = query.in("tenant_id", tenantIds);
-  }
-  if (apply) {
-    query = apply(query);
-  }
-  const { count, error } = await query;
-  if (error) {
-    throw error;
-  }
-  return count ?? 0;
 }
 
 function percent(numerator: number, denominator: number) {
@@ -1226,7 +694,7 @@ function mapManatalSyncRow(row: JsonRecord): ManatalSyncStatus["recentRows"][num
 
 async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<ManatalSyncStatus> {
   if (!supabase || !tenantIds.length) {
-    return createMockApi().getManatalSyncStatus(tenantIds);
+    return (await getMockApi()).getManatalSyncStatus(tenantIds);
   }
 
   const [
@@ -1317,21 +785,9 @@ async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<Manata
   };
 }
 
-function isBrowserOpenableSource(sourceUri?: string | null) {
-  return Boolean(sourceUri && /^(https?:)?\/\//i.test(sourceUri));
-}
-
-function isGcsSource(sourceUri?: string | null) {
-  return Boolean(sourceUri && /^gs:\/\//i.test(sourceUri));
-}
-
-function buildCandidateCvUrl(sourceUri?: string | null) {
-  return isBrowserOpenableSource(sourceUri) ? sourceUri ?? null : null;
-}
-
 async function fetchCandidateDetailDirect(candidateId: string): Promise<CandidateDetail> {
   if (!supabase) {
-    return createMockApi().getCandidate(candidateId);
+    return (await getMockApi()).getCandidate(candidateId);
   }
 
   const [dossier, chunks] = await Promise.all([
@@ -1397,181 +853,6 @@ async function fetchManatalCandidateIdByCandidateId(candidateId: string): Promis
 
   const row = asRecord(asArray(syncResult.data)[0]);
   return typeof row.manatal_candidate_id === "string" ? row.manatal_candidate_id : null;
-}
-
-function mapRemoteSearch(payload: JsonRecord): SearchResponse {
-  const rawResults = asArray(payload.results);
-  const meta = asRecord(payload.meta);
-  const intent = asRecord(meta.intent);
-
-  return {
-    results: rawResults.map((row) => {
-      const record = asRecord(row);
-      const subscores = asRecord(record.subscores);
-      const matchedFilters = asRecord(record.matched_filters);
-      const rate = backendMatchRate(record, subscores);
-      const rawScore = toNumber(record.score_raw ?? record.score);
-
-      return {
-        tenantId: record.tenant_id ? String(record.tenant_id) : null,
-        candidateId: String(record.candidate_id),
-        name: String(record.name ?? "Unknown candidate"),
-        currentTitle: String(record.current_title ?? "Candidate"),
-        headline: String(record.summary_short ?? record.current_title ?? "Candidate"),
-        location: String(record.location ?? "Unknown"),
-        yearsExperience: toNumber(record.years_experience),
-        seniority: String(record.seniority ?? "unknown"),
-        primaryRole: String(record.primary_role ?? "generalist"),
-        topSkills: toStringArray(matchedFilters.matched_skills),
-        matchScore: rate,
-        backendMatchRate: rate,
-        backendScoreRaw: rawScore,
-        matchSignals: {
-          semantic: toNumber(subscores.semantic_similarity),
-          skill: toNumber(subscores.skill_match),
-          experience: toNumber(subscores.experience_match),
-        },
-        shortSummary: String(record.summary_short ?? ""),
-        strengths: [],
-        risks: [],
-        recommendedRoles: [],
-        stage: "Retrieved",
-        avatarHue: hueFromId(String(record.candidate_id)),
-        matchNarrative: String(record.summary_short ?? "Live result from backend search ranking."),
-      };
-    }),
-    nextCursor: typeof payload.next_cursor === "number" ? payload.next_cursor : null,
-    meta: {
-      count: toNumber(meta.count, rawResults.length),
-      rankVersion: String(meta.rank_version ?? "v2-rate"),
-      source: "remote",
-      intentSource: typeof meta.intent_source === "string" ? meta.intent_source as SearchResponse["meta"]["intentSource"] : undefined,
-      intent: Object.keys(intent).length ? mapSearchIntentFilters(intent) : undefined,
-    },
-  };
-}
-
-function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
-  const request = asRecord(payload.request);
-  const analysis = asRecord(payload.analysis);
-  const embedding = asRecord(analysis.embedding);
-  const rawResults = asArray(payload.results);
-  const explicitFilters = asRecord(request.explicit_filters);
-  const llmIntent = asRecord(analysis.llm_intent);
-  const resolvedIntent = asRecord(analysis.resolved_intent);
-  const meta = asRecord(payload.meta);
-
-  const normalizeFilters = (record: JsonRecord) => ({
-    role: typeof record.role === "string" ? record.role : null,
-    seniority: typeof record.seniority === "string" ? record.seniority : null,
-    minYearsExperience: typeof record.min_years_experience === "number" ? record.min_years_experience : null,
-    location: typeof record.location === "string" ? record.location : null,
-    skills: toStringArray(record.skills),
-    companies: toStringArray(record.companies),
-  });
-
-  return {
-    request: {
-      query: String(request.query ?? ""),
-      limit: toNumber(request.limit, rawResults.length),
-      offset: toNumber(request.offset, 0),
-      tenantIds: toStringArray(request.tenant_ids),
-      explicitFilters: normalizeFilters(explicitFilters),
-    },
-    analysis: {
-      intentSource: String(analysis.intent_source ?? "explicit") as SearchDebugResponse["analysis"]["intentSource"],
-      llmIntent: Object.keys(llmIntent).length ? normalizeFilters(llmIntent) : null,
-      resolvedIntent: normalizeFilters(resolvedIntent),
-      embedding: {
-        provider: String(embedding.provider ?? "unknown"),
-        version: typeof embedding.version === "string" ? embedding.version : null,
-        dimensions: toNumber(embedding.dimensions, 0),
-        preview: asArray(embedding.preview).map((value) => toNumber(value)),
-      },
-      rpcPayload: asRecord(analysis.rpc_payload),
-      engine: {
-        usesLexical: Boolean(analysis.uses_lexical),
-        usesSemantic: Boolean(analysis.uses_semantic),
-        usesNameBoost: Boolean(analysis.uses_name_boost),
-        strictFilters: toStringArray(analysis.strict_filters),
-      },
-    },
-    results: rawResults.map((row) => {
-      const record = asRecord(row);
-      const subscoresRecord = asRecord(record.subscores);
-      const rate = backendMatchRate(record, subscoresRecord);
-      return {
-        tenantId: record.tenant_id ? String(record.tenant_id) : null,
-        candidateId: String(record.candidate_id),
-        name: String(record.name ?? "Unknown candidate"),
-        currentTitle: String(record.current_title ?? "Candidate"),
-        location: String(record.location ?? "Unknown"),
-        yearsExperience: toNumber(record.years_experience),
-        seniority: String(record.seniority ?? "unknown"),
-        primaryRole: String(record.primary_role ?? "generalist"),
-        scoreRaw: toNumber(record.score_raw ?? record.score),
-        matchRate: rate,
-        displayedMatchScore: rate,
-        subscores: Object.fromEntries(
-          Object.entries(subscoresRecord).map(([key, value]) => [key, toNumber(value)]),
-        ),
-        matchedFilters: asRecord(record.matched_filters),
-        summaryShort: String(record.summary_short ?? ""),
-        evidence: asArray(record.evidence).map((item, index) => mapDebugEvidenceSnippet(asRecord(item), index)),
-      };
-    }),
-    nextCursor: typeof payload.next_cursor === "number" ? payload.next_cursor : null,
-    meta: {
-      count: toNumber(meta.count, rawResults.length),
-      rankVersion: String(meta.rank_version ?? "v2-rate"),
-      source: "remote",
-    },
-    rawResponse: payload,
-  };
-}
-
-function createFallbackSearchFilterOptions(): SearchFilterOptions {
-  const fallbackSeniorityValues = ["junior", "mid", "senior", "staff-plus"];
-
-  return {
-    seniority: fallbackSeniorityValues.map((value) => ({
-      value,
-      label: formatSeniorityValue(value) || value,
-    })),
-    skills: dedupeSorted(SEARCH_SKILL_TABLE.map((entry) => String(entry.value))),
-    companies: [],
-    locations: [],
-  };
-}
-
-function mapSearchFilterOptions(rows: CandidateSearchFacetRow[]): SearchFilterOptions {
-  const seniority = dedupeSorted(
-    rows
-      .map((row) => row.seniority ?? "")
-      .filter((value) => value && value !== "unclassified"),
-  ).map((value) => ({
-    value,
-    label: formatSeniorityValue(value) || value,
-  }));
-
-  const skills = dedupeSorted(normalizeSkillList(rows.flatMap((row) => row.skills ?? [])));
-  const companies = dedupeSorted(
-    rows.flatMap((row) => row.companies ?? []),
-  );
-  const locations = dedupeSorted(
-    rows
-      .map((row) => normalizeLocationValue(row.location))
-      .filter((value): value is string => Boolean(value)),
-  );
-
-  const fallback = createFallbackSearchFilterOptions();
-
-  return {
-    seniority: seniority.length ? seniority : fallback.seniority,
-    skills: skills.length ? skills : fallback.skills,
-    companies: companies.length ? companies : fallback.companies,
-    locations: locations.length ? locations : fallback.locations,
-  };
 }
 
 function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
@@ -1677,346 +958,6 @@ function mapRemoteParserProfile(row: ParserProfileRow): ParserProfile {
     documentsEvaluated: toNumber(row.documents_evaluated),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
-}
-
-function mapRemoteShortlistItem(row: CandidateShortlistRow): CandidateShortlistItem {
-  return {
-    userId: row.user_id,
-    tenantId: row.tenant_id,
-    candidateId: row.candidate_id,
-    candidateName: row.candidate_name ?? "Unknown candidate",
-    currentTitle: row.current_title ?? "Candidate",
-    location: row.location ?? "Unknown",
-    yearsExperience: typeof row.years_experience === "number" ? row.years_experience : null,
-    seniority: row.seniority,
-    primaryRole: row.primary_role,
-    topSkills: toStringArray(row.top_skills),
-    matchRate: typeof row.match_rate === "number" ? row.match_rate : null,
-    cvUrl: row.cv_url,
-    originalFilename: row.original_filename,
-    sourceQuery: row.source_query ?? "",
-    searchSnapshot: asRecord(row.search_snapshot),
-    notes: row.notes ?? "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function normalizeJobStatus(value: unknown): JobPostingStatus {
-  return value === "active" || value === "closed" ? value : "draft";
-}
-
-function normalizeEmployerRegion(value: unknown): EmployerRegion {
-  return value === "EU" || value === "USA" ? value : "GCC";
-}
-
-function nullableString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function mapRemoteJobPosting(row: unknown): JobPosting {
-  const record = asRecord(row);
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    title: String(record.title ?? ""),
-    employerName: String(record.employer_name ?? record.employerName ?? ""),
-    employerCountry: String(record.employer_country ?? record.employerCountry ?? ""),
-    employerRegion: normalizeEmployerRegion(record.employer_region ?? record.employerRegion),
-    jobDescription: String(record.job_description ?? record.jobDescription ?? ""),
-    requiredSkills: toStringArray(record.required_skills ?? record.requiredSkills),
-    preferredSkills: toStringArray(record.preferred_skills ?? record.preferredSkills),
-    seniorityLevel: String(record.seniority_level ?? record.seniorityLevel ?? ""),
-    employmentType: String(record.employment_type ?? record.employmentType ?? ""),
-    postedDate: nullableString(record.posted_date ?? record.postedDate),
-    applicationDeadline: nullableString(record.application_deadline ?? record.applicationDeadline),
-    status: normalizeJobStatus(record.status),
-    locationInfo: asRecord(record.location_info ?? record.locationInfo) as JobPosting["locationInfo"],
-    keyResponsibilities: toStringArray(record.key_responsibilities ?? record.keyResponsibilities),
-    aiProfile: asRecord(record.ai_profile ?? record.aiProfile),
-    aiConfidence: asRecord(record.ai_confidence ?? record.aiConfidence),
-    createdByUserId: nullableString(record.created_by_user_id ?? record.createdByUserId),
-    updatedByUserId: nullableString(record.updated_by_user_id ?? record.updatedByUserId),
-    closedAt: nullableString(record.closed_at ?? record.closedAt),
-    closedByUserId: nullableString(record.closed_by_user_id ?? record.closedByUserId),
-    isPublic: Boolean(record.is_public ?? record.isPublic),
-    publicSlug: nullableString(record.public_slug ?? record.publicSlug),
-    publicTitle: nullableString(record.public_title ?? record.publicTitle),
-    publicSummary: nullableString(record.public_summary ?? record.publicSummary),
-    publicDescription: nullableString(record.public_description ?? record.publicDescription),
-    publicLocation: nullableString(record.public_location ?? record.publicLocation),
-    publicApplyEnabled: record.public_apply_enabled === false || record.publicApplyEnabled === false ? false : true,
-    publicPublishedAt: nullableString(record.public_published_at ?? record.publicPublishedAt),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
-  };
-}
-
-function jobPostingPayload(job: JobPostingInput) {
-  return {
-    id: job.id,
-    tenant_id: job.tenantId,
-    title: job.title,
-    employer_name: job.employerName,
-    employer_country: job.employerCountry,
-    employer_region: job.employerRegion,
-    job_description: job.jobDescription,
-    required_skills: job.requiredSkills ?? [],
-    preferred_skills: job.preferredSkills ?? [],
-    seniority_level: job.seniorityLevel,
-    employment_type: job.employmentType,
-    posted_date: job.postedDate,
-    application_deadline: job.applicationDeadline,
-    status: job.status,
-    location_info: job.locationInfo ?? {},
-    key_responsibilities: job.keyResponsibilities ?? [],
-    ai_profile: job.aiProfile ?? {},
-    ai_confidence: job.aiConfidence ?? {},
-    is_public: job.isPublic ?? false,
-    public_slug: job.publicSlug ?? null,
-    public_title: job.publicTitle ?? null,
-    public_summary: job.publicSummary ?? null,
-    public_description: job.publicDescription ?? null,
-    public_location: job.publicLocation ?? null,
-    public_apply_enabled: job.publicApplyEnabled ?? true,
-  };
-}
-
-function mapRemoteJobExtraction(payload: unknown): JobExtractionResult {
-  const record = asRecord(payload);
-  const mapSkill = (item: unknown) => {
-    const row = asRecord(item);
-    return {
-      name: String(row.name ?? ""),
-      confidence: toNumber(row.confidence),
-      evidence: String(row.evidence ?? ""),
-    };
-  };
-  const seniority = asRecord(record.seniorityLevel ?? record.seniority_level);
-  const employmentType = asRecord(record.employmentType ?? record.employment_type);
-  return {
-    requiredSkills: asArray(record.requiredSkills ?? record.required_skills).map(mapSkill).filter((skill) => skill.name),
-    preferredSkills: asArray(record.preferredSkills ?? record.preferred_skills).map(mapSkill).filter((skill) => skill.name),
-    seniorityLevel: {
-      value: String(seniority.value ?? ""),
-      confidence: toNumber(seniority.confidence),
-      evidence: String(seniority.evidence ?? ""),
-    },
-    employmentType: {
-      value: String(employmentType.value ?? ""),
-      confidence: toNumber(employmentType.confidence),
-      evidence: String(employmentType.evidence ?? ""),
-    },
-    location: asRecord(record.location) as JobExtractionResult["location"],
-    keyResponsibilities: toStringArray(record.keyResponsibilities ?? record.key_responsibilities),
-    warnings: asArray(record.warnings).map((item) => {
-      const row = asRecord(item);
-      return {
-        type: String(row.type ?? "WARNING"),
-        message: String(row.message ?? ""),
-      };
-    }),
-    modelProvider: String(record.modelProvider ?? record.model_provider ?? "unknown"),
-    modelName: String(record.modelName ?? record.model_name ?? "unknown"),
-    promptVersion: String(record.promptVersion ?? record.prompt_version ?? "job-extraction-v1"),
-    inputHash: String(record.inputHash ?? record.input_hash ?? ""),
-  };
-}
-
-function mapRemoteJobMatchingRun(row: unknown): JobMatchingRun {
-  const record = asRecord(row);
-  const status = String(record.status ?? "failed");
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
-    initiatedByUserId: nullableString(record.initiated_by_user_id ?? record.initiatedByUserId),
-    status: status === "queued" || status === "running" || status === "completed" || status === "cancelled" ? status : "failed",
-    requestedLimit: toNumber(record.requested_limit ?? record.requestedLimit),
-    semanticPoolSize: toNumber(record.semantic_pool_size ?? record.semanticPoolSize),
-    rerankPoolSize: toNumber(record.rerank_pool_size ?? record.rerankPoolSize),
-    retrievedCount: toNumber(record.retrieved_count ?? record.retrievedCount),
-    filteredCount: toNumber(record.filtered_count ?? record.filteredCount),
-    rerankedCount: toNumber(record.reranked_count ?? record.rerankedCount),
-    completedCount: toNumber(record.completed_count ?? record.completedCount),
-    failureReason: nullableString(record.failure_reason ?? record.failureReason),
-    matchingConfig: asRecord(record.matching_config ?? record.matchingConfig),
-    jobProfile: asRecord(record.job_profile ?? record.jobProfile),
-    embeddingProvider: nullableString(record.embedding_provider ?? record.embeddingProvider),
-    embeddingVersion: nullableString(record.embedding_version ?? record.embeddingVersion),
-    startedAt: nullableString(record.started_at ?? record.startedAt),
-    completedAt: nullableString(record.completed_at ?? record.completedAt),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-  };
-}
-
-function mapRemoteJobCandidateMatch(row: unknown): JobCandidateMatch {
-  const record = asRecord(row);
-  const alignment = String(record.seniority_alignment ?? record.seniorityAlignment);
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    matchingRunId: String(record.matching_run_id ?? record.matchingRunId ?? ""),
-    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
-    candidateId: String(record.candidate_id ?? record.candidateId ?? ""),
-    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
-    rank: toNumber(record.rank),
-    semanticScore: toNumber(record.semantic_score ?? record.semanticScore),
-    aiScore: toNumber(record.ai_score ?? record.aiScore),
-    finalScore: toNumber(record.final_score ?? record.finalScore),
-    matchedSkills: toStringArray(record.matched_skills ?? record.matchedSkills),
-    missingSkills: toStringArray(record.missing_skills ?? record.missingSkills),
-    seniorityAlignment: alignment === "Exact Match" || alignment === "Partial Match" ? alignment : "Mismatch",
-    experienceSummary: String(record.experience_summary ?? record.experienceSummary ?? ""),
-    matchExplanation: String(record.match_explanation ?? record.matchExplanation ?? ""),
-    scoringBreakdown: asRecord(record.scoring_breakdown ?? record.scoringBreakdown),
-    hardFilterPayload: asRecord(record.hard_filter_payload ?? record.hardFilterPayload),
-    candidateSnapshot: asRecord(record.candidate_snapshot ?? record.candidateSnapshot),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-  };
-}
-
-function mapRemoteJobMatchingRunDetail(payload: unknown): JobMatchingRunDetail {
-  const record = asRecord(payload);
-  return {
-    run: mapRemoteJobMatchingRun(record.run),
-    results: asArray(record.results).map(mapRemoteJobCandidateMatch),
-  };
-}
-
-function mapRemoteJobShortlist(row: unknown): JobShortlist {
-  const record = asRecord(row);
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
-    matchingRunId: nullableString(record.matching_run_id ?? record.matchingRunId),
-    name: String(record.name ?? ""),
-    description: String(record.description ?? ""),
-    ownerUserId: nullableString(record.owner_user_id ?? record.ownerUserId),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
-  };
-}
-
-function mapRemoteJobShortlistCandidate(row: unknown): JobShortlistCandidate {
-  const record = asRecord(row);
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    shortlistId: String(record.shortlist_id ?? record.shortlistId ?? ""),
-    candidateId: String(record.candidate_id ?? record.candidateId ?? ""),
-    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
-    savedRank: toNumber(record.saved_rank ?? record.savedRank),
-    savedScore: toNumber(record.saved_score ?? record.savedScore),
-    savedResultPayload: asRecord(record.saved_result_payload ?? record.savedResultPayload),
-    addedByUserId: nullableString(record.added_by_user_id ?? record.addedByUserId),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-  };
-}
-
-function mapRemoteJobShortlistDetail(payload: unknown): JobShortlistDetail {
-  const record = asRecord(payload);
-  return {
-    shortlist: mapRemoteJobShortlist(record.shortlist),
-    candidates: asArray(record.candidates).map(mapRemoteJobShortlistCandidate),
-  };
-}
-
-function normalizeJobApplicationStatus(value: unknown): JobApplicationStatus {
-  return value === "reviewing" || value === "shortlisted" || value === "rejected" || value === "withdrawn" ? value : "new";
-}
-
-function normalizeResumeIngestionStatus(value: unknown) {
-  return value === "queued" || value === "parsing" || value === "parsed" || value === "failed" ? value : "not_uploaded";
-}
-
-function normalizeCandidateHubVisibility(value: unknown) {
-  return value === "platform" || value === "private" ? value : "tenant";
-}
-
-function mapRemoteJobApplication(row: unknown): JobApplication {
-  const record = asRecord(row);
-  return {
-    id: String(record.id ?? ""),
-    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
-    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
-    candidateId: nullableString(record.candidate_id ?? record.candidateId),
-    sourceTenantId: nullableString(record.candidate_source_tenant_id ?? record.sourceTenantId),
-    applicantName: String(record.applicant_name ?? record.applicantName ?? ""),
-    applicantEmail: String(record.applicant_email ?? record.applicantEmail ?? ""),
-    applicantPhone: nullableString(record.applicant_phone ?? record.applicantPhone),
-    applicantLocation: nullableString(record.applicant_location ?? record.applicantLocation),
-    linkedinUrl: nullableString(record.linkedin_url ?? record.linkedinUrl),
-    portfolioUrl: nullableString(record.portfolio_url ?? record.portfolioUrl),
-    resumeStoragePath: nullableString(record.resume_storage_path ?? record.resumeStoragePath),
-    resumeSourceDocumentId: nullableString(record.resume_source_document_id ?? record.resumeSourceDocumentId),
-    resumeOriginalFilename: nullableString(record.resume_original_filename ?? record.resumeOriginalFilename),
-    resumeIngestionStatus: normalizeResumeIngestionStatus(record.resume_ingestion_status ?? record.resumeIngestionStatus),
-    resumeIngestionError: nullableString(record.resume_ingestion_error ?? record.resumeIngestionError),
-    candidateHubVisibility: normalizeCandidateHubVisibility(record.candidate_hub_visibility ?? record.candidateHubVisibility),
-    coverNote: String(record.cover_note ?? record.coverNote ?? ""),
-    consentGiven: Boolean(record.consent_given ?? record.consentGiven),
-    status: normalizeJobApplicationStatus(record.status),
-    source: String(record.source ?? "public_job_board"),
-    submittedAt: String(record.submitted_at ?? record.submittedAt ?? ""),
-    reviewedByUserId: nullableString(record.reviewed_by_user_id ?? record.reviewedByUserId),
-    reviewedAt: nullableString(record.reviewed_at ?? record.reviewedAt),
-    metadata: asRecord(record.metadata_json ?? record.metadata),
-    createdAt: String(record.created_at ?? record.createdAt ?? ""),
-    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
-  };
-}
-
-function mapRemotePublicJob(row: unknown): PublicJobPosting {
-  const record = asRecord(row);
-  return {
-    id: String(record.id ?? ""),
-    slug: String(record.slug ?? ""),
-    title: String(record.title ?? ""),
-    summary: String(record.summary ?? ""),
-    description: String(record.description ?? ""),
-    location: String(record.location ?? ""),
-    remotePolicy: String(record.remotePolicy ?? record.remote_policy ?? "Unspecified"),
-    seniorityLevel: String(record.seniorityLevel ?? record.seniority_level ?? ""),
-    employmentType: String(record.employmentType ?? record.employment_type ?? ""),
-    requiredSkills: toStringArray(record.requiredSkills ?? record.required_skills),
-    preferredSkills: toStringArray(record.preferredSkills ?? record.preferred_skills),
-    keyResponsibilities: toStringArray(record.keyResponsibilities ?? record.key_responsibilities),
-    applicationDeadline: nullableString(record.applicationDeadline ?? record.application_deadline),
-    applyEnabled: record.applyEnabled === false || record.apply_enabled === false ? false : true,
-    publishedAt: nullableString(record.publishedAt ?? record.published_at),
-  };
-}
-
-function publicApplicationPayload(application: PublicJobApplicationInput) {
-  return {
-    name: application.name,
-    email: application.email,
-    phone: application.phone ?? "",
-    location: application.location ?? "",
-    currentTitle: application.currentTitle ?? "",
-    yearsExperience: application.yearsExperience ?? 0,
-    seniority: application.seniority ?? "",
-    topSkills: application.topSkills ?? [],
-    linkedinUrl: application.linkedinUrl ?? "",
-    portfolioUrl: application.portfolioUrl ?? "",
-    resumeOriginalFilename: application.resumeOriginalFilename ?? "",
-    resumeFile: application.resumeFile ?? null,
-    coverNote: application.coverNote ?? "",
-    consent: application.consent,
-    idempotencyKey: application.idempotencyKey ?? "",
-  };
-}
-
-function mapPublicReceipt(payload: unknown): PublicJobApplicationReceipt {
-  const receipt = asRecord(asRecord(payload).receipt ?? payload);
-  return {
-    accepted: receipt.accepted !== false,
-    duplicate: Boolean(receipt.duplicate),
-    applicationId: nullableString(receipt.applicationId ?? receipt.application_id) ?? undefined,
-    submittedAt: nullableString(receipt.submittedAt ?? receipt.submitted_at) ?? undefined,
   };
 }
 
@@ -3190,7 +2131,7 @@ function createMockApi(): PlatformApi {
 }
 
 function createRemoteApi(): PlatformApi {
-  const mock = createMockApi();
+  const mock = createLazyMockApi();
 
   return {
     async search(query, filters, options, tenantIds) {
@@ -3734,4 +2675,4 @@ function createRemoteApi(): PlatformApi {
   };
 }
 
-export const platformApi = hasSupabaseConfig ? createRemoteApi() : createMockApi();
+export const platformApi = hasSupabaseConfig ? createRemoteApi() : createLazyMockApi();

@@ -1,0 +1,534 @@
+import type { CandidateShortlistItem, JobApplication, JobPosting } from "@/lib/contracts";
+import {
+  accessRoster,
+  analyticsSnapshot,
+  askCandidates,
+  compareCandidates,
+  dataConnectors,
+  defaultCompareIds,
+  getCandidate,
+  getParserProfiles,
+  getParsingDocument,
+  getWorkspaceStats as getMockWorkspaceStats,
+  insightsDashboardSnapshot,
+  indexingWorkbench,
+  opsAlerts,
+  parsingOverview,
+  publishParserProfile,
+  saveParserProfile,
+  searchCandidates,
+  systemHealth,
+} from "@/data/mockData";
+import { isBrowserOpenableSource } from "@/features/candidates/apiMappers";
+import { createFallbackSearchFilterOptions, debugFiltersFromSearchFilters } from "@/features/search/apiMappers";
+import { resolveGapRequirements } from "@/lib/insightsGap";
+import type { PlatformApi } from "@/lib/platformApiTypes";
+import { normalizeSkillList } from "@/lib/searchTaxonomy";
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const mockShortlistItems = new Map<string, CandidateShortlistItem>();
+const mockJobPostings = new Map<string, JobPosting>();
+const mockJobApplications = new Map<string, JobApplication>();
+
+export function createMockApi(): PlatformApi {
+  return {
+    async search(query, filters, options, _tenantIds) {
+      await wait(180);
+      return searchCandidates(query, filters, options);
+    },
+    async searchDebug(query, filters, options, tenantIds) {
+      await wait(180);
+      const response = searchCandidates(query, filters, options);
+      const explicitFilters = debugFiltersFromSearchFilters(filters);
+
+      return {
+        request: {
+          query,
+          limit: Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12))),
+          offset: Math.max(0, Math.trunc(options?.offset ?? 0)),
+          tenantIds: tenantIds ?? [],
+          explicitFilters,
+        },
+        analysis: {
+          intentSource: "explicit",
+          llmIntent: null,
+          resolvedIntent: explicitFilters,
+          embedding: {
+            provider: "mock",
+            version: "mock-v1",
+            dimensions: 0,
+            preview: [],
+          },
+          rpcPayload: {
+            p_q: query,
+            p_tenant_ids: tenantIds ?? [],
+            p_filter_role: explicitFilters.role,
+            p_filter_seniority: explicitFilters.seniority,
+            p_filter_min_years: explicitFilters.minYearsExperience,
+            p_filter_skills: explicitFilters.skills,
+            p_filter_companies: explicitFilters.companies,
+            p_filter_location: explicitFilters.location,
+          },
+          engine: {
+            usesLexical: Boolean(query.trim()),
+            usesSemantic: false,
+            usesNameBoost: Boolean(query.trim()),
+            strictFilters: Object.entries(explicitFilters)
+              .filter(([, value]) => Array.isArray(value) ? value.length > 0 : value !== null && value !== "")
+              .map(([key]) => key),
+          },
+        },
+        results: response.results.map((candidate) => ({
+          tenantId: candidate.tenantId ?? null,
+          candidateId: candidate.candidateId,
+          name: candidate.name,
+          currentTitle: candidate.currentTitle,
+          location: candidate.location,
+          yearsExperience: candidate.yearsExperience,
+          seniority: candidate.seniority,
+          primaryRole: candidate.primaryRole,
+          scoreRaw: candidate.backendScoreRaw,
+          matchRate: candidate.backendMatchRate,
+          displayedMatchScore: candidate.backendMatchRate,
+          subscores: {
+            semantic_similarity: candidate.matchSignals.semantic,
+            skill_match: candidate.matchSignals.skill,
+            experience_match: candidate.matchSignals.experience,
+          },
+          matchedFilters: {
+            role: explicitFilters.role,
+            seniority: explicitFilters.seniority,
+            min_years_experience: explicitFilters.minYearsExperience,
+            location: explicitFilters.location,
+            required_skills: explicitFilters.skills,
+            required_companies: explicitFilters.companies,
+          },
+          summaryShort: candidate.shortSummary,
+          evidence: [],
+        })),
+        nextCursor: response.nextCursor,
+        meta: {
+          ...response.meta,
+        },
+        rawResponse: {
+          results: response.results,
+          next_cursor: response.nextCursor,
+          meta: response.meta,
+        },
+      };
+    },
+    async getSearchFilterOptions(_tenantIds) {
+      await wait(80);
+      return createFallbackSearchFilterOptions();
+    },
+    async getWorkspaceStats(_tenantIds) {
+      await wait(80);
+      return getMockWorkspaceStats();
+    },
+    async getManatalSyncStatus(_tenantIds) {
+      await wait(90);
+      const generatedAt = new Date().toISOString();
+      return {
+        generatedAt,
+        totals: {
+          sourceDocuments: 2074,
+          gcsOriginals: 1447,
+          driveOriginals: 627,
+          manatalRows: 3171,
+          mappedManatalRows: 1581,
+          syncedRows: 1447,
+          pendingRows: 1590,
+          failedRows: 1,
+          skippedRows: 120,
+        },
+        coverage: {
+          gcsOriginalsPercent: 70,
+          manatalSyncedPercent: 46,
+          mappedRowsPercent: 50,
+        },
+        lastSyncedAt: generatedAt,
+        lastFailure: {
+          manatalCandidateId: "145496734",
+          candidateName: "Deleted Manatal candidate",
+          errorMessage: "No Candidate matches the given query.",
+          updatedAt: generatedAt,
+        },
+        recentRows: [
+          {
+            manatalCandidateId: "141886959",
+            candidateName: "Abdalrahmaan Mohammad Alsayed",
+            email: "candidate@example.com",
+            syncStatus: "synced",
+            lastSyncedAt: generatedAt,
+            updatedAt: generatedAt,
+            sourceDocumentId: "1b21c0a0-792a-5291-ae8e-529f1350f79d",
+            errorMessage: null,
+          },
+        ],
+      };
+    },
+    async getManatalCandidateId(_candidateId) {
+      await wait(40);
+      return null;
+    },
+    async getCandidate(candidateId) {
+      await wait(120);
+      return getCandidate(candidateId);
+    },
+    async compare(candidateIds, requiredSkills) {
+      await wait(140);
+      return compareCandidates(candidateIds.length ? candidateIds : defaultCompareIds, requiredSkills);
+    },
+    async ask(question, candidateIds) {
+      await wait(130);
+      return askCandidates(question, candidateIds);
+    },
+    async agent(question, candidateIds, _messages, _tenantIds) {
+      await wait(130);
+      const scoped = askCandidates(question, candidateIds ?? []);
+      return {
+        answer: scoped.extractiveAnswer,
+        citations: scoped.citations,
+        contextBlocks: scoped.contextBlocks,
+        meta: {
+          candidateCount: scoped.meta.candidateCount,
+          topK: scoped.meta.topK,
+          answerSource: scoped.meta.answerSource ?? "mock",
+          scopeSource: scoped.meta.scopeSource ?? ((candidateIds?.length ?? 0) > 0 ? "explicit" : "mock"),
+          resolvedCandidateIds: scoped.meta.resolvedCandidateIds ?? (candidateIds ?? []),
+        },
+      };
+    },
+    async getOriginalDocumentUrl(storagePath, sourceUri, _context) {
+      await wait(40);
+      if (isBrowserOpenableSource(sourceUri)) {
+        return sourceUri ?? null;
+      }
+      return null;
+    },
+    async getShortlist(tenantIds) {
+      await wait(60);
+      const allowedTenantIds = new Set(tenantIds ?? []);
+      return Array.from(mockShortlistItems.values())
+        .filter((item) => !allowedTenantIds.size || allowedTenantIds.has(item.tenantId))
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    },
+    async saveShortlistItem(item) {
+      await wait(70);
+      const now = new Date().toISOString();
+      const key = `${item.tenantId}:${item.candidateId}`;
+      const current = mockShortlistItems.get(key);
+      const saved: CandidateShortlistItem = {
+        userId: "mock-user",
+        tenantId: item.tenantId,
+        candidateId: item.candidateId,
+        candidateName: item.candidateName,
+        currentTitle: item.currentTitle,
+        location: item.location,
+        yearsExperience: item.yearsExperience ?? null,
+        seniority: item.seniority ?? null,
+        primaryRole: item.primaryRole ?? null,
+        topSkills: item.topSkills ?? [],
+        matchRate: item.matchRate ?? null,
+        cvUrl: item.cvUrl ?? null,
+        originalFilename: item.originalFilename ?? null,
+        sourceQuery: item.sourceQuery ?? "",
+        searchSnapshot: item.searchSnapshot ?? {},
+        notes: item.notes ?? "",
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+      };
+      mockShortlistItems.set(key, saved);
+      return saved;
+    },
+    async removeShortlistItem(candidateId, tenantId) {
+      await wait(50);
+      for (const [key, item] of mockShortlistItems.entries()) {
+        if (item.candidateId === candidateId && (!tenantId || item.tenantId === tenantId)) {
+          mockShortlistItems.delete(key);
+        }
+      }
+    },
+    async clearShortlist(tenantIds) {
+      await wait(60);
+      const allowedTenantIds = new Set(tenantIds ?? []);
+      for (const [key, item] of mockShortlistItems.entries()) {
+        if (!allowedTenantIds.size || allowedTenantIds.has(item.tenantId)) {
+          mockShortlistItems.delete(key);
+        }
+      }
+    },
+    async listJobPostings(tenantIds) {
+      await wait(80);
+      const allowedTenantIds = new Set(tenantIds ?? []);
+      return Array.from(mockJobPostings.values()).filter((job) => !allowedTenantIds.size || allowedTenantIds.has(job.tenantId));
+    },
+    async getJobPosting(jobId) {
+      await wait(60);
+      const job = mockJobPostings.get(jobId);
+      if (!job) {
+        throw new Error(`Job posting ${jobId} was not found.`);
+      }
+      return job;
+    },
+    async saveJobPosting(job) {
+      await wait(90);
+      const now = new Date().toISOString();
+      const id = job.id ?? crypto.randomUUID();
+      const current = mockJobPostings.get(id);
+      const saved: JobPosting = {
+        id,
+        tenantId: job.tenantId,
+        title: job.title ?? "",
+        employerName: job.employerName ?? "",
+        employerCountry: job.employerCountry ?? "",
+        employerRegion: job.employerRegion ?? "GCC",
+        jobDescription: job.jobDescription ?? "",
+        requiredSkills: job.requiredSkills ?? [],
+        preferredSkills: job.preferredSkills ?? [],
+        seniorityLevel: job.seniorityLevel ?? "",
+        employmentType: job.employmentType ?? "",
+        postedDate: job.status === "active" ? now.slice(0, 10) : job.postedDate ?? null,
+        applicationDeadline: job.applicationDeadline ?? null,
+        status: job.status ?? "draft",
+        locationInfo: job.locationInfo ?? {},
+        keyResponsibilities: job.keyResponsibilities ?? [],
+        aiProfile: job.aiProfile ?? {},
+        aiConfidence: job.aiConfidence ?? {},
+        createdByUserId: job.createdByUserId ?? null,
+        updatedByUserId: job.updatedByUserId ?? null,
+        closedAt: job.closedAt ?? null,
+        closedByUserId: job.closedByUserId ?? null,
+        isPublic: job.isPublic ?? false,
+        publicSlug: job.publicSlug ?? null,
+        publicTitle: job.publicTitle ?? null,
+        publicSummary: job.publicSummary ?? null,
+        publicDescription: job.publicDescription ?? null,
+        publicLocation: job.publicLocation ?? null,
+        publicApplyEnabled: job.publicApplyEnabled ?? true,
+        publicPublishedAt: job.isPublic && job.status === "active" ? now : null,
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+      };
+      mockJobPostings.set(id, saved);
+      return saved;
+    },
+    async extractJobPosting(input) {
+      await wait(120);
+      const skills = normalizeSkillList(input.jobDescription.match(/\b(?:React|TypeScript|Python|Java|SQL|AWS|Azure|GraphQL|Node)\b/gi) ?? []);
+      return {
+        requiredSkills: skills.map((name) => ({ name, confidence: 0.72, evidence: name })),
+        preferredSkills: [],
+        seniorityLevel: { value: /senior/i.test(input.title ?? input.jobDescription) ? "Senior" : "Mid", confidence: 0.64, evidence: input.title ?? "JD" },
+        employmentType: { value: "Full-time", confidence: 0.7, evidence: "Default mock extraction" },
+        location: { country: null, city: null, region: input.employerRegion, remotePolicy: "Unspecified", confidence: 0.3 },
+        keyResponsibilities: [],
+        warnings: [],
+        modelProvider: "mock",
+        modelName: "mock",
+        promptVersion: "job-extraction-v1",
+        inputHash: "mock",
+      };
+    },
+    async startJobMatchingRun() {
+      throw new Error("Job matching requires Supabase.");
+    },
+    async listJobMatchingRuns() {
+      return [];
+    },
+    async getJobMatchingRun() {
+      throw new Error("Matching run was not found.");
+    },
+    async listJobShortlists() {
+      return [];
+    },
+    async getJobShortlist() {
+      throw new Error("Shortlist was not found.");
+    },
+    async saveJobShortlist(input) {
+      return {
+        shortlist: {
+          id: crypto.randomUUID(),
+          tenantId: "mock-tenant",
+          jobPostingId: input.jobId,
+          matchingRunId: input.runId ?? null,
+          name: input.name,
+          description: input.description ?? "",
+          ownerUserId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        candidates: [],
+      };
+    },
+    async listJobApplications(jobId) {
+      return Array.from(mockJobApplications.values()).filter((application) => application.jobPostingId === jobId);
+    },
+    async updateJobApplicationStatus(applicationId, status) {
+      const application = mockJobApplications.get(applicationId);
+      if (!application) {
+        throw new Error("Application was not found.");
+      }
+      const updated = { ...application, status, updatedAt: new Date().toISOString() };
+      mockJobApplications.set(applicationId, updated);
+      return updated;
+    },
+    async listPublicJobPostings() {
+      return Array.from(mockJobPostings.values()).filter((job) => job.status === "active" && job.isPublic).map((job) => ({
+        id: job.publicSlug ?? job.id,
+        slug: job.publicSlug ?? job.id,
+        title: job.publicTitle ?? job.title,
+        summary: job.publicSummary ?? "",
+        description: job.publicDescription ?? job.jobDescription,
+        location: job.publicLocation ?? "",
+        remotePolicy: job.locationInfo.remotePolicy ?? "Unspecified",
+        seniorityLevel: job.seniorityLevel,
+        employmentType: job.employmentType,
+        requiredSkills: job.requiredSkills,
+        preferredSkills: job.preferredSkills,
+        keyResponsibilities: job.keyResponsibilities,
+        applicationDeadline: job.applicationDeadline,
+        applyEnabled: job.publicApplyEnabled,
+        publishedAt: job.publicPublishedAt,
+      }));
+    },
+    async getPublicJobPosting(slug) {
+      const job = (await this.listPublicJobPostings()).find((item) => item.slug === slug);
+      if (!job) {
+        throw new Error("Public job was not found.");
+      }
+      return job;
+    },
+    async submitPublicJobApplication(slug, application) {
+      const publicJob = await this.getPublicJobPosting(slug);
+      const id = crypto.randomUUID();
+      mockJobApplications.set(id, {
+        id,
+        tenantId: "mock-tenant",
+        jobPostingId: publicJob.id,
+        candidateId: crypto.randomUUID(),
+        sourceTenantId: "mock-tenant",
+        applicantName: application.name,
+        applicantEmail: application.email,
+        applicantPhone: application.phone ?? null,
+        applicantLocation: application.location ?? null,
+        linkedinUrl: application.linkedinUrl ?? null,
+        portfolioUrl: application.portfolioUrl ?? null,
+        resumeStoragePath: null,
+        resumeSourceDocumentId: null,
+        resumeOriginalFilename: application.resumeOriginalFilename ?? null,
+        resumeIngestionStatus: application.resumeFile ? "queued" : "not_uploaded",
+        resumeIngestionError: null,
+        candidateHubVisibility: "platform",
+        coverNote: application.coverNote ?? "",
+        consentGiven: application.consent,
+        status: "new",
+        source: "public_job_board",
+        submittedAt: new Date().toISOString(),
+        reviewedByUserId: null,
+        reviewedAt: null,
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      return { accepted: true, applicationId: id, submittedAt: new Date().toISOString() };
+    },
+    async getParsingOverview(_tenantIds) {
+      await wait(120);
+      return parsingOverview;
+    },
+    async getParsingDocument(documentId, _tenantIds) {
+      await wait(120);
+      return getParsingDocument(documentId);
+    },
+    async getParserProfiles(_tenantIds) {
+      await wait(120);
+      return getParserProfiles();
+    },
+    async saveParserProfile(profile) {
+      await wait(120);
+      return saveParserProfile(profile);
+    },
+    async publishParserProfile(profileId) {
+      await wait(100);
+      return publishParserProfile(profileId);
+    },
+    async getAnalytics() {
+      await wait(80);
+      return analyticsSnapshot;
+    },
+    async getInsightsDashboard(options) {
+      await wait(90);
+      const targetSkills = resolveGapRequirements(
+        { targetRole: options?.targetRole, targetSkills: options?.targetSkills },
+        insightsDashboardSnapshot.skillsFrequency.map((item) => item.skill),
+      );
+      return {
+        ...insightsDashboardSnapshot,
+        gapAnalysis: {
+          ...insightsDashboardSnapshot.gapAnalysis,
+          targetRole: options?.targetRole ?? insightsDashboardSnapshot.gapAnalysis.targetRole,
+          targetSkills,
+        },
+        skillsFrequency: insightsDashboardSnapshot.skillsFrequency.slice(0, Math.max(1, Math.min(200, options?.topSkills ?? 50))),
+      };
+    },
+    async getInsightsGapAnalysis(options) {
+      await wait(70);
+      const targetSkills = resolveGapRequirements(
+        { targetRole: options?.targetRole, targetSkills: options?.targetSkills },
+        insightsDashboardSnapshot.skillsFrequency.map((item) => item.skill),
+      );
+      return {
+        ...insightsDashboardSnapshot.gapAnalysis,
+        targetRole: options?.targetRole ?? insightsDashboardSnapshot.gapAnalysis.targetRole,
+        targetSkills,
+      };
+    },
+    async getSystemHealth() {
+      await wait(80);
+      return systemHealth;
+    },
+    async getOpsAlerts() {
+      await wait(80);
+      return opsAlerts;
+    },
+    async acknowledgeOpsAlert(dedupeKey) {
+      await wait(80);
+      const alert = opsAlerts.find((item) => item.dedupeKey === dedupeKey);
+      return alert ? { ...alert, status: "acknowledged" } : null;
+    },
+    async getDataConnectors() {
+      await wait(80);
+      return dataConnectors;
+    },
+    async getIndexingWorkbench() {
+      await wait(80);
+      return indexingWorkbench;
+    },
+    async getAccessRoster() {
+      await wait(80);
+      return accessRoster;
+    },
+    async listAdminTenants() {
+      await wait(80);
+      return [];
+    },
+    async createTenantAccount() {
+      throw new Error("Account provisioning requires Supabase.");
+    },
+    async addUserToTenant() {
+      throw new Error("Account provisioning requires Supabase.");
+    },
+    async getPlatformRuntimeConfig() {
+      await wait(80);
+      return { settings: [], updatedAt: null };
+    },
+    async savePlatformRuntimeConfig() {
+      throw new Error("Runtime settings require Supabase.");
+    },
+  };
+}
