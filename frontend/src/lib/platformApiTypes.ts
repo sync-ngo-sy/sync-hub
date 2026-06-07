@@ -7,6 +7,8 @@ import type {
   AnalyticsSnapshot,
   AskResponse,
   CandidateDetail,
+  CandidateListOptions,
+  CandidateListResponse,
   CandidateShortlistInput,
   CandidateShortlistItem,
   ComparisonResponse,
@@ -60,6 +62,7 @@ export type ParsingOverviewOptions = {
 
 export type PlatformApi = {
   search: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchResponse>;
+  listCandidates: (tenantIds?: string[], options?: CandidateListOptions) => Promise<CandidateListResponse>;
   searchDebug: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchDebugResponse>;
   getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
   getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;

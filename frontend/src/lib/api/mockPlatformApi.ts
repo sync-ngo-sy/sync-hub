@@ -1,4 +1,13 @@
-import type { CandidateShortlistItem, JobApplication, JobPosting } from "@/lib/contracts";
+import type {
+  CandidateListGroup,
+  CandidateListGroupBy,
+  CandidateListItem,
+  CandidateListOptions,
+  CandidateListResponse,
+  CandidateShortlistItem,
+  JobApplication,
+  JobPosting,
+} from "@/lib/contracts";
 import {
   accessRoster,
   analyticsSnapshot,
@@ -33,11 +42,107 @@ const mockShortlistItems = new Map<string, CandidateShortlistItem>();
 const mockJobPostings = new Map<string, JobPosting>();
 const mockJobApplications = new Map<string, JobApplication>();
 
+function buildMockCandidatesList(options: CandidateListOptions = {}): CandidateListResponse {
+  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
+  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
+  const filters = options.filters ?? {};
+  const groupBy = (filters.groupBy ?? "") as CandidateListGroupBy | "";
+  const allResults = searchCandidates("", {}, { limit: 100, offset: 0 }).results;
+  const query = filters.query?.trim().toLowerCase() ?? "";
+
+  const baseItems: CandidateListItem[] = allResults.map((candidate) => {
+    const stageKey = candidate.stage.toLowerCase().replace(/\s+/g, "_");
+    const roleLabel = candidate.primaryRole || "Unassigned role";
+    const locationLabel = candidate.location.trim() || "Unknown location";
+    const sourceLabel = "mock_upload";
+    return {
+      tenantId: "mock-tenant",
+      candidateId: candidate.candidateId,
+      name: candidate.name,
+      email: null,
+      location: candidate.location,
+      primaryRole: candidate.primaryRole,
+      appliedRole: candidate.primaryRole,
+      stage: candidate.stage,
+      stageKey,
+      source: sourceLabel,
+      seniority: candidate.seniority,
+      updatedAt: new Date().toISOString(),
+      groupKey: groupBy === "status" ? stageKey : groupBy === "role" ? roleLabel : groupBy === "source" ? sourceLabel : groupBy === "location" ? locationLabel : null,
+      groupLabel: groupBy === "status" ? candidate.stage : groupBy === "role" ? roleLabel : groupBy === "source" ? "Mock upload" : groupBy === "location" ? locationLabel : null,
+    };
+  });
+
+  const filtered = baseItems.filter((item) => {
+    if (query && !`${item.name} ${item.email ?? ""}`.toLowerCase().includes(query)) {
+      return false;
+    }
+    if (filters.status && item.stageKey !== filters.status) {
+      return false;
+    }
+    if (filters.role) {
+      const roleQuery = filters.role.toLowerCase();
+      if (!`${item.primaryRole} ${item.appliedRole ?? ""}`.toLowerCase().includes(roleQuery)) {
+        return false;
+      }
+    }
+    if (filters.source && item.source !== filters.source) {
+      return false;
+    }
+    if (filters.location && !item.location.toLowerCase().includes(filters.location.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  filtered.sort((left, right) => {
+    const groupCompare = String(left.groupKey ?? "").localeCompare(String(right.groupKey ?? ""));
+    if (groupCompare !== 0) {
+      return groupCompare;
+    }
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+
+  const offset = pageIndex * pageSize;
+  const items = filtered.slice(offset, offset + pageSize);
+  const groupCounts = new Map<string, CandidateListGroup>();
+  for (const item of filtered) {
+    if (!item.groupKey || !item.groupLabel) {
+      continue;
+    }
+    const current = groupCounts.get(item.groupKey);
+    if (current) {
+      current.count += 1;
+    } else {
+      groupCounts.set(item.groupKey, { key: item.groupKey, label: item.groupLabel, count: 1 });
+    }
+  }
+
+  return {
+    items,
+    itemsTotalCount: filtered.length,
+    pageLimit: pageSize,
+    pageOffset: offset,
+    groupBy: groupBy || null,
+    groups: Array.from(groupCounts.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
+    filterOptions: {
+      statuses: Array.from(new Set(baseItems.map((item) => item.stageKey))).sort(),
+      roles: Array.from(new Set(baseItems.map((item) => item.primaryRole).filter(Boolean))).sort(),
+      sources: Array.from(new Set(baseItems.map((item) => item.source))).sort(),
+      locations: Array.from(new Set(baseItems.map((item) => item.location).filter(Boolean))).sort(),
+    },
+  };
+}
+
 export function createMockApi(): PlatformApi {
   return {
     async search(query, filters, options, _tenantIds) {
       await wait(180);
       return searchCandidates(query, filters, options);
+    },
+    async listCandidates(_tenantIds, options) {
+      await wait(120);
+      return buildMockCandidatesList(options);
     },
     async searchDebug(query, filters, options, tenantIds) {
       await wait(180);

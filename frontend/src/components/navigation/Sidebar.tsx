@@ -1,23 +1,3 @@
-import { useEffect, useState } from "react";
-import {
-  Bot,
-  Bell,
-  ChevronDown,
-  X,
-  FlaskConical,
-  FileText,
-  GitCompareArrows,
-  Home,
-  BriefcaseBusiness,
-  LineChart,
-  LayoutDashboard,
-  Search,
-  Users,
-  SlidersHorizontal,
-  Settings2,
-  UserPlus,
-  RefreshCw,
-} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Home, X } from "lucide-react";
 import { adminNavigation, workspaceNavigation } from "@/app/routeRegistry";
@@ -25,26 +5,6 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { SyncBrand, TenantBadge } from "@/components/ui";
-
-const productRoutes = [
-  { to: "/search", label: "Search & Discovery", icon: Search },
-  { to: "/candidates", label: "Candidates", icon: Users },
-  { to: "/jobs", label: "Job Postings", icon: BriefcaseBusiness },
-  { to: "/insights", label: "Insights", icon: LineChart },
-  { to: "/chat", label: "General Agent", icon: Bot },
-  { to: "/compare", label: "Intelligent Comparison", icon: GitCompareArrows },
-];
-
-const operationsRoutes = [
-  { to: "/admin", label: "Platform Dashboard", icon: LayoutDashboard },
-  { to: "/admin/accounts", label: "Account provisioning", icon: UserPlus },
-  { to: "/admin/settings", label: "Runtime settings", icon: Settings2 },
-  { to: "/admin/alerts", label: "Alerts", icon: Bell },
-  { to: "/admin/manatal-sync", label: "Manatal Sync", icon: RefreshCw },
-  { to: "/admin/search-simulator", label: "Search Simulator", icon: SlidersHorizontal },
-  { to: "/admin/parsing", label: "Parsing Quality", icon: FileText },
-  { to: "/admin/parsing/lab", label: "Parsing Lab", icon: FlaskConical },
-];
 
 type SidebarProps = {
   open: boolean;

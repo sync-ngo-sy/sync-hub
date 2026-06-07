@@ -13,10 +13,12 @@ import {
   Settings2,
   SlidersHorizontal,
   UserPlus,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui";
 import { CandidateDossierPage } from "@/screens/CandidateDossierPage";
+import { CandidateListingPage } from "@/features/candidates";
 import { IntelligentComparisonPage } from "@/screens/IntelligentComparisonPage";
 import { IntelligenceHubPage } from "@/screens/IntelligenceHubPage";
 import { InsightsDashboardPage } from "@/screens/InsightsDashboardPage";
@@ -53,6 +55,7 @@ export const publicRoutes: RegisteredRoute[] = [
 
 export const protectedRoutes: RegisteredRoute[] = [
   { path: "search", element: <SearchDiscoveryPage />, title: "Search & Discovery", subtitle: "Hybrid retrieval over structured profiles and chunk-level evidence" },
+  { path: "candidates", element: <CandidateListingPage />, title: "Candidates", subtitle: "Browse, filter, and group your talent pool without semantic ranking" },
   { path: "chat", element: <IntelligenceHubPage />, title: "General Agent", subtitle: "Grounded recruiter Q&A over corpus-derived or explicitly scoped candidate sets" },
   { path: "jobs", element: <JobPostingsPage />, title: "Job Postings", subtitle: "Internal roles, AI requirement extraction, persisted candidate matching runs, and named shortlists" },
   { path: "jobs/new", element: <JobPostingCreatePage />, title: "Job Postings", subtitle: "Internal roles, AI requirement extraction, persisted candidate matching runs, and named shortlists" },
@@ -88,6 +91,7 @@ export const protectedRoutes: RegisteredRoute[] = [
 
 export const workspaceNavigation: NavigationItem[] = [
   { to: "/search", label: "Search & Discovery", icon: Search, match: (path) => path === "/search" },
+  { to: "/candidates", label: "Candidates", icon: Users, match: (path) => path === "/candidates" || path.startsWith("/candidates/") },
   { to: "/jobs", label: "Job Postings", icon: BriefcaseBusiness, match: (path) => path.startsWith("/jobs") },
   { to: "/insights", label: "Insights", icon: LineChart, match: (path) => path === "/insights" },
   { to: "/chat", label: "General Agent", icon: Bot, match: (path) => path === "/chat" },
