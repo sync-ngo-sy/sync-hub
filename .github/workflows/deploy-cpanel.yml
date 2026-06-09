@@ -1,0 +1,120 @@
+# Build the static frontend and upload to cPanel over FTPS.
+#
+# Required GitHub repository secrets:
+#   VITE_SUPABASE_URL
+#   VITE_SUPABASE_ANON_KEY
+#   CPANEL_FTP_SERVER
+#   CPANEL_FTP_USERNAME
+#   CPANEL_FTP_PASSWORD
+# Optional:
+#   VITE_API_BASE_URL        (defaults to ${VITE_SUPABASE_URL}/functions/v1)
+#   VITE_SITE_URL
+#   CPANEL_FTP_SERVER_DIR    (defaults to public_html/)
+#
+# See CPANEL_DEPLOYMENT_CHECKLIST.md → "GitHub Actions (cPanel CI)".
+
+name: Deploy frontend to cPanel
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: Build only (do not upload to cPanel)
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-cpanel.yml"
+
+concurrency:
+  group: deploy-cpanel-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+      VITE_SITE_URL: ${{ secrets.VITE_SITE_URL }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate GitHub secrets
+        working-directory: .
+        env:
+          SKIP_UPLOAD: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_upload }}
+          CPANEL_FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER }}
+          CPANEL_FTP_USERNAME: ${{ secrets.CPANEL_FTP_USERNAME }}
+          CPANEL_FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${SKIP_UPLOAD}" != "true" ]; then
+            for name in CPANEL_FTP_SERVER CPANEL_FTP_USERNAME CPANEL_FTP_PASSWORD; do
+              if [ -z "${!name:-}" ]; then
+                missing+=("$name")
+              fi
+            done
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing required GitHub secrets: %s\n' "${missing[*]}"
+            printf 'Add them under Settings → Secrets and variables → Actions.\n'
+            exit 1
+          fi
+
+      - name: Resolve VITE_API_BASE_URL
+        if: env.VITE_API_BASE_URL == ''
+        run: |
+          base="${VITE_SUPABASE_URL%/}"
+          echo "VITE_API_BASE_URL=${base}/functions/v1" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: frontend/dist/
+          retention-days: 14
+
+      - name: Deploy to cPanel (FTPS)
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.skip_upload) }}
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.CPANEL_FTP_SERVER }}
+          username: ${{ secrets.CPANEL_FTP_USERNAME }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./frontend/dist/
+          server-dir: ${{ secrets.CPANEL_FTP_SERVER_DIR || 'public_html/' }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.ftp-deploy-sync-state.json
+            **/.ftp-deploy-sync-state.json.tmp
