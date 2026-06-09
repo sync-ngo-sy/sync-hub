@@ -136,6 +136,32 @@ Windows PowerShell:
 
 Upload everything inside **`deploy/cpanel/`** (not `frontend/dist/` directly — the script copies the build there and adds upload notes).
 
+**Local build + FTPS upload (no GitHub secrets):**
+
+Put FTP credentials in **`.env.local`** (gitignored), then from repo root:
+
+```powershell
+.\scripts\publish-cpanel-local.ps1 -Install
+```
+
+Or step by step:
+
+```powershell
+.\scripts\build-cpanel-deploy.ps1 -Install
+.\scripts\upload-cpanel-deploy.ps1 -Install
+```
+
+Use `-DryRun` on the upload script to verify FTP settings without sending files.
+
+**Zip upload (File Manager — no FTP credentials):**
+
+```powershell
+.\scripts\build-cpanel-deploy.ps1 -Install
+.\scripts\zip-cpanel-deploy.ps1
+```
+
+Upload **`deploy/cpanel.zip`** in cPanel → `public_html/jobs/` → **Extract**, then delete the zip on the server.
+
 **Or build manually:**
 
 ```bash
@@ -150,7 +176,15 @@ Output will be in:
 
 ### 3. Upload to cPanel
 
-Upload the contents of `frontend/dist/` to:
+Pick one:
+
+| Method | Script | Upload target |
+|--------|--------|----------------|
+| File Manager | `zip-cpanel-deploy.ps1` | `deploy/cpanel.zip` → Extract in `public_html/jobs/` |
+| FTPS | `upload-cpanel-deploy.ps1` | Contents of `deploy/cpanel/` |
+| One command | `publish-cpanel-local.ps1` | Build + FTPS upload |
+
+Manual fallback: upload everything inside **`deploy/cpanel/`** to:
 
 - `public_html/` if this is the main domain
 - or the correct subfolder if this is a subdomain/addon domain
