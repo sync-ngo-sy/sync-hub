@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CV Intelligence Platform">
+  <rect width="64" height="64" rx="14" fill="#131314" />
+  <path d="M19 13h21c4.7 0 7.6 5.1 5.2 9.1L36 37H18.2c-6.8 0-11.2-7.4-7.6-13.2l5-8A6.4 6.4 0 0 1 19 13Z" fill="#58BBB7" />
+  <path d="M28 27h17.8c6.8 0 11.2 7.4 7.6 13.2l-5 8A6.4 6.4 0 0 1 43 51H22c-4.7 0-7.6-5.1-5.2-9.1L26 28c.5-.6 1.2-1 2-1Z" fill="#138F8A" />
+  <path d="M19 24h21" stroke="#E8FFFC" stroke-width="5" stroke-linecap="round" />
+  <path d="M24 41h21" stroke="#E8FFFC" stroke-width="5" stroke-linecap="round" />
+</svg>
