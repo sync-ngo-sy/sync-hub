@@ -156,7 +156,7 @@ async function uploadToCpanel(config) {
   client.ftp.verbose = false;
 
   try {
-    console.log(`→ Connecting FTPS://${config.host}:${config.port} as ${config.user}`);
+    console.log(`→ Connecting FTPS on port ${config.port}`);
     await client.access({
       host: config.host,
       port: config.port,
@@ -166,7 +166,7 @@ async function uploadToCpanel(config) {
     });
 
     const remoteDir = config.remoteDir.replace(/\\/g, "/");
-    console.log(`→ Uploading ${uploadDir} → ${remoteDir}`);
+    console.log(`→ Uploading ${uploadDir} (${countFiles(uploadDir)} files)`);
     await client.ensureDir(remoteDir);
     await client.uploadFromDir(uploadDir, remoteDir);
   } finally {
@@ -198,10 +198,9 @@ async function main() {
   console.log(`Upload bundle: ${uploadDir} (${fileCount} files)\n`);
 
   if (args.dryRun) {
-    console.log("Dry run — would upload with:");
-    console.log(`  host: ${config.host}:${config.port}`);
-    console.log(`  user: ${config.user}`);
-    console.log(`  remote dir: ${config.remoteDir}`);
+    console.log("Dry run — FTP credentials are configured; upload skipped.");
+    console.log(`  local dir: ${uploadDir}`);
+    console.log(`  files: ${fileCount}`);
     return;
   }
 
