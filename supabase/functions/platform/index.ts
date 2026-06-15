@@ -1982,7 +1982,15 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
     throw platformAdminResult.error;
   }
 
-  const membershipRows = membershipResult.data ?? [];
+  type MembershipRow = {
+  tenant_id: string;
+  role: string;
+  status: string;
+};
+
+const membershipRows: MembershipRow[] =
+  (membershipResult.data as MembershipRow[]) ?? [];
+
   const isPlatformAdmin = Boolean(platformAdminResult.data?.user_id);
   if (!membershipRows.length && !isPlatformAdmin) {
     return { memberships: [], is_platform_admin: false };
@@ -2005,7 +2013,16 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
     throw tenantResult.error;
   }
 
-  const tenantRows = tenantResult.data ?? [];
+  
+  type TenantRow = {
+  id: string;
+  slug: string;
+  name: string;
+  icon_url: string | null;
+};
+
+const tenantRows: TenantRow[] =
+  (tenantResult.data as TenantRow[]) ?? [];
   const tenantMap = new Map(tenantRows.map((tenant) => [tenant.id, tenant]));
   const memberships = membershipRows
     .map((membership) => {

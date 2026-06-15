@@ -1,4 +1,13 @@
-import type { CandidateDetail } from "@/lib/contracts";
+import type {
+  CandidateDetail,
+  CandidateAvailabilityStatus,
+  JobReadinessLevel,
+  PreferredWorkMode,
+  NoticePeriod,
+  EnglishProficiency,
+  SyncAffiliation,
+  EmploymentType,
+} from "@/lib/contracts";
 import { asArray, asRecord, toNumber, toStringArray, type JsonRecord } from "@/lib/api/json";
 import type { CandidateChunkRow, CandidateDossierRow } from "@/lib/api/platformRows";
 
@@ -38,6 +47,13 @@ export function buildCandidateCvUrl(sourceUri?: string | null) {
 
 export function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[]): CandidateDetail {
   const profile = asRecord(row.profile_json);
+  const expectedSalary = asRecord(
+  profile.expected_salary,
+);
+
+const externalProfiles = asRecord(
+  profile.external_profiles,
+);
   const cvUrl = buildCandidateCvUrl(row.source_uri);
   const timeline = asArray(row.timeline_json).map((entry) => {
     const record = asRecord(entry);
@@ -108,6 +124,97 @@ export function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateCh
     storagePath: row.storage_path,
     cvUrl,
     manatalCandidateId: row.manatal_candidate_id ?? null,
+    status:
+  typeof profile.status === "string"
+    ? (profile.status as CandidateAvailabilityStatus)
+    : null,
+
+jobReadinessLevel:
+  typeof profile.job_readiness_level === "string"
+    ? (profile.job_readiness_level as JobReadinessLevel)
+    : "L1",
+
+preferredWorkMode:
+  typeof profile.preferred_work_mode === "string"
+    ? (profile.preferred_work_mode as PreferredWorkMode)
+    : null,
+
+    yearsOfExperience:
+  toNumber(
+    profile.years_of_experience,
+    row.years_experience ?? undefined,
+  ),
+
+primarySkills:
+  toStringArray(profile.primary_skills),
+
+noticePeriod:
+  typeof profile.notice_period === "string"
+    ? (profile.notice_period as NoticePeriod)
+    : null,
+
+englishProficiency:
+  typeof profile.english_proficiency === "string"
+    ? (profile.english_proficiency as EnglishProficiency)
+    : null,
+
+syncAffiliation:
+  typeof profile.sync_affiliation === "string"
+    ? (profile.sync_affiliation as SyncAffiliation)
+    : null,
+
+internalVettingNotes:
+  typeof profile.internal_vetting_notes === "string"
+    ? profile.internal_vetting_notes
+    : null,
+
+currentLocationCity:
+  typeof profile.current_location_city === "string"
+    ? profile.current_location_city
+    : row.location ?? null,
+
+willingnessToRelocate:
+  Boolean(profile.willingness_to_relocate),
+externalProfiles:
+  Object.keys(externalProfiles).length
+    ? {
+        linkedin:
+          externalProfiles.linkedin
+            ? String(
+                externalProfiles.linkedin,
+              )
+            : null,
+
+        github:
+          externalProfiles.github
+            ? String(
+                externalProfiles.github,
+              )
+            : null,
+
+        portfolio:
+          externalProfiles.portfolio
+            ? String(
+                externalProfiles.portfolio,
+              )
+            : null,
+      }
+    : null,
+aiProfileSummary:
+  profile.ai_profile_summary
+    ? String(profile.ai_profile_summary)
+    : null,
+
+employmentTypePreference:
+  toStringArray(
+    profile.employment_type_preference,
+  ) as EmploymentType[],
+
+lastInteractionDate:
+  typeof profile.last_interaction_date === "string"
+    ? profile.last_interaction_date
+    : null,
+
     links: toStringArray(row.links),
     education,
     certifications: toStringArray(profile.certifications),
