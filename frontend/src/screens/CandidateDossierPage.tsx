@@ -381,33 +381,40 @@ export function CandidateDossierPage() {
             </div>
           </Panel>
 
-          <Panel className="timeline-card">
-            <div className="stack">
-              <h3>Career timeline</h3>
-              <div className="timeline">
-                {candidate.timeline.map((entry) => (
-                  <div key={`${entry.employer}-${entry.role}`} className="timeline-entry">
-                    <div className="signal-row">
-                      <strong>{entry.role}</strong>
-                      <span>
-                        {entry.start} - {entry.end}
-                      </span>
-                    </div>
-                    <p className="muted timeline-entry__employer">
-                      <Building2 size={14} />
-                      {entry.employer}
-                    </p>
-                    <p className="muted">{entry.scope}</p>
-                    <ul className="bullet-list">
-                      {entry.highlights.map((highlight) => (
-                        <li key={highlight}>{highlight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Panel>
+      <Panel className="timeline-card">
+  <div className="stack">
+    <h3>Career timeline</h3>
+
+    <div className="timeline">
+      {candidate.timeline?.map((entry) => (
+        <div
+          key={`${entry.employer}-${entry.role}-${entry.start}`}
+          className="timeline-entry"
+        >
+          <div className="signal-row">
+            <strong>{entry.role}</strong>
+            <span>
+              {entry.start || "—"} - {entry.end || "Present"}
+            </span>
+          </div>
+
+          <p className="muted timeline-entry__employer">
+            <Building2 size={14} />
+            {entry.employer}
+          </p>
+
+          <p className="muted">{entry.scope}</p>
+
+          <ul className="bullet-list">
+            {(entry.highlights ?? []).map((highlight: string, idx: number) => (
+              <li key={`${highlight}-${idx}`}>{highlight}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </div>
+</Panel>
 
           <Panel className="timeline-card">
             <div className="stack">

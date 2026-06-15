@@ -56,22 +56,27 @@ const externalProfiles = asRecord(
 );
   const cvUrl = buildCandidateCvUrl(row.source_uri);
   const timeline = asArray(row.timeline_json).map((entry) => {
-    const record = asRecord(entry);
-    const description = String(record.description ?? "");
+  const record = asRecord(entry);
 
-    return {
-      employer: String(record.company ?? "Unknown company"),
-      role: String(record.title ?? "Role not parsed"),
-      start: String(record.start_date ?? "Unknown"),
-      end: String(record.end_date ?? "Present"),
-      scope: description,
-      highlights: description
-        .split(/[.;]\s+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 3),
-    };
-  });
+  return {
+    employer: String(record.company ?? "Unknown company"),
+    role: String(record.role ?? "Unknown role"),
+
+    start: record.start_date
+      ? String(record.start_date)
+      : "",
+
+    end: record.end_date
+      ? String(record.end_date)
+      : "",
+
+    scope: String(record.description ?? ""),
+
+    highlights: Array.isArray(record.highlights)
+      ? record.highlights.map(String)
+      : [],
+  };
+});
 
   const projects = asArray(profile.projects)
     .map((entry) => {
