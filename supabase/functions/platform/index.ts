@@ -6,7 +6,7 @@ import {
   addUserToTenant,
   assertPlatformAdmin,
   createServiceClient,
-  createTenantAccount,ل
+  createTenantAccount,
   listAdminTenants,
 } from "../_shared/platformProvisioning.ts";
 import {
@@ -2012,18 +2012,14 @@ const membershipRows: MembershipRow[] =
   if (tenantResult.error) {
     throw tenantResult.error;
   }
-
-  
  type TenantRow = {
   id: string;
   slug: string;
   name: string;
   icon_url: string | null;
 };
-
 const tenantRows: TenantRow[] =
   (tenantResult.data as TenantRow[]) ?? [];
-  
   const tenantMap = new Map(tenantRows.map((tenant) => [tenant.id, tenant]));
   const memberships = membershipRows
     .map((membership) => {
