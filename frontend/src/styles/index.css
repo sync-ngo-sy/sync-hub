@@ -12,6 +12,7 @@
 @import "./components/form-controls.css";
 @import "./features/search/results.css";
 @import "./features/candidates/dossier.css";
+@import "./features/candidates/listing.css";
 @import "./features/parsing/overview.css";
 @import "./features/insights/overview.css";
 @import "./features/insights/gap-analysis.css";

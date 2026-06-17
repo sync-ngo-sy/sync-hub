@@ -2153,6 +2153,34 @@ async function getParsingOverview(
   return data;
 }
 
+async function getCandidatesList(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+  body: JsonRecord,
+) {
+  const limit = asInteger(body.limit, 50, 1, 200);
+  const offset = asInteger(body.offset, 0, 0, 100000);
+  const updatedFrom = asString(body.updated_from);
+  const updatedTo = asString(body.updated_to);
+  const { data, error } = await supabase.rpc("candidates_list_page_v1", {
+    p_tenant_ids: tenantIds.length ? tenantIds : null,
+    p_limit: limit,
+    p_offset: offset,
+    p_query: asString(body.query),
+    p_status: asString(body.status),
+    p_role: asString(body.role),
+    p_source: asString(body.source),
+    p_location: asString(body.location),
+    p_updated_from: updatedFrom || null,
+    p_updated_to: updatedTo || null,
+    p_group_by: asString(body.group_by),
+  });
+  if (error) {
+    throw error;
+  }
+  return data;
+}
+
 async function getParsingDocument(
   supabase: ReturnType<typeof createAuthedClient>,
   documentId: string,
@@ -4077,6 +4105,11 @@ Deno.serve(async (req) => {
         return jsonResponse(
           200,
           await getParsingOverview(supabase, tenantIds, body),
+        );
+      case "candidates_list":
+        return jsonResponse(
+          200,
+          await getCandidatesList(supabase, tenantIds, body),
         );
       case "parsing_document":
         return jsonResponse(
