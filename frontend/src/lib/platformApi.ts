@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccessRoster,
   AccountProvisionResult,
   MembershipRole,
@@ -43,6 +43,7 @@ import {
   mapEvidenceSnippet,
   mapRemoteCandidate,
 } from "@/features/candidates/apiMappers";
+import { fetchCandidatesListRpc } from "@/features/candidates/apiMappers";
 import {
   fetchInsightsDashboardFromRpc,
   fetchInsightsDashboardFromSearchCache,
@@ -685,6 +686,17 @@ function createRemoteApi(): PlatformApi {
         return mapRemoteSearch(payload);
       } catch (functionError) {
         throw new Error(`Live search failed. Edge Function error: ${errorMessage(functionError)}.`);
+      }
+    },
+    async listCandidates(tenantIds, options) {
+      if (!supabase || !tenantIds?.length) {
+        return mock.listCandidates(tenantIds, options);
+      }
+
+      try {
+        return await fetchCandidatesListRpc(tenantIds, options);
+      } catch (error) {
+        throw new Error(`Unable to load candidates: ${errorMessage(error)}`);
       }
     },
     async searchDebug(query, filters, options, tenantIds) {
