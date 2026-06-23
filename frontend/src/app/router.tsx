@@ -13,15 +13,15 @@ function ProtectedShell() {
 
 export const router = createHashRouter([
   ...publicRoutes,
+  // 1. Instantly redirect root URL to the default search page before mounting the shell
+  {
+    path: "/",
+    element: <Navigate to="/search" replace />,
+  },
+  // 2. Mount the app shell layout container straight onto the actual matched sub-routes
   {
     path: "/",
     element: <ProtectedShell />,
-    children: [
-      {
-        index: true,
-        element: <Navigate to="/search" replace />,
-      },
-      ...protectedRoutes,
-    ],
+    children: protectedRoutes,
   },
 ]);

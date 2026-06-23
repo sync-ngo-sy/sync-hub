@@ -148,70 +148,70 @@ export function JobPostingsPage() {
           <div className="job-table-scroll">
             <table className="job-postings-table">
               <thead>
-                <tr>
-                  <th>Job</th>
-                  <th>Employer</th>
-                  <th>Region</th>
-                  <th>Status</th>
-                  <th>Public</th>
-                  <th>Posted</th>
-                  <th>Deadline</th>
-                  <th>Skills</th>
-                  <th aria-label="Actions" />
-                </tr>
+              <tr>
+                <th>Job</th>
+                <th>Employer</th>
+                <th>Region</th>
+                <th>Status</th>
+                <th>Public</th>
+                <th>Posted</th>
+                <th>Deadline</th>
+                <th>Skills</th>
+                <th aria-label="Actions" />
+              </tr>
               </thead>
               <tbody>
-                {filteredJobs.map((job) => {
-                  const publicHref = publicJobHref(job);
-                  return (
-                    <tr key={job.id}>
-                      <td>
-                        <Link className="job-table-title" to={`/jobs/${job.id}`}>
-                          <strong>{job.title || "Untitled job"}</strong>
-                          <span>
+              {filteredJobs.map((job) => {
+                const publicHref = publicJobHref(job);
+                return (
+                  <tr key={job.id}>
+                    <td>
+                      <Link className="job-table-title" to={`/jobs/${job.id}`}>
+                        <strong>{job.title || "Untitled job"}</strong>
+                        <span>
                             {locationLabel(job)} · {job.employmentType || "Type missing"}
                           </span>
+                      </Link>
+                    </td>
+                    <td>
+                      <strong>{job.employerName}</strong>
+                      <span>{job.employerCountry}</span>
+                    </td>
+                    <td>
+                      <Tag>{job.employerRegion}</Tag>
+                    </td>
+                    <td>
+                      <Tag tone={statusTone(job.status)}>{job.status}</Tag>
+                    </td>
+                    <td>
+                      <div className="job-public-cell">
+                        <Tag tone={job.isPublic ? "success" : "neutral"}>{job.isPublic ? "public" : "internal"}</Tag>
+                        {job.isPublic ? <span>{job.publicApplyEnabled ? "Apply open" : "Apply closed"}</span> : null}
+                      </div>
+                    </td>
+                    <td>{formatDate(job.postedDate)}</td>
+                    <td>{formatDate(job.applicationDeadline)}</td>
+                    <td>
+                      <span className="job-table-skills">{job.requiredSkills.slice(0, 3).join(", ") || "Missing"}</span>
+                    </td>
+                    <td>
+                      <div className="job-table-actions">
+                        <Link className="icon-button" to={`/jobs/${job.id}`} aria-label={`View ${job.title}`} title="View">
+                          <Eye size={16} />
                         </Link>
-                      </td>
-                      <td>
-                        <strong>{job.employerName}</strong>
-                        <span>{job.employerCountry}</span>
-                      </td>
-                      <td>
-                        <Tag>{job.employerRegion}</Tag>
-                      </td>
-                      <td>
-                        <Tag tone={statusTone(job.status)}>{job.status}</Tag>
-                      </td>
-                      <td>
-                        <div className="job-public-cell">
-                          <Tag tone={job.isPublic ? "success" : "neutral"}>{job.isPublic ? "public" : "internal"}</Tag>
-                          {job.isPublic ? <span>{job.publicApplyEnabled ? "Apply open" : "Apply closed"}</span> : null}
-                        </div>
-                      </td>
-                      <td>{formatDate(job.postedDate)}</td>
-                      <td>{formatDate(job.applicationDeadline)}</td>
-                      <td>
-                        <span className="job-table-skills">{job.requiredSkills.slice(0, 3).join(", ") || "Missing"}</span>
-                      </td>
-                      <td>
-                        <div className="job-table-actions">
-                          <Link className="icon-button" to={`/jobs/${job.id}`} aria-label={`View ${job.title}`} title="View">
-                            <Eye size={16} />
-                          </Link>
-                          <Link className="icon-button" to={`/jobs/${job.id}/edit`} aria-label={`Edit ${job.title}`} title="Edit">
-                            <Edit3 size={16} />
-                          </Link>
-                          {publicHref ? (
-                            <a className="icon-button" href={publicHref} aria-label={`Open public page for ${job.title}`} title="Public page">
-                              <ExternalLink size={16} />
-                            </a>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <Link className="icon-button" to={`/jobs/${job.id}/edit`} aria-label={`Edit ${job.title}`} title="Edit">
+                          <Edit3 size={16} />
+                        </Link>
+                        {publicHref ? (
+                          <a className="icon-button" href={publicHref} aria-label={`Open public page for ${job.title}`} title="Public page">
+                            <ExternalLink size={16} />
+                          </a>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               </tbody>
             </table>
           </div>

@@ -28,7 +28,7 @@ import {
 } from "@/features/search/searchState";
 import {
   SearchProcessingState,
-} from "@/screens/SearchDiscoveryPage.helpers";
+} from "@/screens/talent-pool/SearchDiscoveryPage.helpers";
 
 export function SearchDiscoveryPage() {
   const { currentTenant } = useAuth();
@@ -288,16 +288,16 @@ export function SearchDiscoveryPage() {
   const topCompareHref =
     response && sortedResults.length >= 2
       ? `/compare?ids=${sortedResults
-          .slice(0, 2)
-          .map((candidate) => candidate.candidateId)
-          .join(",")}`
+        .slice(0, 2)
+        .map((candidate) => candidate.candidateId)
+        .join(",")}`
       : null;
   const topChatHref =
     response && sortedResults.length
       ? buildChatHref(
-          sortedResults.slice(0, Math.min(3, sortedResults.length)).map((candidate) => candidate.candidateId),
-          "Which candidate is the strongest overall fit and why?",
-        )
+        sortedResults.slice(0, Math.min(3, sortedResults.length)).map((candidate) => candidate.candidateId),
+        "Which candidate is the strongest overall fit and why?",
+      )
       : null;
   const shortlistCandidateIds = shortlistItems.map((item) => item.candidateId);
   const shortlistCompareHref =

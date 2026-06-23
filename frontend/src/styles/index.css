@@ -24,3 +24,6 @@
 @import "./features/search-simulator/results.css";
 @import "./features/search-simulator/sync.css";
 @import "./features/search-simulator/responsive.css";
+
+@tailwind components;
+@tailwind utilities;
