@@ -2,7 +2,7 @@
 * @abdulqdaer-q @abdalhadihaidar
 
 # Protect CODEOWNERS itself
-/.github/CODEOWNERS @abdulqdaer-q @abdalhadihaidar
+/.github/CODEOWNERS @abdulqdaer-q
 
 # Deployment / env / workflow-sensitive files
 /.github/workflows/ @abdulqdaer-q @abdalhadihaidar
