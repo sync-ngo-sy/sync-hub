@@ -3,7 +3,9 @@ import { createAuthedClient } from "../_shared/client.ts";
 import { generateStructuredObject } from "../_shared/llm.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
 import {
+  buildCompanyExclusionTerms,
   buildSearchIntentConfig,
+  excludeCompanyMatches,
   resolveSearchFilters,
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
@@ -175,6 +177,28 @@ function dedupeSorted(values: string[]) {
   );
 }
 
+async function fetchTenantCompanyExclusionTerms(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+) {
+  if (!tenantIds.length) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("tenants")
+    .select("slug, name")
+    .in("id", tenantIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return buildCompanyExclusionTerms(
+    (data ?? []).flatMap((tenant) => [tenant.slug, tenant.name]),
+  );
+}
+
 async function fetchSearchIntentFacets(
   supabase: ReturnType<typeof createAuthedClient>,
   tenantIds: string[],
@@ -186,14 +210,10 @@ async function fetchSearchIntentFacets(
   }> = [];
 
   for (let offset = 0;; offset += SEARCH_REST_PAGE_SIZE) {
-    let request = supabase
+    const request = supabase
       .from("candidate_search_cache")
       .select("skills, companies, location")
       .range(offset, offset + SEARCH_REST_PAGE_SIZE - 1);
-
-    if (tenantIds.length) {
-      request = request.in("tenant_id", tenantIds);
-    }
 
     const { data, error } = await request;
     if (error) {
@@ -207,6 +227,11 @@ async function fetchSearchIntentFacets(
     }
   }
 
+  const excludedCompanyTerms = await fetchTenantCompanyExclusionTerms(
+    supabase,
+    tenantIds,
+  );
+
   return {
     skills: dedupeSorted(
       normalizeSkillList(rows.flatMap((row) => row.skills ?? [])),
@@ -219,6 +244,7 @@ async function fetchSearchIntentFacets(
         )
         .filter((location): location is string => Boolean(location)),
     ),
+    excludedCompanyTerms,
   };
 }
 
@@ -250,7 +276,13 @@ Deno.serve(async (req) => {
     try {
       intentFacets = await fetchSearchIntentFacets(supabase, tenantIds);
       llmIntent = requiresIntentExtraction
-        ? await extractIntentWithLlm(query, requestFilters, intentFacets)
+        ? await extractIntentWithLlm(query, {
+          ...requestFilters,
+          companies: excludeCompanyMatches(
+            requestFilters.companies,
+            intentFacets.excludedCompanyTerms,
+          ),
+        }, intentFacets)
         : null;
       if (llmIntent) {
         intentSource = "llm";
@@ -270,15 +302,23 @@ Deno.serve(async (req) => {
       });
     }
 
+    const scopedRequestFilters = {
+      ...requestFilters,
+      companies: excludeCompanyMatches(
+        requestFilters.companies,
+        intentFacets.excludedCompanyTerms,
+      ),
+    };
+
     const resolvedIntent = resolveSearchFilters(
       query,
       {
-        role: requestFilters.role ?? null,
-        seniority: requestFilters.seniority ?? null,
-        min_years_experience: requestFilters.min_years_experience ?? null,
-        location: requestFilters.location ?? null,
-        skills: requestFilters.skills,
-        companies: requestFilters.companies,
+        role: scopedRequestFilters.role ?? null,
+        seniority: scopedRequestFilters.seniority ?? null,
+        min_years_experience: scopedRequestFilters.min_years_experience ?? null,
+        location: scopedRequestFilters.location ?? null,
+        skills: scopedRequestFilters.skills,
+        companies: scopedRequestFilters.companies,
       },
       llmIntent,
       intentFacets,
@@ -305,13 +345,13 @@ Deno.serve(async (req) => {
       p_skills: resolvedIntent.skills ?? [],
       p_embedding_version: queryEmbeddingPayload.embeddingVersion,
       p_rank_version: body.rank_version ?? "v2-rate",
-      p_tenant_ids: tenantIds.length ? tenantIds : null,
-      p_filter_role: requestFilters.role ?? null,
-      p_filter_seniority: requestFilters.seniority ?? null,
-      p_filter_min_years: requestFilters.min_years_experience ?? null,
-      p_filter_skills: requestFilters.skills ?? [],
-      p_filter_companies: requestFilters.companies ?? [],
-      p_filter_location: requestFilters.location ?? null,
+      p_tenant_ids: null,
+      p_filter_role: scopedRequestFilters.role ?? null,
+      p_filter_seniority: scopedRequestFilters.seniority ?? null,
+      p_filter_min_years: scopedRequestFilters.min_years_experience ?? null,
+      p_filter_skills: scopedRequestFilters.skills ?? [],
+      p_filter_companies: scopedRequestFilters.companies ?? [],
+      p_filter_location: scopedRequestFilters.location ?? null,
     };
 
     let { data, error } = await supabase.rpc(
@@ -335,7 +375,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const strictFilters = Object.entries(requestFilters)
+    const strictFilters = Object.entries(scopedRequestFilters)
       .filter(([, value]) =>
         Array.isArray(value) ? value.length > 0 : value !== null && value !== ""
       )
@@ -348,7 +388,8 @@ Deno.serve(async (req) => {
         limit,
         offset,
         tenant_ids: tenantIds,
-        explicit_filters: requestFilters,
+        explicit_filters: scopedRequestFilters,
+        excluded_company_terms: intentFacets.excludedCompanyTerms ?? [],
       },
       analysis: {
         intent_source: intentSource,
