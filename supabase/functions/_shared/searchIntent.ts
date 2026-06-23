@@ -126,6 +126,18 @@ function companyMatchesExcludedTerm(
   return excludedTerms.some((term) => companyKey.includes(term));
 }
 
+export function hasExcludedCompanyMatch(
+  companies: string[] | null | undefined,
+  excludedTerms: string[] | null | undefined,
+) {
+  const normalizedExcludedTerms = buildCompanyExclusionTerms(
+    excludedTerms ?? [],
+  );
+  return normalizeCompanies(companies).some((company) =>
+    companyMatchesExcludedTerm(company, normalizedExcludedTerms)
+  );
+}
+
 export function excludeCompanyMatches(
   companies: string[] | null | undefined,
   excludedTerms: string[] | null | undefined,

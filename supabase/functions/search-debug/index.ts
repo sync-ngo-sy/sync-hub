@@ -6,6 +6,7 @@ import {
   buildCompanyExclusionTerms,
   buildSearchIntentConfig,
   excludeCompanyMatches,
+  hasExcludedCompanyMatch,
   resolveSearchFilters,
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
@@ -248,6 +249,38 @@ async function fetchSearchIntentFacets(
   };
 }
 
+async function fetchExcludedCandidateIds(
+  supabase: ReturnType<typeof createAuthedClient>,
+  excludedCompanyTerms: string[],
+) {
+  const candidateIds = new Set<string>();
+  for (let offset = 0;; offset += SEARCH_REST_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("candidate_search_cache")
+      .select("candidate_id, companies")
+      .range(offset, offset + SEARCH_REST_PAGE_SIZE - 1);
+    if (error) {
+      throw error;
+    }
+
+    const page = data ?? [];
+    for (const row of page) {
+      if (
+        hasExcludedCompanyMatch(
+          row.companies as string[] | null,
+          excludedCompanyTerms,
+        )
+      ) {
+        candidateIds.add(String(row.candidate_id));
+      }
+    }
+    if (page.length < SEARCH_REST_PAGE_SIZE) {
+      break;
+    }
+  }
+  return candidateIds;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -381,7 +414,14 @@ Deno.serve(async (req) => {
       )
       .map(([key]) => key);
 
-    const results = attachMatchRates(data ?? []);
+    const excludedCandidateIds = await fetchExcludedCandidateIds(
+      supabase,
+      intentFacets.excludedCompanyTerms ?? [],
+    );
+    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>).filter((row) =>
+      !excludedCandidateIds.has(String(row.candidate_id ?? ""))
+    );
+    const results = attachMatchRates(eligibleData);
     const response = {
       request: {
         query,

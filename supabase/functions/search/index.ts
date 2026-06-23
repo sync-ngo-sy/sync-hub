@@ -11,6 +11,7 @@ import {
   buildCompanyExclusionTerms,
   buildSearchIntentConfig,
   excludeCompanyMatches,
+  hasExcludedCompanyMatch,
   resolveSearchFilters,
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
@@ -905,18 +906,18 @@ async function runFastProfileSearch(
   query: string,
   filters: SearchIntentPayload,
   _explicitFilters: SearchIntentPayload,
-  tenantIds: string[],
+  excludedCompanyTerms: string[],
   limit: number,
   offset: number,
   rankVersion: string,
   queryEmbedding: number[] | null,
   embeddingVersion: string | null,
 ) {
-  if (tenantIds.length) {
-    
-  }
   const rows = await fetchCandidateSearchRows(supabase);
   let scored = rows
+    .filter((row) =>
+      !hasExcludedCompanyMatch(row.companies, excludedCompanyTerms)
+    )
     .filter((row) => rowPassesExplicitFilters(row, filters))
     .map((row) => ({ row, score: fastProfileScore(row, query, filters) }))
     .filter((item) => item.score > 0)
@@ -1132,7 +1133,7 @@ Deno.serve(async (req) => {
           query,
           filters,
           scopedRequestFilters,
-          tenantIds,
+          intentFacets.excludedCompanyTerms ?? [],
           limit,
           offset,
           rankVersion,
@@ -1211,7 +1212,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    const results = attachMatchRates(data ?? []);
+    const excludedCandidateIds = new Set(
+      (await fetchCandidateSearchRows(supabase))
+        .filter((row) =>
+          hasExcludedCompanyMatch(
+            row.companies,
+            intentFacets.excludedCompanyTerms,
+          )
+        )
+        .map((row) => row.candidate_id),
+    );
+    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>).filter((row) =>
+      !excludedCandidateIds.has(String(row.candidate_id ?? ""))
+    );
+    const results = attachMatchRates(eligibleData);
 
     return await respond(
       200,
