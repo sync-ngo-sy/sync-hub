@@ -1222,9 +1222,10 @@ Deno.serve(async (req) => {
         )
         .map((row) => row.candidate_id),
     );
-    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>).filter((row) =>
-      !excludedCandidateIds.has(String(row.candidate_id ?? ""))
-    );
+    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) =>
+        !excludedCandidateIds.has(String(row.candidate_id ?? ""))
+      );
     const results = attachMatchRates(eligibleData);
 
     return await respond(

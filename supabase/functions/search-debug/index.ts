@@ -418,9 +418,10 @@ Deno.serve(async (req) => {
       supabase,
       intentFacets.excludedCompanyTerms ?? [],
     );
-    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>).filter((row) =>
-      !excludedCandidateIds.has(String(row.candidate_id ?? ""))
-    );
+    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) =>
+        !excludedCandidateIds.has(String(row.candidate_id ?? ""))
+      );
     const results = attachMatchRates(eligibleData);
     const response = {
       request: {
