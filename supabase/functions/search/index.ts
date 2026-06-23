@@ -912,6 +912,9 @@ async function runFastProfileSearch(
   queryEmbedding: number[] | null,
   embeddingVersion: string | null,
 ) {
+  if (tenantIds.length) {
+    
+  }
   const rows = await fetchCandidateSearchRows(supabase);
   let scored = rows
     .filter((row) => rowPassesExplicitFilters(row, filters))
