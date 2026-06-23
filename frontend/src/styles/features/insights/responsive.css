@@ -1,0 +1,26 @@
+@media (max-width: 720px) {
+  .job-family-legend,
+  .gap-use-cases,
+  .gap-grid,
+  .gap-form__controls,
+  .insights-tabs,
+  .ranked-bars__row {
+    grid-template-columns: 1fr;
+  }
+
+  .gap-verdict,
+  .gap-section-heading,
+  .missing-skill-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-heading-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .job-family-donut__chart {
+    justify-self: center;
+  }
+}

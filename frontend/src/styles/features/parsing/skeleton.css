@@ -1,0 +1,84 @@
+.parsing-skeleton-card {
+  overflow: hidden;
+}
+
+.parsing-skeleton__title {
+  width: min(260px, 70%);
+  height: 18px;
+}
+
+.parsing-skeleton__subtitle {
+  width: min(380px, 82%);
+  height: 12px;
+}
+
+.parsing-skeleton-table {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.parsing-skeleton-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(160px, 1.4fr) minmax(100px, 0.9fr) minmax(70px, 0.4fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.parsing-skeleton__cell {
+  width: 100%;
+  height: 14px;
+}
+
+.parsing-skeleton__cell--workspace {
+  width: 72%;
+}
+
+.parsing-skeleton__cell--document {
+  width: 88%;
+}
+
+.parsing-skeleton__cell--small {
+  width: 56%;
+}
+
+.parsing-skeleton-note {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.parsing-skeleton__line {
+  width: 100%;
+  height: 12px;
+}
+
+.parsing-skeleton__line--short {
+  width: 62%;
+}
+
+.parsing-detail-skeleton__header {
+  min-height: 158px;
+}
+
+.parsing-detail-skeleton__title {
+  width: min(620px, 78%);
+  height: 36px;
+}
+
+.parsing-detail-skeleton__copy {
+  width: min(760px, 92%);
+  height: 16px;
+}
+
+.parsing-detail-skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}

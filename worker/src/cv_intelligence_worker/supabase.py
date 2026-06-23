@@ -6,6 +6,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -348,9 +349,13 @@ class SupabaseClient:
 
     def _rows_for_bundle(self, bundle: ArtifactBundle, source_document_id: str, candidate_id: str) -> tuple[dict[str, list[dict[str, Any]]], int]:
         candidate_email = normalize_email(bundle.profile.email)
-        source_storage_path = None
+        source_metadata = dataclass_to_dict(bundle.source.metadata)
+        metadata_storage_path = str(source_metadata.get("storage_path") or "").strip()
+        metadata_source_uri = str(source_metadata.get("source_uri") or "").strip()
+        candidate_hub_visibility = str(source_metadata.get("candidate_hub_visibility") or "").strip()
+        source_storage_path = metadata_storage_path or None
         storage_bytes = 0
-        if self.config.sync_originals_to_storage:
+        if self.config.sync_originals_to_storage and not source_storage_path:
             source_storage_path = f"{bundle.source.tenant_id}/{source_document_id}/{bundle.source.original_filename}"
             self.upload_file(
                 self.config.supabase_storage_bucket,
@@ -378,10 +383,10 @@ class SupabaseClient:
             "original_filename": bundle.source.original_filename,
             "mime_type": bundle.source.mime_type,
             "document_sha256": bundle.source.document_sha256,
-            "source_uri": self.public_source_uri(bundle.source.source_path),
+            "source_uri": metadata_source_uri or self.public_source_uri(bundle.source.source_path),
             "storage_path": source_storage_path,
             "uploaded_by": bundle.source.uploaded_by,
-            "metadata_json": dataclass_to_dict(bundle.source.metadata),
+            "metadata_json": source_metadata,
         }
         candidate = {
             "id": candidate_id,
@@ -398,12 +403,6 @@ class SupabaseClient:
             "phone": bundle.profile.phone,
             "links": bundle.profile.links,
             "latest_document_id": source_document_id,
-            "job_family": bundle.profile.metadata.get("job_family"),
-            "job_family_confidence": bundle.profile.metadata.get("job_family_confidence"),
-            "job_family_taxonomy_version": bundle.profile.metadata.get("job_family_taxonomy_version"),
-            "job_family_inferred_at": bundle.profile.metadata.get("job_family_inferred_at"),
-            "job_family_review_status": bundle.profile.metadata.get("job_family_review_status"),
-            "job_family_review_reason": bundle.profile.metadata.get("job_family_review_reason"),
             "summary_short": bundle.summary.short_summary,
             "status": "completed",
             "metadata_json": bundle.profile.metadata,
@@ -412,6 +411,8 @@ class SupabaseClient:
             "embedding_version": bundle.processing_run.embedding_version,
             "artifact_version": bundle.summary.artifact_version,
         }
+        if candidate_hub_visibility in {"platform", "tenant", "private"}:
+            candidate["hub_visibility"] = candidate_hub_visibility
         profile = {
             "candidate_id": candidate_id,
             "tenant_id": bundle.profile.tenant_id,
@@ -533,6 +534,89 @@ class SupabaseClient:
                 return
             content = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Supabase storage upload failed ({exc.code}): {content or exc.reason}") from exc
+
+    def download_file(self, bucket: str, object_path: str, target_path: str) -> None:
+        request = urllib.request.Request(
+            f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
+            headers=self._headers({"Accept": "application/octet-stream"}),
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
+                data = response.read()
+        except urllib.error.HTTPError as exc:
+            content = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Supabase storage download failed ({exc.code}): {content or exc.reason}") from exc
+        path = Path(target_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def queued_public_job_applications(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
+        query_args = {
+            "resume_storage_path": "not.is.null",
+            "select": "id,tenant_id,job_posting_id,resume_storage_path,resume_original_filename,resume_source_document_id,candidate_hub_visibility,resume_ingestion_status,submitted_at,updated_at",
+            "order": "submitted_at.asc",
+            "limit": str(max(1, limit)),
+        }
+        if retry_stale_minutes > 0:
+            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            query_args["or"] = f"(resume_ingestion_status.eq.queued,and(resume_ingestion_status.eq.parsing,updated_at.lt.{stale_before}))"
+        else:
+            query_args["resume_ingestion_status"] = "eq.queued"
+        query = urllib.parse.urlencode(query_args)
+        result = self._request("GET", f"/rest/v1/job_applications?{query}")
+        return result if isinstance(result, list) else []
+
+    def source_document(self, source_document_id: str) -> dict[str, Any] | None:
+        query = urllib.parse.urlencode(
+            {
+                "id": f"eq.{source_document_id}",
+                "select": "id,tenant_id,candidate_id,document_sha256,storage_path,source_uri,original_filename,mime_type",
+                "limit": "1",
+            }
+        )
+        result = self._request("GET", f"/rest/v1/source_documents?{query}")
+        if isinstance(result, list) and result:
+            return result[0]
+        return None
+
+    def update_job_application(self, application_id: str, payload: dict[str, Any]) -> None:
+        query = urllib.parse.urlencode({"id": f"eq.{application_id}"})
+        self._request(
+            "PATCH",
+            f"/rest/v1/job_applications?{query}",
+            data=payload,
+            headers={"Prefer": "return=minimal"},
+        )
+
+    def update_processing_runs_for_source(self, source_document_id: str, payload: dict[str, Any], application_id: str | None = None) -> None:
+        query_args = {
+            "source_document_id": f"eq.{source_document_id}",
+            "status": "in.(queued,parsing)",
+        }
+        if application_id:
+            query_args["metadata_json->>job_application_id"] = f"eq.{application_id}"
+        query = urllib.parse.urlencode(query_args)
+        self._request(
+            "PATCH",
+            f"/rest/v1/processing_runs?{query}",
+            data=payload,
+            headers={"Prefer": "return=minimal"},
+        )
+
+    def record_job_application_event(self, tenant_id: str, application_id: str, event_type: str, payload: dict[str, Any]) -> None:
+        self._request(
+            "POST",
+            "/rest/v1/job_application_events",
+            data=[{
+                "tenant_id": tenant_id,
+                "application_id": application_id,
+                "actor_user_id": None,
+                "event_type": event_type,
+                "payload": payload,
+            }],
+            headers={"Prefer": "return=minimal"},
+        )
 
     def sync_bundle(self, bundle: ArtifactBundle) -> None:
         self.sync_bundles([bundle])

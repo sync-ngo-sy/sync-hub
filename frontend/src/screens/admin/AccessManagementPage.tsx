@@ -1,16 +1,38 @@
 import { useEffect, useState } from "react";
 import { KeyRound, ShieldCheck, Users } from "lucide-react";
-import { accessRoster as fallbackRoster } from "@/data/mockData";
 import type { AccessRoster } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { PageIntro, Panel, Tag } from "@/components/ui";
 
 export function AccessManagementPage() {
-  const [roster, setRoster] = useState<AccessRoster>(fallbackRoster);
+  const [roster, setRoster] = useState<AccessRoster | null>(null);
 
   useEffect(() => {
-    platformApi.getAccessRoster().then(setRoster);
+    let active = true;
+    platformApi.getAccessRoster().then((nextRoster) => {
+      if (active) {
+        setRoster(nextRoster);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  if (!roster) {
+    return (
+      <div className="page-stack">
+        <PageIntro
+          eyebrow="Tenant security"
+          title="Access management"
+          description="Manage recruiter roles, operational access, and audit visibility. The frontend is prepared for strict tenant scoping and role-aware actions."
+        />
+        <Panel className="table-card">
+          <p className="muted">Loading access roster...</p>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">

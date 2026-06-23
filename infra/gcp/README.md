@@ -46,6 +46,7 @@ Create Secret Manager secrets before applying Terraform:
 ```bash
 printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | gcloud secrets create supabase-service-role-key --data-file=-
 printf '%s' "$GEMINI_API_KEY" | gcloud secrets create gemini-api-key --data-file=-
+# Optional only when Manatal sync is intentionally enabled again.
 printf '%s' "$MANATAL_API_TOKEN" | gcloud secrets create manatal-api-token --data-file=-
 ```
 
@@ -82,22 +83,45 @@ The repo includes a `gcloud` helper for teams that do not want to use Terraform 
 export GCP_PROJECT_ID="YOUR_NEW_GCP_PROJECT_ID"
 export GCP_REGION="us-central1"
 export SUPABASE_URL="https://YOUR_SUPABASE_PROJECT.supabase.co"
-export CV_WORKER_TENANT_ID="00000000-0000-0000-0000-000000000000"
 
 # Required only the first time, or when creating/updating Secret Manager values.
 export SUPABASE_SERVICE_ROLE_KEY="YOUR_SUPABASE_SERVICE_ROLE_KEY"
 export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-export MANATAL_API_TOKEN="YOUR_MANATAL_API_TOKEN"
-
-# Default job mode drains candidate IDs queued by the Manatal webhook.
-export WORKER_ARGS="manatal-sync,--pending,--pretty"
+# Default job mode drains public career CV uploads queued in Supabase.
+export WORKER_ARGS="public-applications,--limit,25,--retry-stale-minutes,30,--pretty"
 export ENABLE_SCHEDULER=true
-export SCHEDULER_CRON="*/15 * * * *"
+export SCHEDULER_CRON="*/2 * * * *"
 
 ./infra/gcp/deploy-worker-gcloud.sh
 ```
 
 The script enables required APIs, creates Artifact Registry if needed, creates or checks required secrets, builds the Docker image with Cloud Build, deploys a Cloud Run Job, and optionally creates a Cloud Scheduler trigger.
+
+The default helper deployment is the public applications queue worker. Manatal sync is opt-in and should not be scheduled unless explicitly re-enabled.
+
+## Deploy Public Application CV Ingestion
+
+Public careers uploads are queued by the Supabase `public-jobs` Edge Function, then drained by the worker command below. Deploy it as a scheduled Cloud Run Job so applicants do not depend on a laptop or manual CLI run.
+
+```bash
+export GCP_PROJECT_ID="YOUR_GCP_PROJECT_ID"
+export GCP_REGION="us-central1"
+export SUPABASE_URL="https://YOUR_SUPABASE_PROJECT.supabase.co"
+
+# Required only the first time, or when creating/updating Secret Manager values.
+export SUPABASE_SERVICE_ROLE_KEY="YOUR_SUPABASE_SERVICE_ROLE_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+
+export WORKER_JOB_NAME="cv-worker-public-applications"
+export WORKER_ARGS="public-applications,--limit,25,--retry-stale-minutes,30,--pretty"
+export ENABLE_SCHEDULER=true
+export SCHEDULER_NAME="cv-worker-public-applications-schedule"
+export SCHEDULER_CRON="*/2 * * * *"
+
+./infra/gcp/deploy-worker-gcloud.sh
+```
+
+This job does not need `CV_WORKER_TENANT_ID` because each queued application row carries its own tenant id. It does need access to the Supabase service role secret and Gemini/model secret. Use `gcloud run jobs execute cv-worker-public-applications --region "$GCP_REGION" --wait` for an immediate drain run after deployment.
 
 ## Create The Private CV Bucket
 
@@ -204,7 +228,7 @@ The Edge Function still accepts `GCS_SIGNED_URL_SERVICE_ACCOUNT_JSON_BASE64`, `G
 
 ## Sync New CVs From Manatal
 
-Manatal supports a V3 Open API for candidates/resumes and a webhook API for candidate create/update events. The durable ingestion path in this repo is the worker command below:
+Manatal sync is currently paused and should stay opt-in. Do not deploy or schedule this mode unless the team explicitly decides to re-enable Manatal as a source. If re-enabled, Manatal supports a V3 Open API for candidates/resumes and a webhook API for candidate create/update events. The durable ingestion path in this repo is the worker command below:
 
 ```bash
 cv-intelligence-worker manatal-sync --tenant-id "$CV_WORKER_TENANT_ID" --pretty
@@ -280,7 +304,7 @@ In GCP:
 worker_args = ["manatal-sync", "--pending", "--pretty"]
 ```
 
-Keep a scheduled lookback poller enabled as a safety net because webhook delivery can fail or arrive before the resume is fully available in Manatal.
+If Manatal is re-enabled, use a scheduled lookback poller as a safety net because webhook delivery can fail or arrive before the resume is fully available in Manatal.
 
 ## Deploy With Terraform
 
@@ -300,13 +324,31 @@ gcloud run jobs execute cv-worker-ingest \
   --wait
 ```
 
-For the Manatal pending-sync job created by the helper script:
+For the default public application queue job:
 
 ```bash
-gcloud run jobs execute cv-worker-manatal-sync \
+gcloud run jobs execute cv-worker-public-applications \
   --project YOUR_NEW_GCP_PROJECT_ID \
   --region us-central1 \
   --wait
+```
+
+## Stop Manatal Syncing
+
+There is no local Manatal worker process in this repo by default. If an older GCP deployment exists, pause or delete its scheduler trigger first:
+
+```bash
+gcloud scheduler jobs pause cv-worker-manatal-sync-schedule \
+  --project YOUR_GCP_PROJECT_ID \
+  --location us-central1
+```
+
+If you want to remove the old job entirely after confirming no one depends on it:
+
+```bash
+gcloud run jobs delete cv-worker-manatal-sync \
+  --project YOUR_GCP_PROJECT_ID \
+  --region us-central1
 ```
 
 ## Operational Notes

@@ -11,6 +11,7 @@ from .discovery import discover_documents
 from .gcs_originals import ManatalOriginalsBackfill
 from .manatal import ManatalSync
 from .pipeline import IngestionPipeline
+from .public_applications import PublicApplicationIngestion
 from .schema import dataclass_to_dict
 
 
@@ -59,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     gcs_originals.add_argument("--force", action="store_true", help="Reprocess rows that already have storage_path")
     gcs_originals.add_argument("--update-source-uri", action="store_true", help="Replace source_uri with gs:// URL after upload")
     gcs_originals.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
+
+    public_applications = subparsers.add_parser(
+        "public-applications",
+        help="Drain queued public job application CV uploads and ingest them",
+        parents=[common],
+    )
+    public_applications.add_argument("--limit", type=int, default=25, help="Maximum queued applications to ingest")
+    public_applications.add_argument("--retry-stale-minutes", type=int, default=30, help="Retry applications left in parsing for at least this many minutes")
+    public_applications.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
 
     return parser
 
@@ -204,6 +214,16 @@ def _run_manatal_originals_to_gcs(args: argparse.Namespace, config: WorkerConfig
     return 0 if not result.failed else 2
 
 
+def _run_public_applications(args: argparse.Namespace, config: WorkerConfig) -> int:
+    result = PublicApplicationIngestion(config).run(
+        limit=args.limit,
+        retry_stale_minutes=args.retry_stale_minutes,
+        progress=_progress_printer(args.no_progress),
+    )
+    print(_json_output(dataclass_to_dict(result), pretty=args.pretty))
+    return 0 if not result.failed else 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -225,6 +245,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "manatal-originals-to-gcs":
         return _run_manatal_originals_to_gcs(args, config)
+
+    if args.command == "public-applications":
+        return _run_public_applications(args, config)
 
     parser.error(f"unsupported command: {args.command}")
     return 1

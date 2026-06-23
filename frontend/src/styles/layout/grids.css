@@ -1,0 +1,64 @@
+.hero-grid,
+.two-column-grid,
+.three-column-grid,
+.stats-grid,
+.detail-grid,
+.comparison-grid,
+.admin-grid,
+.candidate-results {
+  display: grid;
+  gap: 22px;
+}
+
+.hero-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.8fr);
+}
+
+.two-column-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.three-column-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stats-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.detail-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.comparison-grid,
+.candidate-results {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.8fr);
+}
+
+.hero-panel,
+.candidate-card,
+.table-card,
+.timeline-card,
+.comparison-card,
+.search-summary-bar {
+  padding: 24px;
+}
+
+.hero-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-panel__glow {
+  position: absolute;
+  inset: auto -40px -40px auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: rgba(80, 193, 184, 0.12);
+  filter: blur(48px);
+}

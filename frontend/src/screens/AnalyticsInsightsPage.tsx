@@ -1,15 +1,37 @@
 import { useEffect, useState } from "react";
-import { analyticsSnapshot as fallbackSnapshot } from "@/data/mockData";
 import type { AnalyticsSnapshot } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { MetricBars, PageIntro, Panel, StatCard, Tag } from "@/components/ui";
 
 export function AnalyticsInsightsPage() {
-  const [snapshot, setSnapshot] = useState<AnalyticsSnapshot>(fallbackSnapshot);
+  const [snapshot, setSnapshot] = useState<AnalyticsSnapshot | null>(null);
 
   useEffect(() => {
-    platformApi.getAnalytics().then(setSnapshot);
+    let active = true;
+    platformApi.getAnalytics().then((nextSnapshot) => {
+      if (active) {
+        setSnapshot(nextSnapshot);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  if (!snapshot) {
+    return (
+      <div className="page-stack">
+        <PageIntro
+          eyebrow="Operational analytics"
+          title="Analytics & insights"
+          description="Measure recruiter adoption, pipeline efficiency, and how well the retrieval system is serving real hiring workflows."
+        />
+        <Panel className="table-card">
+          <p className="muted">Loading analytics...</p>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">

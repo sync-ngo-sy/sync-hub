@@ -7,8 +7,8 @@ REGION="${GCP_REGION:-us-central1}"
 AR_REPOSITORY="${AR_REPOSITORY:-cv-intelligence}"
 WORKER_IMAGE_NAME="${WORKER_IMAGE_NAME:-cv-worker}"
 WORKER_IMAGE_TAG="${WORKER_IMAGE_TAG:-latest}"
-WORKER_JOB_NAME="${WORKER_JOB_NAME:-cv-worker-manatal-sync}"
-WORKER_ARGS="${WORKER_ARGS:-manatal-sync,--pending,--pretty}"
+WORKER_JOB_NAME="${WORKER_JOB_NAME:-cv-worker-public-applications}"
+WORKER_ARGS="${WORKER_ARGS:-public-applications,--limit,25,--retry-stale-minutes,30,--pretty}"
 
 WORKER_SA_NAME="${WORKER_SA_NAME:-cv-worker}"
 WORKER_CPU="${WORKER_CPU:-2}"
@@ -35,8 +35,8 @@ MODEL_SECRET_VERSION="${MODEL_SECRET_VERSION:-$GEMINI_SECRET_VERSION}"
 MANATAL_SECRET_VERSION="${MANATAL_SECRET_VERSION:-latest}"
 
 ENABLE_SCHEDULER="${ENABLE_SCHEDULER:-false}"
-SCHEDULER_NAME="${SCHEDULER_NAME:-cv-worker-manatal-sync-schedule}"
-SCHEDULER_CRON="${SCHEDULER_CRON:-*/15 * * * *}"
+SCHEDULER_NAME="${SCHEDULER_NAME:-cv-worker-public-applications-schedule}"
+SCHEDULER_CRON="${SCHEDULER_CRON:-*/2 * * * *}"
 SCHEDULER_TIME_ZONE="${SCHEDULER_TIME_ZONE:-Asia/Dubai}"
 SCHEDULER_SA_NAME="${SCHEDULER_SA_NAME:-cv-worker-scheduler}"
 
@@ -53,7 +53,7 @@ if [[ -z "$SUPABASE_URL" ]]; then
   exit 1
 fi
 
-if [[ -z "$CV_WORKER_TENANT_ID" ]]; then
+if [[ "$WORKER_ARGS" != *"public-applications"* && -z "$CV_WORKER_TENANT_ID" ]]; then
   echo "Set CV_WORKER_TENANT_ID." >&2
   exit 1
 fi

@@ -264,11 +264,32 @@ PYTHONPATH=worker/src python3 -m cv_intelligence_worker compare \
   --candidate-id <candidate-2>
 ```
 
+Public application CV queue:
+
+```bash
+PYTHONPATH=worker/src python3 -m cv_intelligence_worker public-applications \
+  --limit 25 \
+  --retry-stale-minutes 30 \
+  --pretty
+```
+
+For production, run the public application queue as a Cloud Run Job with Cloud Scheduler instead of a laptop CLI. The `infra/gcp/deploy-worker-gcloud.sh` helper supports:
+
+```bash
+WORKER_JOB_NAME=cv-worker-public-applications \
+WORKER_ARGS=public-applications,--limit,25,--retry-stale-minutes,30,--pretty \
+ENABLE_SCHEDULER=true \
+SCHEDULER_NAME=cv-worker-public-applications-schedule \
+SCHEDULER_CRON='*/2 * * * *' \
+./infra/gcp/deploy-worker-gcloud.sh
+```
+
 ### 6.3 Current worker behavior
 
 Today, the worker:
 
 - reads **local files/folders only**
+- can drain public career CV uploads from Supabase Storage with `public-applications`
 - recursively scans supported files from the path you provide
 - supports:
   - `.pdf`

@@ -20,6 +20,8 @@ venv/
 node_modules/
 dist/
 build/
+deploy/cpanel/
+deploy/cpanel.zip
 coverage/
 *.tsbuildinfo
 

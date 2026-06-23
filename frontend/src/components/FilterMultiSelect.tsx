@@ -86,11 +86,23 @@ export function FilterMultiSelect({
 
   return (
     <div ref={rootRef} className="filter-multiselect">
-      <button
-        type="button"
+      <div
         className={cn("filter-multiselect__control", open && "filter-multiselect__control--open")}
+        role="combobox"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-haspopup="listbox"
         onClick={() => {
           setOpen((current) => !current);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+          }
+          if (event.key === "Escape") {
+            setOpen(false);
+          }
         }}
       >
         <div className="filter-multiselect__values">
@@ -98,10 +110,10 @@ export function FilterMultiSelect({
             values.map((value) => (
               <span key={value} className="filter-multiselect__chip">
                 {value}
-                <span
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
                   className="filter-multiselect__chip-action"
+                  aria-label={`Remove ${value}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     removeValue(value);
@@ -114,7 +126,7 @@ export function FilterMultiSelect({
                   }}
                 >
                   <X size={12} />
-                </span>
+                </button>
               </span>
             ))
           ) : (
@@ -122,12 +134,13 @@ export function FilterMultiSelect({
           )}
         </div>
         <ChevronDown size={16} className={cn("filter-multiselect__chevron", open && "filter-multiselect__chevron--open")} />
-      </button>
+      </div>
 
       {open ? (
         <div
           className={cn("filter-multiselect__menu", menuPlacement.direction === "above" && "filter-multiselect__menu--above")}
           style={{ maxHeight: menuPlacement.maxHeight }}
+          role="listbox"
         >
           <div className="filter-multiselect__search">
             <Search size={14} />
@@ -156,14 +169,14 @@ export function FilterMultiSelect({
 
           <div className="filter-multiselect__options">
             {creatableValues.length && draft.trim() ? (
-              <button type="button" className="filter-multiselect__option filter-multiselect__option--create" onClick={() => addValues(creatableValues)}>
+              <button type="button" className="filter-multiselect__option filter-multiselect__option--create" onClick={() => addValues(creatableValues)} role="option" aria-selected={false}>
                 <strong>Add</strong>
                 <span>{creatableValues.join(", ")}</span>
               </button>
             ) : null}
 
             {filteredOptions.map((option) => (
-              <button key={option} type="button" className="filter-multiselect__option" onClick={() => addValues([option])}>
+              <button key={option} type="button" className="filter-multiselect__option" onClick={() => addValues([option])} role="option" aria-selected={false}>
                 {option}
               </button>
             ))}

@@ -99,6 +99,65 @@ export type SearchResponse = {
   };
 };
 
+export type CandidateListGroupBy = "status" | "role" | "source" | "location";
+
+export type CandidateListItem = {
+  tenantId: string;
+  candidateId: string;
+  name: string;
+  email?: string | null;
+  location: string;
+  primaryRole: string;
+  appliedRole?: string | null;
+  stage: string;
+  stageKey: string;
+  source: string;
+  seniority: string;
+  updatedAt: string;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+};
+
+export type CandidateListGroup = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+export type CandidateListFilterOptions = {
+  statuses: string[];
+  roles: string[];
+  sources: string[];
+  locations: string[];
+};
+
+export type CandidateListFilters = {
+  query?: string;
+  status?: string;
+  role?: string;
+  source?: string;
+  location?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
+  groupBy?: CandidateListGroupBy | "";
+};
+
+export type CandidateListOptions = {
+  pageSize?: number;
+  pageIndex?: number;
+  filters?: CandidateListFilters;
+};
+
+export type CandidateListResponse = {
+  items: CandidateListItem[];
+  itemsTotalCount: number;
+  pageLimit: number;
+  pageOffset: number;
+  groupBy: CandidateListGroupBy | "" | null;
+  groups: CandidateListGroup[];
+  filterOptions: CandidateListFilterOptions;
+};
+
 export type CandidateShortlistItem = {
   userId: string;
   tenantId: string;
@@ -136,6 +195,257 @@ export type CandidateShortlistInput = {
   sourceQuery?: string;
   searchSnapshot?: Record<string, unknown>;
   notes?: string;
+};
+
+export type JobPostingStatus = "draft" | "active" | "closed";
+
+export type EmployerRegion = "GCC" | "EU" | "USA";
+
+export type JobLocationInfo = {
+  country?: string | null;
+  city?: string | null;
+  region?: EmployerRegion | string | null;
+  remotePolicy?: "Onsite" | "Hybrid" | "Remote" | "Unspecified" | string;
+  confidence?: number;
+};
+
+export type JobPosting = {
+  id: string;
+  tenantId: string;
+  title: string;
+  employerName: string;
+  employerCountry: string;
+  employerRegion: EmployerRegion;
+  jobDescription: string;
+  requiredSkills: string[];
+  preferredSkills: string[];
+  seniorityLevel: string;
+  employmentType: string;
+  postedDate: string | null;
+  applicationDeadline: string | null;
+  status: JobPostingStatus;
+  locationInfo: JobLocationInfo;
+  keyResponsibilities: string[];
+  aiProfile: Record<string, unknown>;
+  aiConfidence: Record<string, unknown>;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
+  closedAt: string | null;
+  closedByUserId: string | null;
+  isPublic: boolean;
+  publicSlug: string | null;
+  publicTitle: string | null;
+  publicSummary: string | null;
+  publicDescription: string | null;
+  publicLocation: string | null;
+  publicApplyEnabled: boolean;
+  publicPublishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type JobPostingInput = Partial<Omit<JobPosting, "createdAt" | "updatedAt">> & {
+  tenantId: string;
+};
+
+export type JobExtractionSkill = {
+  name: string;
+  confidence: number;
+  evidence: string;
+};
+
+export type JobExtractionResult = {
+  requiredSkills: JobExtractionSkill[];
+  preferredSkills: JobExtractionSkill[];
+  seniorityLevel: {
+    value: string;
+    confidence: number;
+    evidence: string;
+  };
+  employmentType: {
+    value: string;
+    confidence: number;
+    evidence: string;
+  };
+  location: JobLocationInfo;
+  keyResponsibilities: string[];
+  warnings: Array<{
+    type: string;
+    message: string;
+  }>;
+  modelProvider: string;
+  modelName: string;
+  promptVersion: string;
+  inputHash: string;
+};
+
+export type JobMatchingRun = {
+  id: string;
+  tenantId: string;
+  jobPostingId: string;
+  initiatedByUserId: string | null;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  requestedLimit: number;
+  semanticPoolSize: number;
+  rerankPoolSize: number;
+  retrievedCount: number;
+  filteredCount: number;
+  rerankedCount: number;
+  completedCount: number;
+  failureReason: string | null;
+  matchingConfig: Record<string, unknown>;
+  jobProfile: Record<string, unknown>;
+  embeddingProvider: string | null;
+  embeddingVersion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+export type JobCandidateMatch = {
+  id: string;
+  tenantId: string;
+  matchingRunId: string;
+  jobPostingId: string;
+  candidateId: string;
+  sourceTenantId: string | null;
+  rank: number;
+  semanticScore: number;
+  aiScore: number;
+  finalScore: number;
+  matchedSkills: string[];
+  missingSkills: string[];
+  seniorityAlignment: "Exact Match" | "Partial Match" | "Mismatch";
+  experienceSummary: string;
+  matchExplanation: string;
+  scoringBreakdown: Record<string, unknown>;
+  hardFilterPayload: Record<string, unknown>;
+  candidateSnapshot: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type JobMatchingRunDetail = {
+  run: JobMatchingRun;
+  results: JobCandidateMatch[];
+};
+
+export type JobShortlist = {
+  id: string;
+  tenantId: string;
+  jobPostingId: string;
+  matchingRunId: string | null;
+  name: string;
+  description: string;
+  ownerUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type JobShortlistCandidate = {
+  id: string;
+  tenantId: string;
+  shortlistId: string;
+  candidateId: string;
+  sourceTenantId: string | null;
+  savedRank: number;
+  savedScore: number;
+  savedResultPayload: Record<string, unknown>;
+  addedByUserId: string | null;
+  createdAt: string;
+};
+
+export type JobShortlistDetail = {
+  shortlist: JobShortlist;
+  candidates: JobShortlistCandidate[];
+};
+
+export type JobApplicationStatus = "new" | "reviewing" | "shortlisted" | "rejected" | "withdrawn";
+export type ResumeIngestionStatus = "not_uploaded" | "queued" | "parsing" | "parsed" | "failed";
+
+export type JobApplication = {
+  id: string;
+  tenantId: string;
+  jobPostingId: string;
+  candidateId: string | null;
+  sourceTenantId: string | null;
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone: string | null;
+  applicantLocation: string | null;
+  linkedinUrl: string | null;
+  portfolioUrl: string | null;
+  resumeStoragePath: string | null;
+  resumeSourceDocumentId: string | null;
+  resumeOriginalFilename: string | null;
+  resumeIngestionStatus: ResumeIngestionStatus;
+  resumeIngestionError: string | null;
+  candidateHubVisibility: "platform" | "tenant" | "private";
+  coverNote: string;
+  consentGiven: boolean;
+  status: JobApplicationStatus;
+  source: string;
+  submittedAt: string;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicJobPosting = {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  description: string;
+  location: string;
+  remotePolicy: string;
+  seniorityLevel: string;
+  employmentType: string;
+  requiredSkills: string[];
+  preferredSkills: string[];
+  keyResponsibilities: string[];
+  applicationDeadline: string | null;
+  applyEnabled: boolean;
+  publishedAt: string | null;
+};
+
+export type PublicJobApplicationInput = {
+  name: string;
+  email: string;
+  phone?: string;
+  location?: string;
+  currentTitle?: string;
+  yearsExperience?: number;
+  seniority?: string;
+  topSkills?: string[];
+  linkedinUrl?: string;
+  portfolioUrl?: string;
+  resumeOriginalFilename?: string;
+  resumeFile?: {
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    base64: string;
+  };
+  coverNote?: string;
+  consent: boolean;
+  idempotencyKey?: string;
+};
+
+export type PublicJobApplicationReceipt = {
+  accepted: boolean;
+  duplicate?: boolean;
+  applicationId?: string;
+  submittedAt?: string;
+};
+
+export type JobShortlistInput = {
+  jobId: string;
+  runId?: string | null;
+  name: string;
+  description?: string;
+  candidateIds?: string[];
 };
 
 export type SearchDebugFilters = {
