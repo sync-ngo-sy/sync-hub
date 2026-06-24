@@ -645,11 +645,6 @@ export function CandidateDossierPage() {
         </div>
       </Panel>
 
-
-
-      {(candidate.syncAffiliation ||
-        candidate.isPreScreened ||
-        candidate.internalVettingNotes) && (
         <Panel className="table-card">
 
           <div className="stack">
@@ -658,18 +653,13 @@ export function CandidateDossierPage() {
               SYNC profile
             </h3>
 
-
             <div className="skill-list">
 
               {candidate.syncAffiliation && (
-                <Tag tone="primary">
-                  {candidate.syncAffiliation.replace(
-                    "_",
-                    " "
-                  )}
-                </Tag>
+             <Tag>
+            {candidate.syncAffiliation ?? "Not provided"}
+              </Tag>
               )}
-
 
               {candidate.isPreScreened && (
                 <Tag tone="success">
@@ -689,9 +679,6 @@ export function CandidateDossierPage() {
           </div>
 
         </Panel>
-      )}
-
-
 
       <Panel className="table-card">
 
@@ -784,13 +771,13 @@ export function CandidateDossierPage() {
 
         {candidate.externalProfiles.linkedin && (
           <a
-            className="tag"
-            href={candidate.externalProfiles.linkedin}
-            target="_blank"
-          >
-            rel="noreferrer noopener"
-            LinkedIn
-          </a>
+  className="tag"
+  href={candidate.externalProfiles.linkedin}
+  target="_blank"
+  rel="noreferrer noopener"
+>
+  LinkedIn
+</a>
         )}
 
         {candidate.externalProfiles.github && (
@@ -798,8 +785,8 @@ export function CandidateDossierPage() {
             className="tag"
             href={candidate.externalProfiles.github}
             target="_blank"
-          >
             rel="noreferrer noopener"
+            >
             GitHub
           </a>
         )}
@@ -809,8 +796,8 @@ export function CandidateDossierPage() {
             className="tag"
             href={candidate.externalProfiles.portfolio}
             target="_blank"
-          >
             rel="noreferrer noopener"
+            >
             Portfolio
           </a>
         )}
