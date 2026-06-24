@@ -627,35 +627,16 @@ export function CandidateDossierPage() {
 
 
           <div className="skill-list">
-
-            {candidate.jobReadinessLevel && (
-              <Tag tone="success">
-                Readiness:{" "}
-                {candidate.jobReadinessLevel}
-              </Tag>
-            )}
-
+{candidate.jobReadinessLevel && (
+  <Tag>
+    Level: {candidate.jobReadinessLevel}
+  </Tag>
+)}
 
             {candidate.status && (
               <Tag>
                 Status:{" "}
                 {candidate.status}
-              </Tag>
-            )}
-
-
-            {candidate.preferredWorkMode && (
-              <Tag>
-                Work mode:{" "}
-                {candidate.preferredWorkMode}
-              </Tag>
-            )}
-
-
-            {candidate.englishProficiency && (
-              <Tag>
-                English:{" "}
-                {candidate.englishProficiency}
               </Tag>
             )}
 
@@ -723,6 +704,18 @@ export function CandidateDossierPage() {
 
           <div className="meta-list">
 
+            {candidate.currentLocationCity && (
+  <div>
+    Location: {candidate.currentLocationCity}
+  </div>
+)}
+
+{candidate.englishProficiency && (
+  <div>
+    English: {candidate.englishProficiency}
+  </div>
+)}
+
             {candidate.willingnessToRelocate !==
               undefined && (
               <span className="tag">
@@ -766,27 +759,11 @@ export function CandidateDossierPage() {
 
     <div className="meta-list">
 
-      {candidate.employmentTypePreference?.length > 0 && (
-        <span className="tag">
-          Employment:
-          {" "}
-          {candidate.employmentTypePreference.join(", ")}
-        </span>
-      )}
-
       {candidate.preferredWorkMode && (
         <span className="tag">
           Mode:
           {" "}
           {candidate.preferredWorkMode}
-        </span>
-      )}
-
-      {candidate.currentLocationCity && (
-        <span className="tag">
-          Location:
-          {" "}
-          {candidate.currentLocationCity}
         </span>
       )}
 

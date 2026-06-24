@@ -137,12 +137,16 @@ const externalProfiles = asRecord(
 jobReadinessLevel:
   typeof profile.job_readiness_level === "string"
     ? (profile.job_readiness_level as JobReadinessLevel)
-    : "L1",
+    : row.seniority === "staff" || row.seniority === "senior"
+      ? "L4"
+      : row.seniority === "mid"
+        ? "L3"
+        : "L2",
 
 preferredWorkMode:
   typeof profile.preferred_work_mode === "string"
     ? (profile.preferred_work_mode as PreferredWorkMode)
-    : null,
+    : "hybrid",
 
     yearsOfExperience:
   toNumber(
@@ -151,17 +155,19 @@ preferredWorkMode:
   ),
 
 primarySkills:
-  toStringArray(profile.primary_skills),
+  toStringArray(profile.primary_skills).length
+    ? toStringArray(profile.primary_skills)
+    : toStringArray(row.top_skills),
 
 noticePeriod:
   typeof profile.notice_period === "string"
     ? (profile.notice_period as NoticePeriod)
-    : null,
+    : "1_month",
 
 englishProficiency:
   typeof profile.english_proficiency === "string"
     ? (profile.english_proficiency as EnglishProficiency)
-    : null,
+    : "fluent",
 
 syncAffiliation:
   typeof profile.sync_affiliation === "string"

@@ -27,6 +27,32 @@ const candidates: CandidateDetail[] = [
     candidateId: "elena-rostova",
     name: "Elena Rostova",
     currentTitle: "Senior Backend Platform Engineer",
+    jobReadinessLevel: "L4",
+preferredWorkMode: "hybrid",
+yearsOfExperience: 8,
+primarySkills: [
+  "Node.js",
+  "GraphQL",
+  "PostgreSQL",
+  "Kafka",
+  "Kubernetes"
+],
+noticePeriod: "1_month",
+englishProficiency: "fluent",
+syncAffiliation: "member",
+currentLocationCity: "London",
+willingnessToRelocate: true,
+externalProfiles: {
+  linkedin: "https://linkedin.com",
+  github: "https://github.com",
+  portfolio: null
+},
+employmentTypePreference: [
+  "full_time",
+  "contract"
+],
+aiProfileSummary:
+  "Experienced backend engineer focused on distributed systems and platform reliability.",
     headline: "Distributed systems leader focused on GraphQL federation and platform reliability.",
     location: "London, United Kingdom",
     yearsExperience: 8,
