@@ -185,8 +185,8 @@ jobReadinessLevel:
         : "L2",
 
 preferredWorkMode:
-  typeof profile.preferred_work_mode === "string"
-    ? (profile.preferred_work_mode as PreferredWorkMode)
+  typeof normalizedProfile.preferred_work_mode === "string"
+    ? (normalizedProfile.preferred_work_mode as PreferredWorkMode)
     : "hybrid",
 
     yearsOfExperience:
@@ -201,17 +201,17 @@ primarySkills:
     : toStringArray(row.top_skills),
 
 noticePeriod:
-  typeof profile.notice_period === "string"
-    ? (profile.notice_period as NoticePeriod)
+  typeof normalizedProfile.notice_period === "string"
+    ? (normalizedProfile.notice_period as NoticePeriod)
     : "1_month",
 
 englishProficiency:
-  typeof profile.english_proficiency === "string"
+  typeof normalizedProfile.english_proficiency === "string"
     ? (profile.english_proficiency as EnglishProficiency)
     : "fluent",
 
 syncAffiliation:
-  typeof profile.sync_affiliation === "string"
+  typeof normalizedProfile.sync_affiliation === "string"
     ? (profile.sync_affiliation as SyncAffiliation)
     : null,
 
@@ -226,9 +226,10 @@ currentLocationCity:
     : row.location ?? null,
 
 willingnessToRelocate:
- typeof profile.willingness_to_relocate === "boolean"
- ? profile.willingness_to_relocate
+ typeof normalizedProfile.willingness_to_relocate === "boolean"
+ ? normalizedProfile.willingness_to_relocate
  : undefined,
+ 
 externalProfiles:
   Object.keys(externalProfiles).length
     ? {
