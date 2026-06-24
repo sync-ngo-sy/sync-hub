@@ -758,8 +758,89 @@ export function CandidateDossierPage() {
         </div>
 
       </Panel>
+            <Panel className="table-card">
+  <div className="stack">
+    <h3>
+      Candidate preferences
+    </h3>
 
+    <div className="meta-list">
 
+      {candidate.employmentTypePreference?.length > 0 && (
+        <span className="tag">
+          Employment:
+          {" "}
+          {candidate.employmentTypePreference.join(", ")}
+        </span>
+      )}
+
+      {candidate.preferredWorkMode && (
+        <span className="tag">
+          Mode:
+          {" "}
+          {candidate.preferredWorkMode}
+        </span>
+      )}
+
+      {candidate.currentLocationCity && (
+        <span className="tag">
+          Location:
+          {" "}
+          {candidate.currentLocationCity}
+        </span>
+      )}
+
+    </div>
+  </div>
+</Panel>
+
+{candidate.externalProfiles && (
+  <Panel className="table-card">
+
+    <div className="stack">
+
+      <h3>
+        External profiles
+      </h3>
+
+      <div className="meta-list">
+
+        {candidate.externalProfiles.linkedin && (
+          <a
+            className="tag"
+            href={candidate.externalProfiles.linkedin}
+            target="_blank"
+          >
+            LinkedIn
+          </a>
+        )}
+
+        {candidate.externalProfiles.github && (
+          <a
+            className="tag"
+            href={candidate.externalProfiles.github}
+            target="_blank"
+          >
+            GitHub
+          </a>
+        )}
+
+        {candidate.externalProfiles.portfolio && (
+          <a
+            className="tag"
+            href={candidate.externalProfiles.portfolio}
+            target="_blank"
+          >
+            Portfolio
+          </a>
+        )}
+
+      </div>
+
+    </div>
+
+  </Panel>
+)}
 
 
       <div className="detail-grid">
