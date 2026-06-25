@@ -164,7 +164,18 @@ export function mapRemoteJobMatchingRun(row: unknown): JobMatchingRun {
 
 function mapRemoteJobCandidateMatch(row: unknown): JobCandidateMatch {
   const record = asRecord(row);
-  const alignment = String(record.seniority_alignment ?? record.seniorityAlignment);
+
+    const seniorityAlignment =
+    record.seniority_alignment === "Exact Match" ||
+    record.seniority_alignment === "Partial Match" ||
+    record.seniority_alignment === "Mismatch"
+      ? record.seniority_alignment
+      : record.seniorityAlignment === "Exact Match" ||
+        record.seniorityAlignment === "Partial Match" ||
+        record.seniorityAlignment === "Mismatch"
+      ? record.seniorityAlignment
+      : "Mismatch";
+
   return {
     id: String(record.id ?? ""),
     tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
@@ -178,7 +189,7 @@ function mapRemoteJobCandidateMatch(row: unknown): JobCandidateMatch {
     finalScore: toNumber(record.final_score ?? record.finalScore),
     matchedSkills: toStringArray(record.matched_skills ?? record.matchedSkills),
     missingSkills: toStringArray(record.missing_skills ?? record.missingSkills),
-    seniorityAlignment: alignment === "Exact Match" || alignment === "Partial Match" ? alignment : "Mismatch",
+    seniorityAlignment,
     experienceSummary: String(record.experience_summary ?? record.experienceSummary ?? ""),
     matchExplanation: String(record.match_explanation ?? record.matchExplanation ?? ""),
     scoringBreakdown: asRecord(record.scoring_breakdown ?? record.scoringBreakdown),

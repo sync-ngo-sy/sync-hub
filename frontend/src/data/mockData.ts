@@ -23,9 +23,36 @@ import type {
 
 const candidates: CandidateDetail[] = [
   {
+
     candidateId: "elena-rostova",
     name: "Elena Rostova",
     currentTitle: "Senior Backend Platform Engineer",
+    jobReadinessLevel: "L4",
+preferredWorkMode: "hybrid",
+yearsOfExperience: 8,
+primarySkills: [
+  "Node.js",
+  "GraphQL",
+  "PostgreSQL",
+  "Kafka",
+  "Kubernetes"
+],
+noticePeriod: "1_month",
+englishProficiency: "fluent",
+syncAffiliation: "member",
+currentLocationCity: "London",
+willingnessToRelocate: true,
+externalProfiles: {
+  linkedin: "https://linkedin.com",
+  github: "https://github.com",
+  portfolio: null
+},
+employmentTypePreference: [
+  "full_time",
+  "contract"
+],
+aiProfileSummary:
+  "Experienced backend engineer focused on distributed systems and platform reliability.",
     headline: "Distributed systems leader focused on GraphQL federation and platform reliability.",
     location: "London, United Kingdom",
     yearsExperience: 8,
@@ -206,9 +233,11 @@ const candidates: CandidateDetail[] = [
         excerpt: "Built cross-region synchronization jobs and change-data capture workers for customer profile data.",
         relevance: 0.88,
       },
+
     ],
     cvPreview: ["Executive summary", "Backend architecture experience", "Migration programs", "Core technology stack"],
   },
+
   {
     candidateId: "layla-haddad",
     name: "Layla Haddad",
@@ -349,7 +378,7 @@ export const insightsDashboardSnapshot: InsightsDashboardSnapshot = {
     { label: "junior", value: 506 },
     { label: "senior", value: 384 },
     { label: "unclassified", value: 186 },
-    { label: "staff-plus", value: 45 },
+    { label: "staff", value: 45 },
   ],
   profilesByLocation: [
     { label: "Damascus, Syria", value: 1021 },
@@ -927,7 +956,9 @@ function seniorityRank(value: string | null | undefined) {
     case "senior":
     case "mid-senior":
       return 3;
+    case "staff":
     case "staff-plus":
+    case "lead":
       return 4;
     default:
       return 0;
