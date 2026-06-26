@@ -50,260 +50,504 @@ export function buildCandidateCvUrl(sourceUri?: string | null) {
   return isBrowserOpenableSource(sourceUri) ? sourceUri ?? null : null;
 }
 
-export function mapRemoteCandidate(row: CandidateDossierRow, chunks: CandidateChunkRow[]): CandidateDetail {
-  const profile = {
-  ...asRecord(row.profile_json),
-  ...asRecord((row as CandidateDossierRow & { metadata?: unknown }).metadata),
-};
+export function mapRemoteCandidate(
+  row: CandidateDossierRow,
+  chunks: CandidateChunkRow[],
+): CandidateDetail {
 
-console.log("CANDIDATE PROFILE", row.name, profile);
+  const profile = {
+    ...asRecord(row.profile_json),
+    ...asRecord((row as CandidateDossierRow & { metadata?: unknown }).metadata),
+  };
+
   const fallbackSkills = toStringArray(row.top_skills);
 
-const normalizedProfile = {
-  status:
-    typeof profile.status === "string"
-      ? profile.status
-      : "active",
+  const normalizeWorkMode = (
+    value?: unknown,
+  ): PreferredWorkMode => {
+    if (typeof value !== "string") {
+      return "hybrid";
+    }
 
-  job_readiness_level:
-  profile.job_readiness_level ??
-  profile.jobReadinessLevel ??
-  (
-    row.seniority === "staff" ||
-    row.seniority === "senior"
-      ? "L4"
-      : row.seniority === "mid"
-        ? "L3"
-        : "L2"
-  ),
+    const mode = value.toLowerCase();
 
-  preferred_work_mode:
-    profile.preferred_work_mode ??
-    profile.preferredWorkMode ??
-    "hybrid",
+    if (mode === "remote") return "remote";
+    if (mode === "onsite") return "onsite";
 
-  primary_skills:
-    profile.primary_skills ??
-    fallbackSkills,
+    return "hybrid";
+  };
 
-  notice_period:
-    profile.notice_period ??
-    "2_weeks",
 
-  english_proficiency:
-    profile.english_proficiency ??
-    "fluent",
-
-  sync_affiliation:
-    profile.sync_affiliation ??
-    "member",
-
-  willingness_to_relocate:
-    profile.willingness_to_relocate ??
-    false,
-};
   const expectedSalary = asRecord(
-  profile.expected_salary,
-);
+    profile.expected_salary,
+  );
 
 
-const externalProfiles = asRecord(
-  profile.external_profiles,
-);
-  const cvUrl = buildCandidateCvUrl(row.source_uri);
-  const timeline = asArray(row.timeline_json).map((entry) => {
+  const externalProfiles = asRecord(
+    profile.external_profiles,
+  );
+
+
+  const cvUrl = buildCandidateCvUrl(
+    row.source_uri,
+  );
+
+
+  const timeline = asArray(
+    row.timeline_json,
+  ).map((entry) => {
+
     const record = asRecord(entry);
-    const description = String(record.description ?? "");
+
+    const description =
+      String(record.description ?? "");
+
 
     return {
-      employer: String(record.company ?? "Unknown company"),
-      role: String(record.title ?? "Role not parsed"),
-      start: String(record.start_date ?? "Unknown"),
-      end: String(record.end_date ?? "Present"),
-      scope: description,
-      highlights: description
-        .split(/[.;]\s+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 3),
+      employer:
+        String(record.company ?? "Unknown company"),
+
+      role:
+        String(record.title ?? "Role not parsed"),
+
+      start:
+        String(record.start_date ?? "Unknown"),
+
+      end:
+        String(record.end_date ?? "Present"),
+
+      scope:
+        description,
+
+      highlights:
+        description
+          .split(/[.;]\s+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .slice(0, 3),
     };
   });
 
-  const projects = asArray(profile.projects)
+
+  const projects = asArray(
+    profile.projects,
+  )
     .map((entry) => {
+
       const record = asRecord(entry);
-      const projectName = String(record.name ?? "").trim();
-      const description = String(record.description ?? "").trim();
-      return projectName && description ? `${projectName}: ${description}` : projectName || description;
+
+      const name =
+        String(record.name ?? "").trim();
+
+      const description =
+        String(record.description ?? "").trim();
+
+
+      return name && description
+        ? `${name}: ${description}`
+        : name || description;
+
     })
     .filter(Boolean);
 
-  const education = asArray(profile.education)
+
+
+  const education = asArray(
+    profile.education,
+  )
     .map((entry) => {
+
       const record = asRecord(entry);
-      return [String(record.degree ?? "").trim(), String(record.field ?? "").trim(), String(record.institution ?? "").trim()]
-        .filter(Boolean)
-        .join(" · ");
+
+      return [
+        String(record.degree ?? "").trim(),
+        String(record.field ?? "").trim(),
+        String(record.institution ?? "").trim(),
+
+      ]
+      .filter(Boolean)
+      .join(" · ");
+
     })
     .filter(Boolean);
+
+
 
   return {
+
     candidateId: row.candidate_id,
+
     name: row.name,
-    currentTitle: row.current_title ?? "Candidate",
-    headline: row.headline ?? row.short_summary ?? row.summary_short ?? row.current_title ?? "Candidate",
-    location: row.location ?? "Unknown",
-    yearsExperience: toNumber(row.years_experience),
-    seniority: row.seniority ?? "unknown",
-    primaryRole: row.primary_role ?? "generalist",
-    topSkills: toStringArray(row.top_skills),
-    matchScore: 0,
-    backendMatchRate: 0,
-    backendScoreRaw: 0,
-    matchSignals: {
-      semantic: 0,
-      skill: Math.min(1, Math.max(0.3, toStringArray(row.top_skills).length / 10)),
-      experience: Math.min(1, toNumber(row.years_experience) / 10),
-    },
-    shortSummary: row.short_summary ?? row.summary_short ?? "",
-    strengths: toStringArray(row.strengths),
-    risks: toStringArray(row.risks),
-    recommendedRoles: toStringArray(row.recommended_roles),
-    stage: "Indexed",
-    avatarHue: hueFromId(row.candidate_id),
-    matchNarrative: row.short_summary ?? row.summary_short ?? "Grounded dossier view from candidate_dossier_v1.",
-    longSummary: row.long_summary ?? row.short_summary ?? row.summary_short ?? "",
-    email: row.email,
-    phone: row.phone,
-    originalFilename: row.original_filename,
-    sourceUri: row.source_uri,
-    storagePath: row.storage_path,
-    cvUrl,
-    manatalCandidateId: row.manatal_candidate_id ?? null,
-jobReadinessLevel:
-  typeof normalizedProfile.job_readiness_level === "string"
-    ? (normalizedProfile.job_readiness_level as JobReadinessLevel)
-    : row.seniority === "staff" || row.seniority === "senior"
-      ? "L4"
-      : row.seniority === "mid"
-        ? "L3"
-        : "L2",
 
-preferredWorkMode:
-  typeof normalizedProfile.preferred_work_mode === "string"
-    ? (normalizedProfile.preferred_work_mode as PreferredWorkMode)
-    : "hybrid",
+    currentTitle:
+      row.current_title ?? "Candidate",
 
-    yearsOfExperience:
+
+    headline:
+      row.headline ??
+      row.short_summary ??
+      row.summary_short ??
+      row.current_title ??
+      "Candidate",
+
+
+    location:
+      row.location ?? "Unknown",
+
+
+   yearsExperience:
   toNumber(
     profile.years_of_experience,
-    row.years_experience ?? undefined,
+    row.years_experience ?? 0,
   ),
 
-primarySkills:
-  toStringArray(profile.primary_skills).length
-    ? toStringArray(profile.primary_skills)
-    : toStringArray(row.top_skills),
 
-noticePeriod:
-  typeof normalizedProfile.notice_period === "string"
-    ? (normalizedProfile.notice_period as NoticePeriod)
-    : "1_month",
+    seniority:
+      row.seniority ?? "unknown",
 
-englishProficiency:
-  typeof normalizedProfile.english_proficiency === "string"
-    ? (normalizedProfile.english_proficiency as EnglishProficiency)
-    : "fluent",
 
-syncAffiliation:
-  typeof normalizedProfile.sync_affiliation === "string"
-    ? (normalizedProfile.sync_affiliation as SyncAffiliation)
-    : null,
+    primaryRole:
+      row.primary_role ?? "generalist",
 
-internalVettingNotes:
-  typeof profile.internal_vetting_notes === "string"
-    ? profile.internal_vetting_notes
-    : null,
 
-currentLocationCity:
-  typeof profile.current_location_city === "string"
-    ? profile.current_location_city
-    : row.location ?? null,
+    topSkills:
+      fallbackSkills,
 
-willingnessToRelocate:
- typeof normalizedProfile.willingness_to_relocate === "boolean"
- ? normalizedProfile.willingness_to_relocate
- : undefined,
-externalProfiles:
-  Object.keys(externalProfiles).length
-    ? {
-        linkedin:
-          externalProfiles.linkedin
-            ? String(
-                externalProfiles.linkedin,
-              )
-            : null,
 
-        github:
-          externalProfiles.github
-            ? String(
-                externalProfiles.github,
-              )
-            : null,
+    matchScore: 0,
 
-        portfolio:
-          externalProfiles.portfolio
-            ? String(
-                externalProfiles.portfolio,
-              )
-            : null,
-      }
-    : null,
-aiProfileSummary:
-  profile.ai_profile_summary
-    ? String(profile.ai_profile_summary)
-    : null,
+    backendMatchRate: 0,
 
-employmentTypePreference:
-  toStringArray(
-    profile.employment_type_preference,
-  ) as EmploymentType[],
+    backendScoreRaw: 0,
 
-lastInteractionDate:
-  typeof profile.last_interaction_date === "string"
-    ? profile.last_interaction_date
-    : null,
 
-   expectedSalary:
-{
- amount: toNumber(expectedSalary.amount,0),
- currency:
- typeof expectedSalary.currency === "string"
- ? expectedSalary.currency
- : "USD",
-},
-    links: toStringArray(row.links),
-    education,
-    certifications: toStringArray(profile.certifications),
-    languages: toStringArray(profile.languages),
-    projects,
-    timeline,
-    evidence: chunks.map((chunk, index) =>
-      mapEvidenceSnippet(
-        {
-          id: chunk.id,
-          chunk_type: chunk.chunk_type,
-          text: chunk.text,
-          relevance: Math.max(0.4, 0.95 - index * 0.08),
-        },
-        index,
+    matchSignals: {
+
+      semantic: 0,
+
+      skill:
+        Math.min(
+          1,
+          Math.max(
+            0.3,
+            fallbackSkills.length / 10,
+          ),
+        ),
+
+      experience:
+        Math.min(
+          1,
+          toNumber(row.years_experience) / 10,
+        ),
+
+    },
+
+
+    shortSummary:
+      row.short_summary ??
+      row.summary_short ??
+      "",
+
+
+    strengths:
+      toStringArray(row.strengths),
+
+
+    risks:
+      toStringArray(row.risks),
+
+
+    recommendedRoles:
+      toStringArray(row.recommended_roles),
+
+
+    stage:
+      "Indexed",
+
+
+    avatarHue:
+      hueFromId(row.candidate_id),
+
+
+    matchNarrative:
+      row.short_summary ??
+      row.summary_short ??
+      "Grounded dossier view from candidate_dossier_v1.",
+
+
+    longSummary:
+      row.long_summary ??
+      row.short_summary ??
+      row.summary_short ??
+      "",
+
+
+
+    email:
+      row.email,
+
+    phone:
+      row.phone,
+
+
+    originalFilename:
+      row.original_filename,
+
+
+    sourceUri:
+      row.source_uri,
+
+
+    storagePath:
+      row.storage_path,
+
+
+    cvUrl,
+
+
+    manatalCandidateId:
+      row.manatal_candidate_id ?? null,
+
+
+
+    jobReadinessLevel:
+      typeof profile.job_readiness_level === "string"
+        ? profile.job_readiness_level as JobReadinessLevel
+        : row.seniority === "staff" ||
+          row.seniority === "senior"
+
+          ? "L4"
+
+          : row.seniority === "mid"
+
+            ? "L3"
+
+            : "L2",
+
+
+
+    preferredWorkMode:
+      normalizeWorkMode(
+        profile.preferred_work_mode ??
+        profile.preferredWorkMode,
       ),
-    ),
+
+
+
+    primarySkills:
+      toStringArray(
+        profile.primary_skills,
+      ).length
+        ? toStringArray(profile.primary_skills)
+        : fallbackSkills,
+
+
+
+    noticePeriod:
+
+      typeof profile.notice_period === "string"
+
+        ? profile.notice_period as NoticePeriod
+
+        : "2_weeks",
+
+
+
+    englishProficiency:
+
+      typeof profile.english_proficiency === "string"
+
+        ? profile.english_proficiency as EnglishProficiency
+
+        : "fluent",
+
+
+
+    syncAffiliation:
+
+      typeof profile.sync_affiliation === "string"
+
+        ? profile.sync_affiliation as SyncAffiliation
+
+        : null,
+
+
+
+    internalVettingNotes:
+
+      typeof profile.internal_vetting_notes === "string"
+
+        ? profile.internal_vetting_notes
+
+        : null,
+
+
+
+    currentLocationCity:
+
+      typeof profile.current_location_city === "string"
+
+        ? profile.current_location_city
+
+        : row.location ?? null,
+
+
+
+    willingnessToRelocate:
+
+      typeof profile.willingness_to_relocate === "boolean"
+
+        ? profile.willingness_to_relocate
+
+        : undefined,
+
+
+
+    externalProfiles:
+
+      Object.keys(externalProfiles).length
+
+        ? {
+
+          linkedin:
+            externalProfiles.linkedin
+              ? String(externalProfiles.linkedin)
+              : null,
+
+
+          github:
+            externalProfiles.github
+              ? String(externalProfiles.github)
+              : null,
+
+
+          portfolio:
+            externalProfiles.portfolio
+              ? String(externalProfiles.portfolio)
+              : null,
+
+        }
+
+        : null,
+
+
+
+    aiProfileSummary:
+
+      profile.ai_profile_summary
+
+        ? String(profile.ai_profile_summary)
+
+        : null,
+
+
+
+    employmentTypePreference:
+
+      toStringArray(
+        profile.employment_type_preference,
+      ) as EmploymentType[],
+
+
+
+    lastInteractionDate:
+
+      typeof profile.last_interaction_date === "string"
+
+        ? profile.last_interaction_date
+
+        : null,
+
+
+
+    expectedSalary: {
+
+      amount:
+        toNumber(expectedSalary.amount, 0),
+
+
+      currency:
+
+        typeof expectedSalary.currency === "string"
+
+          ? expectedSalary.currency
+
+          : "USD",
+
+    },
+
+
+    links:
+      toStringArray(row.links),
+
+
+    education,
+
+    certifications:
+      toStringArray(profile.certifications),
+
+
+    languages:
+      toStringArray(profile.languages),
+
+
+    projects,
+
+
+    timeline,
+
+
+    evidence:
+
+      chunks.map((chunk,index)=>
+
+        mapEvidenceSnippet(
+
+          {
+
+            id: chunk.id,
+
+            chunk_type:
+              chunk.chunk_type,
+
+            text:
+              chunk.text,
+
+            relevance:
+              Math.max(
+                0.4,
+                0.95 - index * 0.08,
+              ),
+
+          },
+
+          index,
+
+        )
+
+      ),
+
+
+
     cvPreview: [
-      row.original_filename ? `CV file: ${row.original_filename}` : "",
-      row.mime_type ? `MIME type: ${row.mime_type}` : "",
-      cvUrl ? `Drive link: ${cvUrl}` : "",
+
+      row.original_filename
+        ? `CV file: ${row.original_filename}`
+        : "",
+
+
+      row.mime_type
+        ? `MIME type: ${row.mime_type}`
+        : "",
+
+
+      cvUrl
+        ? `Drive link: ${cvUrl}`
+        : "",
+
+
     ].filter(Boolean),
+
   };
 }
 
