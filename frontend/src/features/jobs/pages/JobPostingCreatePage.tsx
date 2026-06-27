@@ -25,11 +25,8 @@ export function JobPostingCreatePage() {
   const initialForm = useMemo(() => emptyJobForm(tenantId), [tenantId]);
 
   return (
-    <div className="page-stack">
+    <div className="page-stack" style={{ width: "100%", maxWidth: "100%" }}>
       <PageIntro
-        eyebrow="New Job Posting"
-        title="Create Job Posting"
-        description="Paste the JD, extract structured requirements, review the fields, then save or publish."
         actions={
           <div className="job-page-actions">
             <PlatformScopeControl
@@ -50,7 +47,8 @@ export function JobPostingCreatePage() {
 
       {isAllScope ? <div className="status-banner">This posting will be created in the currently selected workspace.</div> : null}
 
-      <div className="job-form-page">
+      {/* Added inline styles to force full width and override any shifting margins */}
+      <div className="job-form-page" style={{ width: "100%", maxWidth: "100%", margin: 0 }}>
         <JobEditor initialForm={initialForm} onSaved={(job) => navigate(`/jobs/${job.id}`)} />
       </div>
     </div>

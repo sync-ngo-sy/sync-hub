@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
-import { PageIntro, Panel } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { InsightsGapTab } from "@/features/insights/components/InsightsGapTab";
 import { InsightsOverviewTab } from "@/features/insights/components/InsightsOverviewTab";
 import { InsightsSkillsTab } from "@/features/insights/components/InsightsSkillsTab";
@@ -151,7 +151,6 @@ export function InsightsDashboardPage() {
 
   return (
     <div className="page-stack insights-page">
-      <PageIntro />
 
       <InsightsTabs activeTab={activeTab} onSelectTab={selectTab} />
 

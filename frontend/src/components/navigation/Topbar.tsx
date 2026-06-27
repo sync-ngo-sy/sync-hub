@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 export function Topbar() {
   const location = useLocation();
   const active = routeChromeForPath(location.pathname);
-  const { enabled, signOut } = useAuth();
+  const { signOut } = useAuth(); // Removed 'enabled' since we don't need to check it anymore
 
   return (
     <header className="topbar">
@@ -18,12 +18,14 @@ export function Topbar() {
       </div>
 
       <div className="topbar__actions">
-        {enabled ? (
-          <button className="button button--secondary topbar__signout" onClick={() => void signOut()} type="button">
-            <LogOut size={14} />
-            Sign out
-          </button>
-        ) : null}
+        <button
+          className="button button--secondary topbar__signout"
+          onClick={() => void signOut()}
+          type="button"
+        >
+          <LogOut size={14} />
+          Sign out
+        </button>
       </div>
     </header>
   );

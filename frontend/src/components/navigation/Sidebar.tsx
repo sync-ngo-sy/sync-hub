@@ -307,7 +307,7 @@ export function Sidebar({open, onClose, collapsed, onToggleCollapsed}: SidebarPr
         <div className="shrink-0 p-6 border-t border-[#50c1b8]/10">
           <div className="flex items-center justify-center px-2 text-center">
             <span className="font-medium text-[#50c1b8] tracking-wider select-none text-xs block text-center">
-              SYNC
+              SYNC Hub
             </span>
           </div>
         </div>
