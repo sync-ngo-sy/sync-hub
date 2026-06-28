@@ -141,22 +141,37 @@ export function SearchDiscoveryPage() {
   const shortlistItems = shortlist.items;
   const hasExecutedSearch = request !== null;
   const sortedResults = useMemo(() => {
-    const results = response?.results ?? [];
+  const results = response?.results ?? [];
 
-    switch (sortBy) {
-      case "experience-desc":
-        return [...results].sort((left, right) => right.yearsExperience - left.yearsExperience || right.matchScore - left.matchScore);
-      case "experience-asc":
-        return [...results].sort((left, right) => left.yearsExperience - right.yearsExperience || right.matchScore - left.matchScore);
-      case "name-asc":
-        return [...results].sort((left, right) => left.name.localeCompare(right.name));
-      case "name-desc":
-        return [...results].sort((left, right) => right.name.localeCompare(left.name));
-      case "best-match":
-      default:
-        return results;
-    }
-  }, [response?.results, sortBy]);
+  switch (sortBy) {
+    case "experience-desc":
+      return [...results].sort(
+        (left, right) =>
+          (right.yearsExperience ?? 0) - (left.yearsExperience ?? 0) ||
+          right.matchScore - left.matchScore,
+      );
+
+    case "experience-asc":
+      return [...results].sort(
+        (left, right) =>
+          (left.yearsExperience ?? 0) - (right.yearsExperience ?? 0),
+      );
+
+    case "name-asc":
+  return [...results].sort(
+    (left, right) => left.name.localeCompare(right.name)
+  );
+
+    case "name-desc":
+      return [...results].sort((left, right) =>
+        right.name.localeCompare(left.name),
+      );
+
+    case "best-match":
+    default:
+      return results;
+  }
+}, [response?.results, sortBy]);
 
   useEffect(() => {
     setPreviewCandidate(null);
@@ -222,7 +237,7 @@ export function SearchDiscoveryPage() {
     }
 
     const explicitFilters: SearchFilters = {
-      seniority,
+      seniority: seniority as SearchFilters["seniority"],
       minYearsExperience: minYears,
       location,
       skills: selectedSkills,

@@ -47,6 +47,7 @@ export type SearchIntentFacetOptions = {
   skills: string[];
   companies: string[];
   locations: string[];
+  excludedCompanyTerms?: string[];
 };
 
 function nullableEnum(values: readonly string[], description: string) {
@@ -75,6 +76,85 @@ function normalizeFacetKey(value: string | null | undefined) {
     .trim();
 }
 
+function compactFacetKey(value: string | null | undefined) {
+  return normalizeFacetKey(value).replace(/\s+/g, "");
+}
+
+const GENERIC_COMPANY_EXCLUSION_TERMS = new Set([
+  "company",
+  "corp",
+  "corporation",
+  "group",
+  "holding",
+  "holdings",
+  "inc",
+  "limited",
+  "llc",
+  "ltd",
+  "mobile",
+  "telecom",
+  "technology",
+  "technologies",
+]);
+
+function isUsefulCompanyExclusionTerm(value: string | null | undefined) {
+  const compact = compactFacetKey(value);
+  return compact.length >= 4 && !GENERIC_COMPANY_EXCLUSION_TERMS.has(compact);
+}
+
+export function buildCompanyExclusionTerms(
+  values: Array<string | null | undefined>,
+) {
+  return Array.from(
+    new Set(
+      values
+        .map(compactFacetKey)
+        .filter(isUsefulCompanyExclusionTerm),
+    ),
+  );
+}
+
+function companyMatchesExcludedTerm(
+  company: string,
+  excludedTerms: string[],
+) {
+  const companyKey = compactFacetKey(company);
+  if (!companyKey || !excludedTerms.length) {
+    return false;
+  }
+
+  return excludedTerms.some((term) => companyKey.includes(term));
+}
+
+export function hasExcludedCompanyMatch(
+  companies: string[] | null | undefined,
+  excludedTerms: string[] | null | undefined,
+) {
+  const normalizedExcludedTerms = buildCompanyExclusionTerms(
+    excludedTerms ?? [],
+  );
+  return normalizeCompanies(companies).some((company) =>
+    companyMatchesExcludedTerm(company, normalizedExcludedTerms)
+  );
+}
+
+export function excludeCompanyMatches(
+  companies: string[] | null | undefined,
+  excludedTerms: string[] | null | undefined,
+) {
+  const normalizedCompanies = normalizeCompanies(companies);
+  const normalizedExcludedTerms = buildCompanyExclusionTerms(
+    excludedTerms ?? [],
+  );
+  if (!normalizedExcludedTerms.length) {
+    return normalizedCompanies;
+  }
+
+  return normalizedCompanies.filter(
+    (company) => !companyMatchesExcludedTerm(company, normalizedExcludedTerms),
+  );
+}
+
 function dedupe(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -88,7 +168,10 @@ function buildAllowedSkills(facets?: SearchIntentFacetOptions | null) {
 }
 
 function buildAllowedCompanies(facets?: SearchIntentFacetOptions | null) {
-  const allowedCompanies = normalizeCompanies(facets?.companies);
+  const allowedCompanies = excludeCompanyMatches(
+    facets?.companies,
+    facets?.excludedCompanyTerms,
+  );
   const allowedByKey = new Map(
     allowedCompanies.map(
       (company) => [normalizeFacetKey(company), company] as const,
@@ -134,7 +217,10 @@ function limitCompaniesToFacets(
   companies: string[] | null | undefined,
   facets?: SearchIntentFacetOptions | null,
 ) {
-  const normalizedCompanies = normalizeCompanies(companies);
+  const normalizedCompanies = excludeCompanyMatches(
+    companies,
+    facets?.excludedCompanyTerms,
+  );
   if (!facets) {
     return normalizedCompanies;
   }
@@ -167,6 +253,10 @@ export function buildSearchIntentConfig(
   facets?: SearchIntentFacetOptions | null,
 ) {
   const allowedLocations = buildAllowedLocations(facets).allowedLocations;
+  const allowedCompanies = buildAllowedCompanies(facets).allowedCompanies;
+  const excludedCompanyTerms = buildCompanyExclusionTerms(
+    facets?.excludedCompanyTerms ?? [],
+  );
 
   return {
     schemaName: "search_intent",
@@ -229,6 +319,7 @@ export function buildSearchIntentConfig(
       "Companies must be explicit employer/client/company filters only, such as candidates who worked at/for/with a named company.",
       "The backend validates extracted skills, companies, and locations against indexed DB facets after you respond.",
       "Use canonical common spelling for skills and companies; if a value is uncertain, omit it instead of inventing a new filter.",
+      "Never return company filters matching current workspace or tenant exclusion terms. If the query mentions the hiring workspace/tenant company, omit that company from companies.",
       "For location, use only the indexed locations provided in the user payload when there is a clear explicit location match.",
       "Never put technologies or tools in companies. Node.js, Express, React, React Native, JavaScript, TypeScript, REST, JSON, HTTP, Babel, Webpack, NPM, iOS, and Android are skills or platforms, not companies.",
       "For pasted job descriptions, extract the desired candidate profile from requirements and responsibilities, but do not treat the hiring company, product, business unit, or team name as a company filter unless the query asks for candidates who worked at or with that company.",
@@ -247,9 +338,10 @@ export function buildSearchIntentConfig(
       allowed_roles: SEARCH_ROLE_VALUES,
       allowed_seniority: SEARCH_SENIORITY_VALUES,
       allowed_locations: allowedLocations,
+      excluded_company_terms: excludedCompanyTerms,
       indexed_facet_counts: {
         skills: facets?.skills.length ?? 0,
-        companies: facets?.companies.length ?? 0,
+        companies: allowedCompanies.length,
         locations: allowedLocations.length,
       },
     }),

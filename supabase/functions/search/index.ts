@@ -8,7 +8,10 @@ import {
 } from "../_shared/ops.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
 import {
+  buildCompanyExclusionTerms,
   buildSearchIntentConfig,
+  excludeCompanyMatches,
+  hasExcludedCompanyMatch,
   resolveSearchFilters,
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
@@ -245,6 +248,28 @@ function dedupeSorted(values: string[]) {
   );
 }
 
+async function fetchTenantCompanyExclusionTerms(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+) {
+  if (!tenantIds.length) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("tenants")
+    .select("slug, name")
+    .in("id", tenantIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return buildCompanyExclusionTerms(
+    (data ?? []).flatMap((tenant) => [tenant.slug, tenant.name]),
+  );
+}
+
 async function fetchSearchIntentFacets(
   supabase: ReturnType<typeof createAuthedClient>,
   tenantIds: string[],
@@ -256,14 +281,10 @@ async function fetchSearchIntentFacets(
   }> = [];
 
   for (let offset = 0;; offset += SEARCH_REST_PAGE_SIZE) {
-    let request = supabase
+    const request = supabase
       .from("candidate_search_cache")
       .select("skills, companies, location")
       .range(offset, offset + SEARCH_REST_PAGE_SIZE - 1);
-
-    if (tenantIds.length) {
-      request = request.in("tenant_id", tenantIds);
-    }
 
     const { data, error } = await request;
     if (error) {
@@ -277,6 +298,11 @@ async function fetchSearchIntentFacets(
     }
   }
 
+  const excludedCompanyTerms = await fetchTenantCompanyExclusionTerms(
+    supabase,
+    tenantIds,
+  );
+
   return {
     skills: dedupeSorted(
       normalizeSkillList(rows.flatMap((row) => row.skills ?? [])),
@@ -289,6 +315,7 @@ async function fetchSearchIntentFacets(
         )
         .filter((location): location is string => Boolean(location)),
     ),
+    excludedCompanyTerms,
   };
 }
 
@@ -776,20 +803,15 @@ function fastProfileScore(
 
 async function fetchCandidateSearchRows(
   supabase: ReturnType<typeof createAuthedClient>,
-  tenantIds: string[],
 ) {
   const rows: CandidateSearchRow[] = [];
   for (let offset = 0;; offset += SEARCH_REST_PAGE_SIZE) {
-    let request = supabase
+    const request = supabase
       .from("candidate_search_cache")
       .select(
         "tenant_id, candidate_id, name, email, phone, headline, current_title, location, years_experience, seniority, primary_role, role_tags, skills, companies, summary_short, stored_short_summary",
       )
       .range(offset, offset + SEARCH_REST_PAGE_SIZE - 1);
-
-    if (tenantIds.length) {
-      request = request.in("tenant_id", tenantIds);
-    }
 
     const { data, error } = await request;
     if (error) {
@@ -884,15 +906,18 @@ async function runFastProfileSearch(
   query: string,
   filters: SearchIntentPayload,
   _explicitFilters: SearchIntentPayload,
-  tenantIds: string[],
+  excludedCompanyTerms: string[],
   limit: number,
   offset: number,
   rankVersion: string,
   queryEmbedding: number[] | null,
   embeddingVersion: string | null,
 ) {
-  const rows = await fetchCandidateSearchRows(supabase, tenantIds);
+  const rows = await fetchCandidateSearchRows(supabase);
   let scored = rows
+    .filter((row) =>
+      !hasExcludedCompanyMatch(row.companies, excludedCompanyTerms)
+    )
     .filter((row) => rowPassesExplicitFilters(row, filters))
     .map((row) => ({ row, score: fastProfileScore(row, query, filters) }))
     .filter((item) => item.score > 0)
@@ -911,7 +936,7 @@ async function runFastProfileSearch(
     if (candidateIds.length) {
       const { data, error } = await supabase.rpc("search_semantic_rerank_v1", {
         p_query_embedding: queryEmbedding,
-        p_tenant_ids: tenantIds.length ? tenantIds : null,
+        p_tenant_ids: null,
         p_candidate_ids: candidateIds,
         p_embedding_version: embeddingVersion,
         p_limit: Math.max(100, limit * 20),
@@ -1021,7 +1046,13 @@ Deno.serve(async (req) => {
     const intentFacetsPromise = fetchSearchIntentFacets(supabase, tenantIds);
     const llmIntentPromise = requiresIntentExtraction
       ? intentFacetsPromise.then((facets) =>
-        extractIntentWithLlm(query, requestFilters, facets)
+        extractIntentWithLlm(query, {
+          ...requestFilters,
+          companies: excludeCompanyMatches(
+            requestFilters.companies,
+            facets.excludedCompanyTerms,
+          ),
+        }, facets)
       )
       : Promise.resolve(null);
     const queryEmbeddingPromise = !useSemanticSearch
@@ -1066,15 +1097,23 @@ Deno.serve(async (req) => {
       intentSource = "llm";
     }
 
+    const scopedRequestFilters = {
+      ...requestFilters,
+      companies: excludeCompanyMatches(
+        requestFilters.companies,
+        intentFacets.excludedCompanyTerms,
+      ),
+    };
+
     const filters = resolveSearchFilters(
       query,
       {
-        role: requestFilters.role ?? null,
-        seniority: requestFilters.seniority ?? null,
-        min_years_experience: requestFilters.min_years_experience ?? null,
-        location: requestFilters.location ?? null,
-        skills: requestFilters.skills,
-        companies: requestFilters.companies,
+        role: scopedRequestFilters.role ?? null,
+        seniority: scopedRequestFilters.seniority ?? null,
+        min_years_experience: scopedRequestFilters.min_years_experience ?? null,
+        location: scopedRequestFilters.location ?? null,
+        skills: scopedRequestFilters.skills,
+        companies: scopedRequestFilters.companies,
       },
       llmIntent,
       intentFacets,
@@ -1093,8 +1132,8 @@ Deno.serve(async (req) => {
           supabase,
           query,
           filters,
-          requestFilters,
-          tenantIds,
+          scopedRequestFilters,
+          intentFacets.excludedCompanyTerms ?? [],
           limit,
           offset,
           rankVersion,
@@ -1113,7 +1152,7 @@ Deno.serve(async (req) => {
             rank_version: rankVersion,
             intent_source: intentSource,
             intent: filters,
-            explicit_filters: requestFilters,
+            explicit_filters: scopedRequestFilters,
             tenant_ids: tenantIds,
             embedding_provider: queryEmbeddingPayload.provider,
             embedding_version: queryEmbeddingPayload.embeddingVersion,
@@ -1143,13 +1182,13 @@ Deno.serve(async (req) => {
       p_skills: filters.skills ?? [],
       p_embedding_version: queryEmbeddingPayload.embeddingVersion,
       p_rank_version: rankVersion,
-      p_tenant_ids: tenantIds.length ? tenantIds : null,
-      p_filter_role: requestFilters.role ?? null,
-      p_filter_seniority: requestFilters.seniority ?? null,
-      p_filter_min_years: requestFilters.min_years_experience ?? null,
-      p_filter_skills: requestFilters.skills ?? [],
-      p_filter_companies: requestFilters.companies ?? [],
-      p_filter_location: requestFilters.location ?? null,
+      p_tenant_ids: null,
+      p_filter_role: scopedRequestFilters.role ?? null,
+      p_filter_seniority: scopedRequestFilters.seniority ?? null,
+      p_filter_min_years: scopedRequestFilters.min_years_experience ?? null,
+      p_filter_skills: scopedRequestFilters.skills ?? [],
+      p_filter_companies: scopedRequestFilters.companies ?? [],
+      p_filter_location: scopedRequestFilters.location ?? null,
     };
 
     let { data, error } = await supabase.rpc(
@@ -1173,7 +1212,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    const results = attachMatchRates(data ?? []);
+    const excludedCandidateIds = new Set(
+      (await fetchCandidateSearchRows(supabase))
+        .filter((row) =>
+          hasExcludedCompanyMatch(
+            row.companies,
+            intentFacets.excludedCompanyTerms,
+          )
+        )
+        .map((row) => row.candidate_id),
+    );
+    const eligibleData = ((data ?? []) as Array<Record<string, unknown>>)
+      .filter((row) =>
+        !excludedCandidateIds.has(String(row.candidate_id ?? ""))
+      );
+    const results = attachMatchRates(eligibleData);
 
     return await respond(
       200,
@@ -1185,7 +1238,7 @@ Deno.serve(async (req) => {
           rank_version: rankVersion,
           intent_source: intentSource,
           intent: filters,
-          explicit_filters: requestFilters,
+          explicit_filters: scopedRequestFilters,
           tenant_ids: tenantIds,
           embedding_provider: queryEmbeddingPayload.provider,
           embedding_version: queryEmbeddingPayload.embeddingVersion,

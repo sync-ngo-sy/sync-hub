@@ -18,6 +18,10 @@ import {
   normalizeSeniorityValue,
   normalizeSkillList,
 } from "../_shared/searchTaxonomy.ts";
+import {
+  buildCompanyExclusionTerms,
+  excludeCompanyMatches,
+} from "../_shared/searchIntent.ts";
 
 const SEARCH_PAGE_SIZE = 1000;
 const INSIGHTS_FALLBACK_MAX_ROWS = 20000;
@@ -460,7 +464,6 @@ function dedupeSorted(values: string[]) {
 
 async function fetchAllSearchCacheRows(
   supabase: ReturnType<typeof createAuthedClient>,
-  tenantIds: string[],
 ) {
   const rows: Array<{
     seniority: string | null;
@@ -470,14 +473,10 @@ async function fetchAllSearchCacheRows(
   }> = [];
 
   for (let offset = 0;; offset += SEARCH_PAGE_SIZE) {
-    let request = supabase
+    const request = supabase
       .from("candidate_search_cache")
       .select("seniority, skills, companies, location")
       .range(offset, offset + SEARCH_PAGE_SIZE - 1);
-
-    if (tenantIds.length) {
-      request = request.in("tenant_id", tenantIds);
-    }
 
     const { data, error } = await request;
     if (error) {
@@ -497,7 +496,25 @@ async function getSearchFilterOptions(
   supabase: ReturnType<typeof createAuthedClient>,
   tenantIds: string[],
 ) {
-  const rows = await fetchAllSearchCacheRows(supabase, tenantIds);
+  const [rows, tenantResult] = await Promise.all([
+    fetchAllSearchCacheRows(supabase),
+    tenantIds.length
+      ? supabase
+        .from("tenants")
+        .select("slug, name")
+        .in("id", tenantIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (tenantResult.error) {
+    throw tenantResult.error;
+  }
+  const excludedCompanyTerms = buildCompanyExclusionTerms(
+    (tenantResult.data ?? []).flatMap((tenant) => [
+      String(tenant.slug ?? ""),
+      String(tenant.name ?? ""),
+    ]),
+  );
+
   return {
     seniority: dedupeSorted(
       rows
@@ -507,7 +524,12 @@ async function getSearchFilterOptions(
     skills: dedupeSorted(
       normalizeSkillList(rows.flatMap((row) => row.skills ?? [])),
     ),
-    companies: dedupeSorted(rows.flatMap((row) => row.companies ?? [])),
+    companies: dedupeSorted(
+      excludeCompanyMatches(
+        rows.flatMap((row) => row.companies ?? []),
+        excludedCompanyTerms,
+      ),
+    ),
     locations: dedupeSorted(
       rows
         .map((row) => normalizeLocationValue(row.location))
@@ -1982,7 +2004,15 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
     throw platformAdminResult.error;
   }
 
-  const membershipRows = membershipResult.data ?? [];
+  type MembershipRow = {
+    tenant_id: string;
+    role: string;
+    status: string;
+  };
+
+  const membershipRows: MembershipRow[] =
+    (membershipResult.data as MembershipRow[]) ?? [];
+
   const isPlatformAdmin = Boolean(platformAdminResult.data?.user_id);
   if (!membershipRows.length && !isPlatformAdmin) {
     return { memberships: [], is_platform_admin: false };
@@ -2004,8 +2034,13 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
   if (tenantResult.error) {
     throw tenantResult.error;
   }
-
-  const tenantRows = tenantResult.data ?? [];
+  type TenantRow = {
+    id: string;
+    slug: string;
+    name: string;
+    icon_url: string | null;
+  };
+  const tenantRows: TenantRow[] = (tenantResult.data as TenantRow[]) ?? [];
   const tenantMap = new Map(tenantRows.map((tenant) => [tenant.id, tenant]));
   const memberships = membershipRows
     .map((membership) => {
