@@ -12,7 +12,7 @@ create table if not exists public.candidate_registration_drafts (
   parsed_profile_json jsonb not null default '{}'::jsonb,
   field_confidence_json jsonb not null default '{}'::jsonb,
   user_overrides_json jsonb not null default '{}'::jsonb,
-  parse_status text not null default 'pending' 
+  parse_status text not null default 'pending'
     check (parse_status in ('pending','parsing','completed','failed')),
   parse_error text,
   parse_started_at timestamptz,
@@ -43,11 +43,11 @@ create table if not exists public.candidate_skills_detailed (
   tenant_id uuid not null references public.tenants (id) on delete cascade,
   candidate_id uuid not null references public.candidates (id) on delete cascade,
   skill_name text not null,
-  proficiency_level text not null 
+  proficiency_level text not null
     check (proficiency_level in ('beginner','intermediate','advanced','expert')),
   years_of_experience numeric(4,1) not null default 0,
   last_used_year integer,
-  verification_status text not null default 'unverified' 
+  verification_status text not null default 'unverified'
     check (verification_status in ('unverified','ai_verified','self_declared','confirmed')),
   confidence integer not null default 0,
   created_at timestamptz not null default timezone('utc', now()),
