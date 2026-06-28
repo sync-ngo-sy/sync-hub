@@ -18,6 +18,7 @@ Offline-first CV search, ranking, and candidate analysis for recruiter workflows
 - [Clean code guidelines](docs/clean-code-guidelines.md): module boundaries and refactoring expectations.
 - [Development workflow](docs/development-workflow.md): branch, PR, protection, and dependency update conventions.
 - [Release process](docs/release-process.md): deploy order, smoke tests, and rollback guidance.
+- [cPanel deployment checklist](CPANEL_DEPLOYMENT_CHECKLIST.md): shared-hosting frontend upload and GitHub Actions FTPS deploy.
 - [Data retention](docs/data-retention.md): privacy rules for CVs, caches, and generated artifacts.
 
 ## Architecture
