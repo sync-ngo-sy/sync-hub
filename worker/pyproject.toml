@@ -8,6 +8,12 @@ version = "0.1.0"
 description = "Offline ingestion worker for the CV Intelligence Platform"
 requires-python = ">=3.9"
 readme = { text = "Offline ingestion worker for the CV Intelligence Platform.", content-type = "text/markdown" }
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "httpx",
+]
 
 [project.optional-dependencies]
 dev = [
