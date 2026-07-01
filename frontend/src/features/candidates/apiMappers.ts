@@ -128,9 +128,30 @@ export function mapRemoteCandidate(
 
   const expectedSalary = asRecord(profile.expected_salary);
 
-  const externalProfiles = asRecord(
-    profile.external_profiles ?? profile.externalProfiles ?? {},
-  );
+ const externalProfiles = asRecord(
+  profile.external_profiles ??
+    profile.externalProfiles ??
+    (row as CandidateDossierRow & {
+      external_profiles?: unknown;
+      externalProfiles?: unknown;
+      linkedin?: unknown;
+      github?: unknown;
+      portfolio?: unknown;
+    }).external_profiles ??
+    (row as CandidateDossierRow & {
+      externalProfiles?: unknown;
+    }).externalProfiles ??
+    {
+      linkedin:
+        (row as CandidateDossierRow & { linkedin?: unknown }).linkedin,
+
+      github:
+        (row as CandidateDossierRow & { github?: unknown }).github,
+
+      portfolio:
+        (row as CandidateDossierRow & { portfolio?: unknown }).portfolio,
+    },
+);
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
 
