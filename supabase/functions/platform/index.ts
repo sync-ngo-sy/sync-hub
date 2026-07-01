@@ -111,12 +111,12 @@ function asString(value: unknown) {
 function asStringArray(value: unknown) {
   return Array.isArray(value)
     ? Array.from(
-        new Set(
-          value
-            .map((item) => (typeof item === "string" ? item.trim() : ""))
-            .filter(Boolean),
-        ),
-      )
+      new Set(
+        value
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean),
+      ),
+    )
     : [];
 }
 
@@ -247,8 +247,8 @@ async function signRsaSha256(privateKey: string, value: string) {
 function getGcsBucketName() {
   return (
     asString(Deno.env.get("GCS_ORIGINALS_BUCKET")) ??
-    asString(Deno.env.get("CV_GCS_BUCKET")) ??
-    asString(Deno.env.get("CV_BUCKET_NAME"))
+      asString(Deno.env.get("CV_GCS_BUCKET")) ??
+      asString(Deno.env.get("CV_BUCKET_NAME"))
   );
 }
 
@@ -260,11 +260,11 @@ function getGcsCredentials() {
   const raw = rawJson
     ? normalizeSecretValue(rawJson)
     : rawJsonBase64
-      ? decodeBase64Secret(
-          rawJsonBase64,
-          "GCS_SIGNED_URL_SERVICE_ACCOUNT_JSON_BASE64",
-        )
-      : null;
+    ? decodeBase64Secret(
+      rawJsonBase64,
+      "GCS_SIGNED_URL_SERVICE_ACCOUNT_JSON_BASE64",
+    )
+    : null;
   if (!raw) {
     const clientEmail = asString(Deno.env.get("GCS_SIGNED_URL_CLIENT_EMAIL"));
     const privateKey = asString(Deno.env.get("GCS_SIGNED_URL_PRIVATE_KEY"));
@@ -274,13 +274,13 @@ function getGcsCredentials() {
     const normalizedPrivateKey = privateKey
       ? normalizePrivateKey(privateKey)
       : privateKeyBase64
-        ? normalizePrivateKey(
-            decodeBase64Secret(
-              privateKeyBase64,
-              "GCS_SIGNED_URL_PRIVATE_KEY_BASE64",
-            ),
-          )
-        : null;
+      ? normalizePrivateKey(
+        decodeBase64Secret(
+          privateKeyBase64,
+          "GCS_SIGNED_URL_PRIVATE_KEY_BASE64",
+        ),
+      )
+      : null;
     if (!clientEmail && !normalizedPrivateKey) {
       return null;
     }
@@ -379,9 +379,11 @@ async function createRemoteGcsSignedUrl(
   const payload = asRecord(await response.json().catch(() => ({})));
   if (!response.ok) {
     throw new Error(
-      `GCS signer service failed (${response.status}): ${describeError(
-        payload,
-      )}`,
+      `GCS signer service failed (${response.status}): ${
+        describeError(
+          payload,
+        )
+      }`,
     );
   }
 
@@ -450,14 +452,15 @@ async function createGcsSignedUrl(bucket: string, objectName: string) {
   ].join("\n");
   const signature = await signRsaSha256(credentials.private_key, stringToSign);
   return {
-    url: `https://${host}${canonicalUri}?${canonicalQueryString}&X-Goog-Signature=${signature}`,
+    url:
+      `https://${host}${canonicalUri}?${canonicalQueryString}&X-Goog-Signature=${signature}`,
     expiresAt: new Date(now.getTime() + expiresSeconds * 1000).toISOString(),
   };
 }
 
 function dedupeSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) =>
-    left.localeCompare(right),
+    left.localeCompare(right)
   );
 }
 
@@ -471,7 +474,7 @@ async function fetchAllSearchCacheRows(
     location: string | null;
   }> = [];
 
-  for (let offset = 0; ; offset += SEARCH_PAGE_SIZE) {
+  for (let offset = 0;; offset += SEARCH_PAGE_SIZE) {
     const request = supabase
       .from("candidate_search_cache")
       .select("seniority, skills, companies, location")
@@ -620,27 +623,48 @@ async function getManatalSyncStatus(
     lastFailureResult,
   ] = await Promise.all([
     countRows(supabase, "source_documents", tenantIds),
-    countRows(supabase, "source_documents", tenantIds, (query) =>
-      query.like("source_uri", "gs://%"),
+    countRows(
+      supabase,
+      "source_documents",
+      tenantIds,
+      (query) => query.like("source_uri", "gs://%"),
     ),
-    countRows(supabase, "source_documents", tenantIds, (query) =>
-      query.ilike("source_uri", "%drive.google.com%"),
+    countRows(
+      supabase,
+      "source_documents",
+      tenantIds,
+      (query) => query.ilike("source_uri", "%drive.google.com%"),
     ),
     countRows(supabase, "manatal_candidate_sync", tenantIds),
-    countRows(supabase, "manatal_candidate_sync", tenantIds, (query) =>
-      query.not("source_document_id", "is", null),
+    countRows(
+      supabase,
+      "manatal_candidate_sync",
+      tenantIds,
+      (query) => query.not("source_document_id", "is", null),
     ),
-    countRows(supabase, "manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "synced"),
+    countRows(
+      supabase,
+      "manatal_candidate_sync",
+      tenantIds,
+      (query) => query.eq("sync_status", "synced"),
     ),
-    countRows(supabase, "manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "pending"),
+    countRows(
+      supabase,
+      "manatal_candidate_sync",
+      tenantIds,
+      (query) => query.eq("sync_status", "pending"),
     ),
-    countRows(supabase, "manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "failed"),
+    countRows(
+      supabase,
+      "manatal_candidate_sync",
+      tenantIds,
+      (query) => query.eq("sync_status", "failed"),
     ),
-    countRows(supabase, "manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "skipped"),
+    countRows(
+      supabase,
+      "manatal_candidate_sync",
+      tenantIds,
+      (query) => query.eq("sync_status", "skipped"),
     ),
     (() => {
       let query = supabase
@@ -710,13 +734,13 @@ async function getManatalSyncStatus(
     lastSyncedAt: asString((lastSyncedResult.data ?? [])[0]?.last_synced_at),
     lastFailure: lastFailureRow
       ? {
-          manatalCandidateId: String(lastFailureRow.manatal_candidate_id ?? ""),
-          candidateName: String(
-            lastFailureRow.manatal_full_name ?? "Unknown candidate",
-          ),
-          errorMessage: String(lastFailureRow.error_message ?? ""),
-          updatedAt: asString(lastFailureRow.updated_at),
-        }
+        manatalCandidateId: String(lastFailureRow.manatal_candidate_id ?? ""),
+        candidateName: String(
+          lastFailureRow.manatal_full_name ?? "Unknown candidate",
+        ),
+        errorMessage: String(lastFailureRow.error_message ?? ""),
+        updatedAt: asString(lastFailureRow.updated_at),
+      }
       : null,
     recentRows: (recentResult.data ?? []).map(mapManatalStatusRow),
   };
@@ -892,24 +916,21 @@ async function getSystemHealth(
       name: "Edge Functions",
       status: statusForAlerts(edgeAlerts),
       latency: latencyMs ? `${latencyMs} ms p95` : "no samples",
-      detail:
-        edgeAlerts[0]?.message ??
+      detail: edgeAlerts[0]?.message ??
         `${recentEvents.length} recent requests, ${eventsWithFailures} server errors.`,
     },
     {
       name: "Search",
       status: statusForAlerts(searchAlerts),
       latency: latencyMs ? `${latencyMs} ms p95` : "no samples",
-      detail:
-        searchAlerts[0]?.message ??
+      detail: searchAlerts[0]?.message ??
         "Search alerts are clear from the Supabase health snapshot.",
     },
     {
       name: "Offline worker fleet",
       status: statusForAlerts(workerAlerts),
       latency: workerRows.length ? `${workerRows.length} registered` : "idle",
-      detail:
-        workerAlerts[0]?.message ??
+      detail: workerAlerts[0]?.message ??
         (workerRows.length
           ? "Active worker devices are sending heartbeats."
           : "No worker devices registered; worker monitoring is idle."),
@@ -917,25 +938,21 @@ async function getSystemHealth(
     {
       name: "Ingestion",
       status: statusForAlerts(ingestionAlerts),
-      latency:
-        ingestionAlerts[0]?.current_value !== null &&
-        ingestionAlerts[0]?.current_value !== undefined
-          ? `${ingestionAlerts[0].current_value}`
-          : "clear",
-      detail:
-        ingestionAlerts[0]?.message ??
+      latency: ingestionAlerts[0]?.current_value !== null &&
+          ingestionAlerts[0]?.current_value !== undefined
+        ? `${ingestionAlerts[0].current_value}`
+        : "clear",
+      detail: ingestionAlerts[0]?.message ??
         "No stuck or failing ingestion runs in the current alert window.",
     },
     {
       name: "Data quality",
       status: statusForAlerts(dataQualityAlerts),
-      latency:
-        dataQualityAlerts[0]?.current_value !== null &&
-        dataQualityAlerts[0]?.current_value !== undefined
-          ? `${dataQualityAlerts[0].current_value}%`
-          : "clear",
-      detail:
-        dataQualityAlerts[0]?.message ??
+      latency: dataQualityAlerts[0]?.current_value !== null &&
+          dataQualityAlerts[0]?.current_value !== undefined
+        ? `${dataQualityAlerts[0].current_value}%`
+        : "clear",
+      detail: dataQualityAlerts[0]?.message ??
         "Recent parsing quality is within configured thresholds.",
     },
     {
@@ -944,8 +961,7 @@ async function getSystemHealth(
       latency: capacityUsage
         ? `${Math.round(capacityUsage)}%`
         : "within limits",
-      detail:
-        capacityAlerts[0]?.message ??
+      detail: capacityAlerts[0]?.message ??
         "Database and storage capacity alerts are clear.",
     },
   ];
@@ -953,13 +969,11 @@ async function getSystemHealth(
   const workerFleet = workerRows.map((worker) => {
     const metadata = asRecord(worker.metadata_json);
     const metrics = asRecord(metadata.last_metrics);
-    const queueDepth =
-      asNumber(metrics.queue_depth) ??
+    const queueDepth = asNumber(metrics.queue_depth) ??
       asNumber(metrics.pending) ??
       asNumber(metrics.failures) ??
       0;
-    const throughput =
-      asNumber(metrics.documents_per_minute) ??
+    const throughput = asNumber(metrics.documents_per_minute) ??
       asNumber(metrics.processed_per_minute);
     return {
       name: worker.device_name,
@@ -986,17 +1000,15 @@ async function getSystemHealth(
     memory: Math.round(capacityUsage),
     services,
     workerFleet,
-    logs: alertLogs.length
-      ? alertLogs
-      : [
-          {
-            level: "ok",
-            message: "Supabase monitoring snapshot is clear.",
-            timestamp: new Date().toLocaleTimeString("en-US", {
-              hour12: false,
-            }),
-          },
-        ],
+    logs: alertLogs.length ? alertLogs : [
+      {
+        level: "ok",
+        message: "Supabase monitoring snapshot is clear.",
+        timestamp: new Date().toLocaleTimeString("en-US", {
+          hour12: false,
+        }),
+      },
+    ],
   };
 }
 
@@ -1437,7 +1449,7 @@ function aliasGroupForSkill(skill: string) {
   return INSIGHTS_SKILL_ALIAS_GROUPS.find((group) =>
     [group.skill, ...group.aliases].some(
       (alias) => normalizeInsightsText(alias) === key,
-    ),
+    )
   );
 }
 
@@ -1467,8 +1479,8 @@ function resolveFallbackGapSkills(
     const group = aliasGroupForSkill(skill);
     const label =
       catalogByNorm.get(normalizeInsightsText(group?.skill ?? skill)) ??
-      group?.skill ??
-      skill.trim();
+        group?.skill ??
+        skill.trim();
     const key = normalizeInsightsText(label);
     if (key && !seen.has(key)) {
       seen.add(key);
@@ -1481,7 +1493,7 @@ function resolveFallbackGapSkills(
       [group.skill, ...group.aliases].map((alias) => ({
         skill: group.skill,
         alias,
-      })),
+      }))
     ),
     ...skillCatalog.map((item) => ({ skill: item.skill, alias: item.skill })),
   ].sort(
@@ -1495,8 +1507,7 @@ function resolveFallbackGapSkills(
     if (!alias) {
       continue;
     }
-    const isReactInsideReactNative =
-      alias === "react" &&
+    const isReactInsideReactNative = alias === "react" &&
       normalizedInput.includes("react native") &&
       !segments.has("react");
     if (
@@ -1527,14 +1538,16 @@ function candidateHasFallbackSkill(
   const candidateKeys = new Set<string>();
   for (const skill of candidateSkills) {
     const candidateGroup = aliasGroupForSkill(skill);
-    for (const alias of candidateGroup
-      ? [candidateGroup.skill, ...candidateGroup.aliases]
-      : [skill]) {
+    for (
+      const alias of candidateGroup
+        ? [candidateGroup.skill, ...candidateGroup.aliases]
+        : [skill]
+    ) {
       candidateKeys.add(normalizeInsightsText(alias));
     }
   }
   return aliases.some((alias) =>
-    candidateKeys.has(normalizeInsightsText(alias)),
+    candidateKeys.has(normalizeInsightsText(alias))
   );
 }
 
@@ -1560,7 +1573,7 @@ function buildFallbackGapAnalysis(
       continue;
     }
     const matchedSkills = targetSkills.filter((skill) =>
-      candidateHasFallbackSkill(skills, skill),
+      candidateHasFallbackSkill(skills, skill)
     );
     if (matchedSkills.length === targetSkills.length) {
       fullyMatchingCandidates += 1;
@@ -1806,10 +1819,9 @@ function buildFallbackInsightsDashboard(
     seniorityPyramid: Array.from(pyramidCounts.entries())
       .map(([jobFamily, values]) => ({ jobFamily, ...values }))
       .sort((left, right) => {
-        const leftTotal =
-          left.junior + left.mid + left.senior + left.lead + left.executive;
-        const rightTotal =
-          right.junior +
+        const leftTotal = left.junior + left.mid + left.senior + left.lead +
+          left.executive;
+        const rightTotal = right.junior +
           right.mid +
           right.senior +
           right.lead +
@@ -1982,8 +1994,7 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
     throw membershipResult.error;
   }
 
-  const platformAdminQueryFailed =
-    platformAdminResult.error &&
+  const platformAdminQueryFailed = platformAdminResult.error &&
     !/platform_admins/i.test(platformAdminResult.error.message) &&
     platformAdminResult.error.code !== "PGRST205";
   if (platformAdminQueryFailed) {
@@ -2009,13 +2020,13 @@ async function getAuthContext(supabase: ReturnType<typeof createAuthedClient>) {
     .filter(Boolean);
   const tenantResult = isPlatformAdmin
     ? await supabase
-        .from("tenants")
-        .select("id, slug, name, icon_url")
-        .order("name")
+      .from("tenants")
+      .select("id, slug, name, icon_url")
+      .order("name")
     : await supabase
-        .from("tenants")
-        .select("id, slug, name, icon_url")
-        .in("id", tenantIds);
+      .from("tenants")
+      .select("id, slug, name, icon_url")
+      .in("id", tenantIds);
 
   if (tenantResult.error) {
     throw tenantResult.error;
@@ -2264,16 +2275,16 @@ async function getParsingDocument(
   }
 
   const document = documentResult.data as JsonRecord;
-  const [candidateResult, profileByDocumentResult, runsResult] =
-    await Promise.all([
+  const [candidateResult, profileByDocumentResult, runsResult] = await Promise
+    .all([
       document.candidate_id
         ? supabase
-            .from("candidates")
-            .select(
-              "id, tenant_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, status",
-            )
-            .eq("id", document.candidate_id)
-            .maybeSingle()
+          .from("candidates")
+          .select(
+            "id, tenant_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, status",
+          )
+          .eq("id", document.candidate_id)
+          .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       supabase
         .from("candidate_profiles")
@@ -2481,8 +2492,8 @@ async function saveParserProfile(
     chunk_version: asString(profile.chunkVersion) ?? "v1",
     embedding_provider: asString(profile.embeddingProvider) ?? "gemini",
     embedding_model: asString(profile.embeddingModel) ?? "gemini-embedding-001",
-    embedding_version:
-      asString(profile.embeddingVersion) ?? "gemini-embedding-001-768-v1",
+    embedding_version: asString(profile.embeddingVersion) ??
+      "gemini-embedding-001-768-v1",
     chunking_profile: asString(profile.chunkingProfile) ?? "default",
     ocr_enabled: Boolean(profile.ocrEnabled),
     allow_heuristic_fallback: false,
@@ -2493,16 +2504,16 @@ async function saveParserProfile(
   const profileId = asString(profile.id);
   const mutation = profileId
     ? supabase
-        .from("parser_profiles")
-        .update(payload)
-        .eq("id", profileId)
-        .select(parserProfileSelect)
-        .single()
+      .from("parser_profiles")
+      .update(payload)
+      .eq("id", profileId)
+      .select(parserProfileSelect)
+      .single()
     : supabase
-        .from("parser_profiles")
-        .insert(payload)
-        .select(parserProfileSelect)
-        .single();
+      .from("parser_profiles")
+      .insert(payload)
+      .select(parserProfileSelect)
+      .single();
 
   const { data, error } = await mutation;
   if (error) {
@@ -2631,13 +2642,12 @@ async function saveShortlistItem(
     seniority: asString(item.seniority),
     primary_role: asString(item.primary_role),
     top_skills: asStringArray(item.top_skills).slice(0, 24),
-    match_rate:
-      matchRate === null
-        ? null
-        : Math.max(0, Math.min(100, Math.round(matchRate))),
+    match_rate: matchRate === null
+      ? null
+      : Math.max(0, Math.min(100, Math.round(matchRate))),
     cv_url: asString(cvSource?.source_uri) ?? asString(item.cv_url),
-    original_filename:
-      asString(cvSource?.original_filename) ?? asString(item.original_filename),
+    original_filename: asString(cvSource?.original_filename) ??
+      asString(item.original_filename),
     source_query: asString(item.source_query) ?? "",
     search_snapshot: asRecord(item.search_snapshot),
     notes: asString(item.notes) ?? "",
@@ -2983,52 +2993,53 @@ function heuristicJobExtraction(input: {
   const allSkills = extractSkillsFromText(text);
   const preferred = allSkills.filter((skill) => {
     const index = lower.indexOf(skill.toLowerCase());
-    const window =
-      index >= 0 ? lower.slice(Math.max(0, index - 80), index + 120) : "";
+    const window = index >= 0
+      ? lower.slice(Math.max(0, index - 80), index + 120)
+      : "";
     return /preferred|nice to have|plus|bonus|advantage/.test(window);
   });
   const required = allSkills.filter((skill) => !preferred.includes(skill));
-  const seniority =
-    normalizeJobSeniority(input.title ?? text) ||
+  const seniority = normalizeJobSeniority(input.title ?? text) ||
     (/\blead|architect|principal\b/i.test(text)
       ? "Lead"
       : /\bsenior|sr\b/i.test(text)
-        ? "Senior"
-        : /\bjunior|entry|graduate\b/i.test(text)
-          ? "Junior"
-          : "Mid");
+      ? "Senior"
+      : /\bjunior|entry|graduate\b/i.test(text)
+      ? "Junior"
+      : "Mid");
   const employmentType = /contract|contractor/i.test(text)
     ? "Contract"
     : /part[-\s]?time/i.test(text)
-      ? "Part-time"
-      : /intern/i.test(text)
-        ? "Internship"
-        : /freelance/i.test(text)
-          ? "Freelance"
-          : "Full-time";
+    ? "Part-time"
+    : /intern/i.test(text)
+    ? "Internship"
+    : /freelance/i.test(text)
+    ? "Freelance"
+    : "Full-time";
   const locationCountry =
     normalizeLocationValue(text, { allowFallback: false }) ??
-    (input.employerRegion === "GCC"
-      ? "United Arab Emirates"
-      : input.employerRegion === "USA"
+      (input.employerRegion === "GCC"
+        ? "United Arab Emirates"
+        : input.employerRegion === "USA"
         ? "United States"
         : null);
   const remotePolicy = /remote/i.test(text)
     ? "Remote"
     : /hybrid/i.test(text)
-      ? "Hybrid"
-      : /onsite|on-site/i.test(text)
-        ? "Onsite"
-        : "Unspecified";
+    ? "Hybrid"
+    : /onsite|on-site/i.test(text)
+    ? "Onsite"
+    : "Unspecified";
   const responsibilities = text
     .split(/\n|(?:^|\s)[*-]\s+/)
     .map((line) => line.trim().replace(/^[-*]\s*/, ""))
     .filter(
       (line) =>
         line.length >= 24 &&
-        /\b(?:build|develop|design|lead|manage|deliver|collaborate|implement|maintain|support|create|drive)\b/i.test(
-          line,
-        ),
+        /\b(?:build|develop|design|lead|manage|deliver|collaborate|implement|maintain|support|create|drive)\b/i
+          .test(
+            line,
+          ),
     )
     .slice(0, 6);
 
@@ -3061,15 +3072,13 @@ function heuristicJobExtraction(input: {
       confidence: locationCountry ? 0.62 : 0.38,
     },
     keyResponsibilities: responsibilities,
-    warnings: required.length
-      ? []
-      : [
-          {
-            type: "MISSING",
-            message:
-              "No explicit known technical skills were detected; review required skills manually.",
-          },
-        ],
+    warnings: required.length ? [] : [
+      {
+        type: "MISSING",
+        message:
+          "No explicit known technical skills were detected; review required skills manually.",
+      },
+    ],
   };
 }
 
@@ -3314,8 +3323,7 @@ async function saveJobPosting(
   const existing = jobId
     ? ((await getJobPosting(supabase, jobId)) as unknown as JsonRecord)
     : null;
-  const tenantId =
-    asString(job.tenant_id) ??
+  const tenantId = asString(job.tenant_id) ??
     asString(job.tenantId) ??
     asString(existing?.tenant_id);
   if (!tenantId) {
@@ -3325,21 +3333,18 @@ async function saveJobPosting(
   const status = normalizeStatus(job.status ?? existing?.status);
   const currentStatus = normalizeStatus(existing?.status);
   const title = asString(job.title) ?? asString(existing?.title) ?? "";
-  const employerName =
-    asString(job.employer_name) ??
+  const employerName = asString(job.employer_name) ??
     asString(job.employerName) ??
     asString(existing?.employer_name) ??
     "";
-  const employerCountry =
-    asString(job.employer_country) ??
+  const employerCountry = asString(job.employer_country) ??
     asString(job.employerCountry) ??
     asString(existing?.employer_country) ??
     "";
   const employerRegion = normalizeRegion(
     job.employer_region ?? job.employerRegion ?? existing?.employer_region,
   );
-  const jobDescription =
-    asString(job.job_description) ??
+  const jobDescription = asString(job.job_description) ??
     asString(job.jobDescription) ??
     asString(existing?.job_description) ??
     "";
@@ -3355,42 +3360,35 @@ async function saveJobPosting(
   const employmentType = normalizeEmploymentType(
     job.employment_type ?? job.employmentType ?? existing?.employment_type,
   );
-  const deadline =
-    asString(job.application_deadline) ??
+  const deadline = asString(job.application_deadline) ??
     asString(job.applicationDeadline) ??
     asString(existing?.application_deadline);
-  const isPublic =
-    typeof job.is_public === "boolean"
-      ? job.is_public
-      : typeof job.isPublic === "boolean"
-        ? job.isPublic
-        : existing?.is_public === true;
+  const isPublic = typeof job.is_public === "boolean"
+    ? job.is_public
+    : typeof job.isPublic === "boolean"
+    ? job.isPublic
+    : existing?.is_public === true;
   const publicSlug = normalizePublicSlug(
     job.public_slug ?? job.publicSlug ?? existing?.public_slug,
   );
-  const publicTitle =
-    asString(job.public_title) ??
+  const publicTitle = asString(job.public_title) ??
     asString(job.publicTitle) ??
     asString(existing?.public_title) ??
     title;
-  const publicSummary =
-    asString(job.public_summary) ??
+  const publicSummary = asString(job.public_summary) ??
     asString(job.publicSummary) ??
     asString(existing?.public_summary);
-  const publicDescription =
-    asString(job.public_description) ??
+  const publicDescription = asString(job.public_description) ??
     asString(job.publicDescription) ??
     asString(existing?.public_description);
-  const publicLocation =
-    asString(job.public_location) ??
+  const publicLocation = asString(job.public_location) ??
     asString(job.publicLocation) ??
     asString(existing?.public_location);
-  const publicApplyEnabled =
-    typeof job.public_apply_enabled === "boolean"
-      ? job.public_apply_enabled
-      : typeof job.publicApplyEnabled === "boolean"
-        ? job.publicApplyEnabled
-        : existing?.public_apply_enabled !== false;
+  const publicApplyEnabled = typeof job.public_apply_enabled === "boolean"
+    ? job.public_apply_enabled
+    : typeof job.publicApplyEnabled === "boolean"
+    ? job.publicApplyEnabled
+    : existing?.public_apply_enabled !== false;
   if (deadline) {
     const deadlineDate = new Date(`${deadline}T00:00:00Z`);
     const today = new Date();
@@ -3438,10 +3436,9 @@ async function saveJobPosting(
     employment_type: employmentType,
     application_deadline: deadline,
     status,
-    posted_date:
-      status === "active" && currentStatus !== "active"
-        ? now.slice(0, 10)
-        : asString(existing?.posted_date),
+    posted_date: status === "active" && currentStatus !== "active"
+      ? now.slice(0, 10)
+      : asString(existing?.posted_date),
     location_info: asRecord(
       job.location_info ?? job.locationInfo ?? existing?.location_info,
     ),
@@ -3458,18 +3455,16 @@ async function saveJobPosting(
     ),
     created_by_user_id: asString(existing?.created_by_user_id) ?? userId,
     updated_by_user_id: userId,
-    closed_at:
-      status === "closed" && currentStatus !== "closed"
-        ? now
-        : status !== "closed"
-          ? null
-          : asString(existing?.closed_at),
-    closed_by_user_id:
-      status === "closed" && currentStatus !== "closed"
-        ? userId
-        : status !== "closed"
-          ? null
-          : asString(existing?.closed_by_user_id),
+    closed_at: status === "closed" && currentStatus !== "closed"
+      ? now
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_at),
+    closed_by_user_id: status === "closed" && currentStatus !== "closed"
+      ? userId
+      : status !== "closed"
+      ? null
+      : asString(existing?.closed_by_user_id),
     is_public: isPublic,
     public_slug: publicSlug,
     public_title: publicTitle,
@@ -3477,24 +3472,23 @@ async function saveJobPosting(
     public_description: publicDescription,
     public_location: publicLocation,
     public_apply_enabled: publicApplyEnabled,
-    public_published_at:
-      isPublic && status === "active"
-        ? (asString(existing?.public_published_at) ?? now)
-        : null,
+    public_published_at: isPublic && status === "active"
+      ? (asString(existing?.public_published_at) ?? now)
+      : null,
   };
 
   const mutation = jobId
     ? supabase
-        .from("job_postings")
-        .update(payload)
-        .eq("id", jobId)
-        .select(jobPostingSelect)
-        .single()
+      .from("job_postings")
+      .update(payload)
+      .eq("id", jobId)
+      .select(jobPostingSelect)
+      .single()
     : supabase
-        .from("job_postings")
-        .insert(payload)
-        .select(jobPostingSelect)
-        .single();
+      .from("job_postings")
+      .insert(payload)
+      .select(jobPostingSelect)
+      .single();
   const { data, error } = await mutation;
   if (error) {
     throw error;
@@ -3507,8 +3501,8 @@ async function saveJobPosting(
     action: jobId
       ? "JOB_UPDATED"
       : status === "active"
-        ? "JOB_PUBLISHED"
-        : "JOB_CREATED",
+      ? "JOB_PUBLISHED"
+      : "JOB_CREATED",
     entityType: "job_posting",
     entityId: savedJobId,
     payload: { status, requiredSkills, preferredSkills },
@@ -3530,8 +3524,7 @@ async function extractJobPosting(
   const employerRegion = normalizeRegion(
     body.employer_region ?? job?.employer_region,
   );
-  const jobDescription =
-    asString(body.job_description) ??
+  const jobDescription = asString(body.job_description) ??
     asString(body.jobDescription) ??
     asString(job?.job_description);
   if (!tenantId || !jobDescription) {
@@ -3618,7 +3611,7 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
     ...asStringArray(asRecord(candidate.candidate_snapshot).top_skills),
   ]);
   const matchedSkills = requiredSkills.filter((skill) =>
-    textIncludesSkill(candidateSkills, skill),
+    textIncludesSkill(candidateSkills, skill)
   );
   const missingSkills = requiredSkills.filter(
     (skill) => !textIncludesSkill(candidateSkills, skill),
@@ -3626,8 +3619,8 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
   const preferredCoverage =
     preferredSkills.filter((skill) => textIncludesSkill(candidateSkills, skill))
       .length / Math.max(1, preferredSkills.length);
-  const requiredCoverage =
-    matchedSkills.length / Math.max(1, requiredSkills.length);
+  const requiredCoverage = matchedSkills.length /
+    Math.max(1, requiredSkills.length);
   const semanticScore = Math.max(
     0,
     Math.min(
@@ -3642,15 +3635,17 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
     candidate.seniority,
     job.seniority_level,
   );
-  const seniorityScore =
-    alignment === "Exact Match" ? 100 : alignment === "Partial Match" ? 74 : 35;
+  const seniorityScore = alignment === "Exact Match"
+    ? 100
+    : alignment === "Partial Match"
+    ? 74
+    : 35;
   const experienceYears = asNumber(candidate.years_experience) ?? 0;
-  const requiredYears =
-    seniorityRank(job.seniority_level) >= 4
-      ? 5
-      : seniorityRank(job.seniority_level) >= 3
-        ? 3
-        : 1;
+  const requiredYears = seniorityRank(job.seniority_level) >= 4
+    ? 5
+    : seniorityRank(job.seniority_level) >= 3
+    ? 3
+    : 1;
   const experienceScore = Math.min(
     100,
     Math.round((experienceYears / Math.max(1, requiredYears)) * 100),
@@ -3676,20 +3671,24 @@ function scoreCandidateForJob(candidate: JsonRecord, job: JsonRecord) {
     seniorityAlignment: alignment,
     experienceSummary: `${String(candidate.name ?? "Candidate")} has ${
       experienceYears || "unspecified"
-    } years of experience and is indexed as ${String(
-      candidate.seniority ?? "unknown",
-    )} seniority.`,
+    } years of experience and is indexed as ${
+      String(
+        candidate.seniority ?? "unknown",
+      )
+    } seniority.`,
     matchExplanation: matchedSkills.length
       ? `Matches ${matchedSkills.length} required skill${
-          matchedSkills.length === 1 ? "" : "s"
-        } for ${String(job.title ?? "this role")}; ${
-          missingSkills.length
-            ? `missing ${missingSkills.join(", ")}.`
-            : "no required skill gaps detected."
-        }`
-      : `Semantic match found for ${String(
+        matchedSkills.length === 1 ? "" : "s"
+      } for ${String(job.title ?? "this role")}; ${
+        missingSkills.length
+          ? `missing ${missingSkills.join(", ")}.`
+          : "no required skill gaps detected."
+      }`
+      : `Semantic match found for ${
+        String(
           job.title ?? "this role",
-        )}, but required skill coverage needs recruiter review.`,
+        )
+      }, but required skill coverage needs recruiter review.`,
     scoringBreakdown: {
       requiredSkillAlignment: Math.round(requiredCoverage * 30),
       relevantWorkExperience: Math.round(Math.min(25, experienceScore * 0.25)),
@@ -3779,8 +3778,7 @@ async function startJobMatchingRun(
 
   try {
     const mandatory = asRecord(matchingConfig.mandatoryCriteria);
-    const location =
-      asString(asRecord(job.location_info).country) ??
+    const location = asString(asRecord(job.location_info).country) ??
       asString(job.employer_country);
     const rpcPayload = {
       p_q: profileText,
@@ -3788,18 +3786,17 @@ async function startJobMatchingRun(
       p_limit: Math.max(semanticPoolSize, rerankPoolSize),
       p_offset: 0,
       p_role: asString(job.title),
-      p_seniority:
-        normalizeSeniorityValue(asString(job.seniority_level)) ?? null,
+      p_seniority: normalizeSeniorityValue(asString(job.seniority_level)) ??
+        null,
       p_min_years: null,
       p_skills: asStringArray(job.required_skills),
       p_embedding_version: null,
       p_rank_version: "job-match-v1",
       p_tenant_ids: null,
       p_filter_role: null,
-      p_filter_seniority:
-        normalizeSeniorityValue(
-          asString(mandatory.minimum_seniority ?? mandatory.minimumSeniority),
-        ) ?? null,
+      p_filter_seniority: normalizeSeniorityValue(
+        asString(mandatory.minimum_seniority ?? mandatory.minimumSeniority),
+      ) ?? null,
       p_filter_min_years: asNumber(
         mandatory.minimum_years ?? mandatory.minimumYears,
       ),
@@ -3851,8 +3848,8 @@ async function startJobMatchingRun(
         matching_run_id: insertedRunId,
         job_posting_id: job.id,
         candidate_id: candidate.candidate_id,
-        candidate_source_tenant_id:
-          asString(candidate.tenant_id) ?? asString(job.tenant_id),
+        candidate_source_tenant_id: asString(candidate.tenant_id) ??
+          asString(job.tenant_id),
         rank: index + 1,
         semantic_score: score.semanticScore,
         ai_score: score.aiScore,
@@ -4022,8 +4019,8 @@ function normalizeApplicationStatus(value: unknown) {
     .trim()
     .toLowerCase();
   return ["new", "reviewing", "shortlisted", "rejected", "withdrawn"].includes(
-    status,
-  )
+      status,
+    )
     ? status
     : null;
 }
@@ -4159,8 +4156,8 @@ async function saveJobShortlist(
         candidate_id: result.candidate_id,
         candidate_source_tenant_id:
           asString(result.candidate_source_tenant_id) ??
-          asString(asRecord(result.candidate_snapshot).tenant_id) ??
-          asString(job.tenant_id),
+            asString(asRecord(result.candidate_snapshot).tenant_id) ??
+            asString(job.tenant_id),
         saved_rank: result.rank,
         saved_score: result.final_score,
         saved_result_payload: result,
@@ -4260,22 +4257,20 @@ Deno.serve(async (req) => {
             // vetting
             is_pre_screened: result.profile?.is_pre_screened ?? false,
             sync_affiliation: result.profile?.sync_affiliation ?? null,
-            internal_vetting_notes:
-              result.profile?.internal_vetting_notes ?? null,
+            internal_vetting_notes: result.profile?.internal_vetting_notes ??
+              null,
 
             // location
-            current_location_city:
-              result.profile?.current_location_city ??
+            current_location_city: result.profile?.current_location_city ??
               result.candidate?.location ??
               null,
 
-            willingness_to_relocate:
-              result.profile?.willingness_to_relocate ?? null,
+            willingness_to_relocate: result.profile?.willingness_to_relocate ??
+              null,
 
             // metadata
             external_profiles: result.profile?.external_profiles ?? {},
-            ai_profile_summary:
-              result.profile?.ai_profile_summary ??
+            ai_profile_summary: result.profile?.ai_profile_summary ??
               result.candidate?.summary_short ??
               result.candidate?.long_summary ??
               null,
@@ -4283,8 +4278,8 @@ Deno.serve(async (req) => {
             employment_type_preference:
               result.profile?.employment_type_preference ?? [],
 
-            last_interaction_date:
-              result.profile?.last_interaction_date ?? null,
+            last_interaction_date: result.profile?.last_interaction_date ??
+              null,
           },
 
           manatalCandidateId: result.manatalCandidateId ?? null,
