@@ -208,7 +208,7 @@ export type CandidateShortlistItem = {
   yearsExperience: number | null;
   seniority: string | null;
   primaryRole: string | null;
-  topSkills: string[];
+    topSkills: string[];
   matchRate: number | null;
   cvUrl?: string | null;
   originalFilename?: string | null;

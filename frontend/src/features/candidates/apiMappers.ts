@@ -54,6 +54,11 @@ export function mapRemoteCandidate(
   row: CandidateDossierRow,
   chunks: CandidateChunkRow[],
 ): CandidateDetail {
+  const rowMeta = row as CandidateDossierRow & {
+  match_score?: unknown;
+  match_rate?: unknown;
+  score_raw?: unknown;
+};
 
   const profile = {
     ...asRecord(row.profile_json),
@@ -84,8 +89,9 @@ const fallbackSkills =
 
   const expectedSalary = asRecord(profile.expected_salary);
 
-  const externalProfiles = asRecord(profile.external_profiles);
-
+  const externalProfiles = asRecord(
+  profile.external_profiles ?? profile.externalProfiles ?? {}
+);
 
   const cvUrl = buildCandidateCvUrl(
     row.source_uri,
@@ -148,8 +154,6 @@ const fallbackSkills =
 
     })
     .filter(Boolean);
-
-
 
   const education = asArray(
     profile.education,
@@ -215,12 +219,23 @@ toNumber(
       fallbackSkills,
 
 
-    matchScore: 0,
+   matchScore:
+  toNumber(
+    rowMeta.match_score,
+    0,
+  ),
 
-    backendMatchRate: 0,
+backendMatchRate:
+  toNumber(
+    rowMeta.match_rate,
+    0,
+  ),
 
-    backendScoreRaw: 0,
-
+backendScoreRaw:
+  toNumber(
+    rowMeta.score_raw,
+    0,
+  ),
 
     matchSignals: {
 
@@ -371,110 +386,77 @@ longSummary:
 
         : null,
 
-
-
     internalVettingNotes:
-
       typeof profile.internal_vetting_notes === "string"
-
         ? profile.internal_vetting_notes
-
         : null,
-
 
 
     currentLocationCity:
-
       typeof profile.current_location_city === "string"
-
         ? profile.current_location_city
-
         : row.location ?? null,
 
 
-
     willingnessToRelocate:
-
       typeof profile.willingness_to_relocate === "boolean"
-
         ? profile.willingness_to_relocate
-
         : undefined,
 
-
-
-    externalProfiles:
-
-      Object.keys(externalProfiles).length
-
-        ? {
-
-          linkedin:
-            externalProfiles.linkedin
-              ? String(externalProfiles.linkedin)
+externalProfiles:
+  Object.keys(externalProfiles).length
+    ? {
+        linkedin:
+          typeof externalProfiles.linkedin === "string"
+            ? externalProfiles.linkedin
+            : typeof externalProfiles.linkedin_url === "string"
+              ? externalProfiles.linkedin_url
               : null,
 
-
-          github:
-            externalProfiles.github
-              ? String(externalProfiles.github)
+        github:
+          typeof externalProfiles.github === "string"
+            ? externalProfiles.github
+            : typeof externalProfiles.github_url === "string"
+              ? externalProfiles.github_url
               : null,
 
-
-          portfolio:
-            externalProfiles.portfolio
-              ? String(externalProfiles.portfolio)
+        portfolio:
+          typeof externalProfiles.portfolio === "string"
+            ? externalProfiles.portfolio
+            : typeof externalProfiles.portfolio_url === "string"
+              ? externalProfiles.portfolio_url
               : null,
-
-        }
-
-        : null,
-
-
+      }
+    : null,
 
     aiProfileSummary:
-
       profile.ai_profile_summary
-
         ? String(profile.ai_profile_summary)
-
         : null,
-
 
 
     employmentTypePreference:
-
       toStringArray(
         profile.employment_type_preference,
       ) as EmploymentType[],
 
 
-
     lastInteractionDate:
-
       typeof profile.last_interaction_date === "string"
-
         ? profile.last_interaction_date
-
         : null,
 
 
-
-    expectedSalary: {
-
-      amount:
-        toNumber(expectedSalary.amount, 0),
-
-
-      currency:
-
-        typeof expectedSalary.currency === "string"
-
-          ? expectedSalary.currency
-
-          : "USD",
-
-    },
+    expectedSalary:
+      expectedSalary.amount || expectedSalary.currency
+        ? {
+            amount: toNumber(expectedSalary.amount, 0),
+            currency:
+              typeof expectedSalary.currency === "string"
+                ? expectedSalary.currency
+                : "USD",
+          }
+        : null,
 
 
     links:
@@ -483,9 +465,9 @@ longSummary:
 
     education,
 
-    certifications:
-      toStringArray(profile.certifications),
 
+  certifications:
+  toStringArray(profile.certifications),
 
     languages:
       toStringArray(profile.languages),
@@ -498,13 +480,9 @@ longSummary:
 
 
     evidence:
-
-      chunks.map((chunk,index)=>
-
+      chunks.map((chunk, index) =>
         mapEvidenceSnippet(
-
           {
-
             id: chunk.id,
 
             chunk_type:
@@ -518,104 +496,202 @@ longSummary:
                 0.4,
                 0.95 - index * 0.08,
               ),
-
           },
 
           index,
-
         )
-
       ),
 
 
-
     cvPreview: [
-
       row.original_filename
         ? `CV file: ${row.original_filename}`
         : "",
-
 
       row.mime_type
         ? `MIME type: ${row.mime_type}`
         : "",
 
-
       cvUrl
         ? `Drive link: ${cvUrl}`
         : "",
 
-
     ].filter(Boolean),
 
   };
+  
 }
+export async function fetchCandidatesListRpc(
+  tenantIds: string[],
+  options?: CandidateListOptions,
+): Promise<CandidateListResponse> {
 
-function mapRemoteCandidateListItem(row: JsonRecord): CandidateListItem {
-  return {
-    tenantId: String(row.tenantId ?? ""),
-    candidateId: String(row.candidateId ?? ""),
-    name: String(row.name ?? "Unnamed candidate"),
-    email: typeof row.email === "string" ? row.email : null,
-    location: String(row.location ?? ""),
-    primaryRole: String(row.primaryRole ?? ""),
-    appliedRole: typeof row.appliedRole === "string" ? row.appliedRole : null,
-    stage: String(row.stage ?? "Unknown"),
-    stageKey: String(row.stageKey ?? "unknown"),
-    source: String(row.source ?? "unknown"),
-    seniority: String(row.seniority ?? ""),
-    updatedAt: String(row.updatedAt ?? ""),
-    groupKey: typeof row.groupKey === "string" ? row.groupKey : null,
-    groupLabel: typeof row.groupLabel === "string" ? row.groupLabel : null,
-  };
-}
-
-export function mapRemoteCandidateListResponse(payload: JsonRecord): CandidateListResponse {
-  const groupByRaw = String(payload.groupBy ?? "");
-  const groupBy = (groupByRaw === "status" || groupByRaw === "role" || groupByRaw === "source" || groupByRaw === "location"
-    ? groupByRaw
-    : "") as CandidateListGroupBy | "";
-  const filterOptions = asRecord(payload.filterOptions);
-  return {
-    items: asArray(payload.items).map((item) => mapRemoteCandidateListItem(asRecord(item))),
-    itemsTotalCount: toNumber(payload.itemsTotalCount),
-    pageLimit: toNumber(payload.pageLimit),
-    pageOffset: toNumber(payload.pageOffset),
-    groupBy: groupBy || null,
-    groups: asArray(payload.groups).map((item) => {
-      const row = asRecord(item);
-      return {
-        key: String(row.key ?? ""),
-        label: String(row.label ?? ""),
-        count: toNumber(row.count),
-      };
-    }),
-    filterOptions: {
-      statuses: toStringArray(filterOptions.statuses),
-      roles: toStringArray(filterOptions.roles),
-      sources: toStringArray(filterOptions.sources),
-      locations: toStringArray(filterOptions.locations),
+  const payload = await invokePlatform<JsonRecord>(
+    "candidates_list_page_v1",
+    {
+      tenant_ids: tenantIds,
+      ...(options ?? {}),
     },
+  );
+
+  const rows = asArray(
+    payload.data ?? payload.rows,
+  );
+
+
+  return {
+    items: rows.map((item, index) => {
+
+      const row = asRecord(item);
+
+      return {
+        tenantId: String(
+          row.tenant_id ?? tenantIds[0] ?? "",
+        ),
+
+        candidateId: String(
+          row.candidate_id ??
+          row.id ??
+          `candidate-${index}`,
+        ),
+
+        name: String(
+          row.name ??
+          "Candidate",
+        ),
+
+        email:
+          typeof row.email === "string"
+            ? row.email
+            : null,
+
+        location: String(
+          row.location ??
+          "Unknown",
+        ),
+
+        primaryRole: String(
+          row.primary_role ??
+          "generalist",
+        ),
+
+        appliedRole:
+          typeof row.applied_role === "string"
+            ? row.applied_role
+            : null,
+
+        stage: String(
+          row.stage ??
+          "Indexed",
+        ),
+
+        stageKey: String(
+          row.stage_key ??
+          row.stage ??
+          "indexed",
+        ),
+
+        source: String(
+          row.source ??
+          "platform",
+        ),
+
+        seniority: String(
+          row.seniority ??
+          "unknown",
+        ),
+
+        updatedAt:
+          typeof row.updated_at === "string"
+            ? row.updated_at
+            : new Date().toISOString(),
+
+        groupKey:
+          typeof row.group_key === "string"
+            ? row.group_key
+            : null,
+
+        groupLabel:
+          typeof row.group_label === "string"
+            ? row.group_label
+            : null,
+
+      } satisfies CandidateListItem;
+
+    }),
+
+
+    itemsTotalCount:
+      toNumber(
+        payload.items_total_count ??
+        payload.total ??
+        rows.length,
+        rows.length,
+      ),
+
+
+    pageLimit:
+      toNumber(
+        payload.page_limit ??
+        options?.pageSize ??
+        rows.length,
+        rows.length,
+      ),
+
+
+    pageOffset:
+      toNumber(
+        payload.page_offset ??
+        0,
+        0,
+      ),
+
+
+    groupBy:
+      typeof payload.group_by === "string"
+        ? payload.group_by as CandidateListGroupBy
+        : "",
+
+
+    groups:
+      asArray(
+        payload.groups,
+      ).map((group) => {
+
+        const item = asRecord(group);
+
+        return {
+          key: String(item.key ?? ""),
+          label: String(item.label ?? ""),
+          count: toNumber(item.count, 0),
+        };
+
+      }),
+
+
+    filterOptions: {
+
+      statuses:
+        toStringArray(
+          asRecord(payload.filter_options).statuses,
+        ),
+
+      roles:
+        toStringArray(
+          asRecord(payload.filter_options).roles,
+        ),
+
+      sources:
+        toStringArray(
+          asRecord(payload.filter_options).sources,
+        ),
+
+      locations:
+        toStringArray(
+          asRecord(payload.filter_options).locations,
+        ),
+
+    },
+
   };
-}
-
-export async function fetchCandidatesListRpc(tenantIds: string[], options: CandidateListOptions = {}): Promise<CandidateListResponse> {
-  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
-  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
-  const filters = options.filters ?? {};
-  const payload = await invokePlatform<JsonRecord>("candidates_list", {
-  tenant_ids: tenantIds,
-  limit: pageSize,
-  offset: pageIndex * pageSize,
-  query: filters.query?.trim() || null,
-  status: filters.status || null,
-  role: filters.role || null,
-  source: filters.source || null,
-  location: filters.location || null,
-  updated_from: filters.updatedFrom || null,
-  updated_to: filters.updatedTo || null,
-  group_by: filters.groupBy || null,
-});
-
-  return mapRemoteCandidateListResponse(payload);
 }

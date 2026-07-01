@@ -712,8 +712,7 @@ export function CandidateDossierPage() {
               </span>
             )}
 
-          {candidate.expectedSalary?.amount &&
- candidate.expectedSalary.amount > 0 && (
+        {candidate.expectedSalary?.amount && (
   <span className="tag">
     Expected salary:{" "}
     {candidate.expectedSalary.amount}{" "}
