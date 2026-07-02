@@ -16,7 +16,6 @@ export function SearchSummaryBar({ compareHref, count, sortBy, topChatHref, onSo
     <Panel className="search-summary-bar">
       <div className="search-summary-bar__main">
         <strong>Loaded {count} candidates</strong>
-        <p>Results append automatically as you scroll. Sort applies to the loaded result set without changing the active search frame.</p>
         {topChatHref || compareHref ? (
           <div className="search-summary-actions">
             {topChatHref ? (

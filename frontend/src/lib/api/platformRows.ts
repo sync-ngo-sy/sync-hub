@@ -13,6 +13,7 @@ export type {
 } from "@/lib/parsingQuality";
 
 export type CandidateDossierRow = {
+  metadata?: unknown;
   candidate_id: string;
   source_document_id?: string | null;
   name: string;

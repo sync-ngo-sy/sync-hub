@@ -24,22 +24,22 @@ app = FastAPI(title="Realtime CV Extraction")
 
 def build_extended_system_prompt() -> str:
     base_prompt = _extractor_system_prompt().split("Output schema:\n")[0]
-    
+
     extended_schema = copy.deepcopy(EXTRACTION_OUTPUT_SCHEMA)
-    
+
     # Extend Experience
     extended_schema["experience"][0].update({
         "employment_type": "string|null (Full-time/Part-time/Contract/Freelance)",
         "work_mode": "string|null (Onsite/Remote/Hybrid)",
         "technologies": ["string"]
     })
-    
+
     # Extend Projects
     extended_schema["projects"][0].update({
         "role": "string|null",
         "link": "string|null"
     })
-    
+
     # Modify Certifications
     extended_schema["certifications"] = [{
         "name": "string",
@@ -47,7 +47,7 @@ def build_extended_system_prompt() -> str:
         "issue_date": "string|null",
         "expiry_date": "string|null"
     }]
-    
+
     # Modify Skills
     extended_schema["skills"] = [{
         "name": "string",
@@ -55,21 +55,21 @@ def build_extended_system_prompt() -> str:
         "years_of_experience": "number|null",
         "last_used": "number|null (Year)"
     }]
-    
+
     # Add Field Confidence
     extended_schema["field_confidence"] = {
         "example_field_name": 95
     }
 
     schema_text = json.dumps(extended_schema, indent=2, ensure_ascii=True)
-    
+
     additional_rules = (
         "Additional Registration Flow Rules:\n"
         "- For `field_confidence`, provide a confidence score (0-100) for every single field extracted (e.g. 'name': 90, 'experience[0].title': 85).\n"
         "- Ensure employment_type and work_mode are extracted from the experience descriptions.\n"
         "- Ensure proficiency, years_of_experience, and last_used are estimated for skills if possible, otherwise use null.\n\n"
     )
-    
+
     return base_prompt + additional_rules + "Output schema:\n" + schema_text
 
 def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, raw_json_str: str, config: WorkerConfig):
@@ -80,7 +80,7 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
     if not config.supabase_url or not config.supabase_service_key:
         logger.info("[DB SYNC] No Supabase credentials, skipping sync")
         return
-        
+
     try:
         parsed_json = json.loads(raw_json_str)
         # استخراج نسب الثقة لفصلها
@@ -88,7 +88,7 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
     except json.JSONDecodeError as e:
         logger.error(f"[DB SYNC] Failed to decode final JSON for Supabase: {e}")
         return
-        
+
     supabase = SupabaseSyncClient(config.supabase_url, config.supabase_service_key)
     row = {
         "user_id": user_id,
@@ -98,7 +98,7 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
         "field_confidence_json": field_confidence,
         "parse_status": "completed",
     }
-    
+
     try:
         supabase.upsert_rows("candidate_registration_drafts", [row], on_conflict="user_id")
         logger.info(f"[DB SYNC] Successfully synced profile draft for user: {user_id}")
@@ -113,10 +113,10 @@ async def parse_cv_endpoint(
 ):
     # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
-    
+
     # 1. Parse Document (Using existing robust logic)
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
-    
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
         tmp.write(content)
@@ -133,19 +133,19 @@ async def parse_cv_endpoint(
             document_sha256="tmp",
             ingestion_run_id="tmp"
         )
-        
+
         # Offload CPU-bound parsing to threadpool
         loop = asyncio.get_event_loop()
         document_text = await loop.run_in_executor(None, parse_document, source)
-        
+
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-            
+
     # 2. Build Prompt (Re-using original logic but with extended schema)
     prompt = _structured_prompt(document_text)
     system_prompt = build_extended_system_prompt()
-    
+
     payload = {
         "model": config.extraction_model or "gemini-3.5-flash",
         "messages": [
@@ -156,7 +156,7 @@ async def parse_cv_endpoint(
         "stream": True,
         "response_format": {"type": "json_object"},
     }
-    
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {config.model_api_key}",
@@ -173,7 +173,7 @@ async def parse_cv_endpoint(
                         error_text = await response.aread()
                         yield f"Error: {response.status_code} - {error_text.decode('utf-8')}"
                         return
-                        
+
                     async for line in response.aiter_lines():
                         if line.startswith("data: "):
                             data_str = line[6:]

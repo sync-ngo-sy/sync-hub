@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Building2, Check, ChevronDown, Globe2 } from "lucide-react";
+import { Check, ChevronDown, Globe2 } from "lucide-react";
 import type { TenantMembership } from "@/lib/auth";
 import type { PlatformScopeMode } from "@/lib/platformScope";
 import { TenantBadge } from "@/components/ui";
