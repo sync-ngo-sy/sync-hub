@@ -65,7 +65,8 @@ export function evaluatePlatformAiInput(
     return {
       allowed: false,
       code: "input_too_long",
-      message: "That input is too long for this AI feature. Shorten it and try again.",
+      message:
+        "That input is too long for this AI feature. Shorten it and try again.",
     };
   }
 
@@ -116,7 +117,10 @@ export function evaluatePlatformAiConversation(
   return { allowed: true };
 }
 
-export function buildGuardedSystemPrompt(taskPrompt: string, scopeLabel: string) {
+export function buildGuardedSystemPrompt(
+  taskPrompt: string,
+  scopeLabel: string,
+) {
   return [
     taskPrompt.trim(),
     "",
