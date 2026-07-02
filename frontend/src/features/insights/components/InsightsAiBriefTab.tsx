@@ -10,20 +10,39 @@ import {
   getInsightReportTicketSteps,
   INSIGHT_REPORT_TYPES,
 } from "@/features/insights/insightReport.helpers";
+import { readInsightsAiBriefHandoff } from "@/features/insights/insightsDashboard.helpers";
 import { cn } from "@/lib/cn";
-import type { InsightReportRunDetail, InsightReportType, InsightsDashboardSnapshot } from "@/lib/contracts";
+import type { InsightReportRunDetail, InsightReportType, InsightsDashboardSnapshot, InsightsGapAnalysis } from "@/lib/contracts";
+import { resolveGapRequirements } from "@/lib/insightsGap";
 import { platformApi } from "@/lib/platformApi";
 
 type InsightsAiBriefTabProps = {
+  gapAnalysis: InsightsGapAnalysis;
+  onOpenSearch: (skills: string[], query?: string) => void;
   snapshot: InsightsDashboardSnapshot;
   tenantIds: string[];
 };
 
-export function InsightsAiBriefTab({ snapshot, tenantIds }: InsightsAiBriefTabProps) {
+export function InsightsAiBriefTab({ gapAnalysis, onOpenSearch, snapshot, tenantIds }: InsightsAiBriefTabProps) {
   const queryClient = useQueryClient();
   const [reportType, setReportType] = useState<InsightReportType>("corpus_overview");
   const [focusDraft, setFocusDraft] = useState("");
+  const [targetSkills, setTargetSkills] = useState<string[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handoff = readInsightsAiBriefHandoff();
+    if (!handoff) {
+      return;
+    }
+    setReportType(handoff.reportType);
+    if (handoff.focus) {
+      setFocusDraft(handoff.focus);
+    }
+    if (handoff.targetSkills?.length) {
+      setTargetSkills(handoff.targetSkills);
+    }
+  }, []);
 
   const selectedTemplate = INSIGHT_REPORT_TYPES.find((item) => item.id === reportType) ?? INSIGHT_REPORT_TYPES[0];
   const defaultFocus = useMemo(() => {
@@ -57,15 +76,24 @@ export function InsightsAiBriefTab({ snapshot, tenantIds }: InsightsAiBriefTabPr
   });
 
   const generateMutation = useMutation({
-    mutationFn: () =>
-      platformApi.startInsightReport(
+    mutationFn: () => {
+      const corpusSkills = snapshot.skillsFrequency.map((item) => item.skill);
+      const resolvedSkills = targetSkills.length
+        ? targetSkills
+        : resolveGapRequirements(
+          { targetRole: focusDraft.trim() || undefined, targetSkills },
+          corpusSkills,
+        );
+      return platformApi.startInsightReport(
         {
           reportType,
           focus: focusDraft.trim() || undefined,
           targetRole: focusDraft.trim() || undefined,
+          targetSkills: reportType === "gap_brief" ? resolvedSkills : undefined,
         },
         tenantIds,
-      ),
+      );
+    },
     onSuccess: (detail) => {
       setActiveRunId(detail.run.id);
       void queryClient.invalidateQueries({ queryKey: ["insight-report-runs", tenantIds.join("|")] });
@@ -78,6 +106,24 @@ export function InsightsAiBriefTab({ snapshot, tenantIds }: InsightsAiBriefTabPr
   const activeStepIndex = getActiveTicketStepIndex(activeStatus ?? "queued");
   const report = activeDetail?.report;
   const isGenerating = generateMutation.isPending || activeStatus === "queued" || activeStatus === "running";
+
+  function runAssistantPrompt(prompt: string) {
+    const normalized = prompt.toLowerCase();
+    if (normalized.includes("search") || normalized.includes("matching candidates")) {
+      const skills = gapAnalysis.targetSkills.length ? gapAnalysis.targetSkills : targetSkills;
+      onOpenSearch(skills, skills.join(" "));
+      return;
+    }
+    if (normalized.includes("gap brief")) {
+      setReportType("gap_brief");
+      if (gapAnalysis.targetRole) {
+        setFocusDraft(gapAnalysis.targetRole);
+      }
+      if (gapAnalysis.targetSkills.length) {
+        setTargetSkills(gapAnalysis.targetSkills);
+      }
+    }
+  }
 
   return (
     <div id="insights-panel-tab4" className="insights-tab-panel" role="tabpanel" aria-labelledby="insights-tab4">
@@ -266,7 +312,7 @@ export function InsightsAiBriefTab({ snapshot, tenantIds }: InsightsAiBriefTabPr
                   </div>
                   <div className="ai-brief-assistant__prompts">
                     {report.assistantPrompts.map((prompt) => (
-                      <button key={prompt} type="button" className="ai-brief-assistant__prompt">
+                      <button key={prompt} type="button" className="ai-brief-assistant__prompt" onClick={() => runAssistantPrompt(prompt)}>
                         {prompt}
                       </button>
                     ))}

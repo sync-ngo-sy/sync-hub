@@ -1,6 +1,7 @@
 import type { InsightsDashboardSnapshot, InsightsDistributionItem, InsightsGapUseCase } from "@/lib/contracts";
 
 export const SEARCH_STATE_STORAGE_KEY = "cv-intelligence.search.discovery-state";
+export const AI_BRIEF_HANDOFF_STORAGE_KEY = "cv-intelligence.insights.ai-brief-handoff";
 export const PAGE_SIZE = 12;
 export const CHART_COLORS = ["#50c1b8", "#ffcf7a", "#73e0a8", "#8aa8ff", "#f08bb4", "#b7a8ff", "#f49f6b", "#9ad7ff"];
 
@@ -174,4 +175,47 @@ export function exportJobFamilies(items: InsightsDistributionItem[]) {
   link.download = `job-family-distribution-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export type InsightsAiBriefHandoff = {
+  reportType: "corpus_overview" | "gap_brief" | "job_family_analysis";
+  focus?: string;
+  targetSkills?: string[];
+};
+
+export function writeInsightsAiBriefHandoff(handoff: InsightsAiBriefHandoff) {
+  window.sessionStorage.setItem(AI_BRIEF_HANDOFF_STORAGE_KEY, JSON.stringify(handoff));
+}
+
+export function readInsightsAiBriefHandoff(): InsightsAiBriefHandoff | null {
+  const raw = window.sessionStorage.getItem(AI_BRIEF_HANDOFF_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as InsightsAiBriefHandoff;
+    window.sessionStorage.removeItem(AI_BRIEF_HANDOFF_STORAGE_KEY);
+    return parsed?.reportType ? parsed : null;
+  } catch {
+    window.sessionStorage.removeItem(AI_BRIEF_HANDOFF_STORAGE_KEY);
+    return null;
+  }
+}
+
+export function openInsightsSearchWithSkills(skills: string[], query?: string) {
+  if (!skills.length) {
+    return;
+  }
+  window.sessionStorage.setItem(
+    SEARCH_STATE_STORAGE_KEY,
+    JSON.stringify({
+      request: {
+        query: query ?? skills.join(" "),
+        filters: { role: "", skills, companies: [] },
+        offset: 0,
+        limit: PAGE_SIZE,
+      },
+      sortBy: "best-match",
+    }),
+  );
 }

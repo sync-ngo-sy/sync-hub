@@ -77,6 +77,19 @@
   background: rgba(80, 193, 184, 0.08);
 }
 
+.gap-verdict__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gap-ai-brief {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .gap-verdict h4,
 .gap-verdict p {
   margin: 0;
