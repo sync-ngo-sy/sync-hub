@@ -1,8 +1,8 @@
+// frontend/src/screens/InsightsDashboardPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { PageIntro, Panel } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { InsightsGapTab } from "@/features/insights/components/InsightsGapTab";
 import { InsightsOverviewTab } from "@/features/insights/components/InsightsOverviewTab";
 import { InsightsSkillsTab } from "@/features/insights/components/InsightsSkillsTab";
@@ -89,13 +89,6 @@ export function InsightsDashboardPage() {
     setAppliedGapInput(query);
   }
 
-  function refreshInsights() {
-    void insightsQuery.refetch();
-    if (activeTab === "tab3") {
-      void gapAnalysisQuery.refetch();
-    }
-  }
-
   function drillIntoJobFamily(jobFamily: string) {
     if (!jobFamily) {
       return;
@@ -118,17 +111,6 @@ export function InsightsDashboardPage() {
   if (!snapshot) {
     return (
       <div className="page-stack insights-page">
-        <PageIntro
-          eyebrow="Insights"
-          title="Insights & Intelligence Dashboard"
-          description="Read-only corpus intelligence for executive visibility, workforce planning, and talent supply decisions."
-          actions={
-            <button className="button button--secondary" type="button" onClick={refreshInsights}>
-              <RefreshCw size={16} />
-              Refresh
-            </button>
-          }
-        />
         <Panel className="table-card">
           <h3>{insightsQuery.isError ? "Production insights unavailable" : "Loading production insights"}</h3>
           <p className="muted">
@@ -169,17 +151,6 @@ export function InsightsDashboardPage() {
 
   return (
     <div className="page-stack insights-page">
-      <PageIntro
-        eyebrow="Insights"
-        title="Insights & Intelligence Dashboard"
-        description="Read-only corpus intelligence for executive visibility, workforce planning, and talent supply decisions."
-        actions={
-          <button className="button button--secondary" type="button" onClick={refreshInsights}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        }
-      />
 
       <InsightsTabs activeTab={activeTab} onSelectTab={selectTab} />
 

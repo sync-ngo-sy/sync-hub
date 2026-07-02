@@ -1,3 +1,4 @@
+// frontend/src/components/ui.tsx
 import type { ReactNode } from "react";
 import { ArrowRight, Building2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -151,7 +152,7 @@ export function SyncBrand({ subtitle = "Talent Intelligence Platform", className
   return (
     <div className={cn("brand-mark", className)}>
       <img className="brand-mark__logo" src={syncLogo} alt="Sync" />
-      <span className="brand-mark__subtitle">{subtitle}</span>
+      {subtitle && <span className="brand-mark__subtitle">{subtitle}</span>}
     </div>
   );
 }

@@ -86,6 +86,8 @@ $$;
 grant execute on function public.search_role_match_v1(text, text, text[], text, text) to authenticated;
 grant execute on function public.search_seniority_match_v1(text, text) to authenticated;
 
+drop view if exists public.candidate_search_rows cascade;
+
 create or replace view public.candidate_search_rows as
 select
   c.tenant_id,

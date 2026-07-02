@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ArrowRight, BookmarkCheck, BookmarkPlus, BriefcaseBusiness, MapPin, MessageSquareText, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Avatar, ScorePill, Tag } from "@/components/ui";
@@ -17,29 +18,64 @@ type CandidatePreviewDrawerProps = {
 };
 
 export function CandidatePreviewDrawer({
-  candidate,
-  isShortlisted,
-  partnerId,
-  searchQuery,
-  shortlistPending,
-  tenantId,
-  onClose,
-  onToggleShortlist,
-}: CandidatePreviewDrawerProps) {
+                                         candidate,
+                                         isShortlisted,
+                                         partnerId,
+                                         searchQuery,
+                                         shortlistPending,
+                                         tenantId,
+                                         onClose,
+                                         onToggleShortlist,
+                                       }: CandidatePreviewDrawerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    // Trigger slide-in on mount
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setIsOpen(true);
+      });
+    });
+  }, []);
+
+  function handleClose() {
+    setIsOpen(false);
+    setTimeout(onClose, 220);
+  }
+
   return (
     <>
-      <div className="candidate-preview-drawer-backdrop" onClick={onClose} />
-      <aside className="candidate-preview-drawer" role="dialog" aria-modal="true" aria-labelledby="candidate-preview-title">
+      {/* Backdrop */}
+      <div
+        className="candidate-preview-drawer-backdrop"
+        onClick={handleClose}
+        style={{
+          opacity: isOpen ? 1 : 0,
+          transition: "opacity 220ms cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      />
+
+      {/* Drawer */}
+      <aside
+        className="candidate-preview-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="candidate-preview-title"
+        style={{
+          transform: isOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 220ms cubic-bezier(0.4, 0, 0.2, 1)",
+          willChange: "transform",
+        }}
+      >
         <div className="candidate-preview-drawer__header">
           <div className="candidate-card__identity">
             <Avatar name={candidate.name} hue={candidate.avatarHue} size="lg" />
             <div className="stack">
-              <span className="eyebrow">Sneak peek</span>
               <h2 id="candidate-preview-title">{candidate.name}</h2>
               <p>{candidate.currentTitle}</p>
             </div>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close candidate overview">
+          <button className="icon-button" type="button" onClick={handleClose} aria-label="Close candidate overview">
             <X size={18} />
           </button>
         </div>
@@ -130,7 +166,7 @@ export function CandidatePreviewDrawer({
               searchMatchSignals: candidate.matchSignals,
               searchQuery,
             }}
-            onClick={onClose}
+            onClick={handleClose}
           >
             View Dossier
             <ArrowRight size={16} />

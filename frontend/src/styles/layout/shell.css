@@ -1,7 +1,26 @@
+:root {
+  color-scheme: dark;
+  --bg: #39393a;
+  --panel: rgba(68, 68, 70, 0.84);
+  --border: rgba(80, 193, 184, 0.16);
+  --border-strong: rgba(80, 193, 184, 0.3);
+  --text: #f6fbfa;
+  --text-muted: #b9d3d1;
+  --text-soft: #88aaa7;
+  --primary: #50c1b8;
+  --primary-strong: #00857e;
+  --tertiary: #00857e;
+  --success: #73e0a8;
+  --warning: #ffcf7a;
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --radius: 22px;
+  --font-sans: "Alexandria", sans-serif;
+}
+
 .app-shell {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
@@ -9,10 +28,16 @@
   min-width: 0;
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .app-shell__content {
   padding: 28px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .ambient {
@@ -301,4 +326,5 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  flex: 1;
 }

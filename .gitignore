@@ -55,3 +55,9 @@ temp/
 
 tenants.csv
 tenants-ic.csv
+
+# Agent/Skills
+.agents/skills/
+
+# Custom Agent Skills
+.agents/
