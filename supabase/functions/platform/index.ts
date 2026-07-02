@@ -1965,7 +1965,10 @@ const insightReportRunSelect = [
   "created_at",
 ].join(", ");
 
-type InsightReportType = "corpus_overview" | "gap_brief" | "job_family_analysis";
+type InsightReportType =
+  | "corpus_overview"
+  | "gap_brief"
+  | "job_family_analysis";
 
 type InsightReportPayload = {
   title: string;
@@ -1990,7 +1993,8 @@ const insightReportSchema = {
     title: { type: "string" },
     executiveSummary: {
       type: "string",
-      description: "Two to four sentence executive summary grounded in provided metrics.",
+      description:
+        "Two to four sentence executive summary grounded in provided metrics.",
     },
     sections: {
       type: "array",
@@ -2025,7 +2029,8 @@ const insightReportSchema = {
     },
     assistantPrompts: {
       type: "array",
-      description: "Suggested follow-up questions or actions for the recruiter.",
+      description:
+        "Suggested follow-up questions or actions for the recruiter.",
       items: { type: "string" },
     },
   },
@@ -2098,18 +2103,23 @@ function buildHeuristicInsightReport(
   const topFamilies = distributionTop(jobFamilies, 4);
   const topLocations = distributionTop(locations, 3);
   const topSeniority = distributionTop(seniority, 4);
-  const targetRole = asString(gapAnalysis.target_role ?? gapAnalysis.targetRole);
+  const targetRole = asString(
+    gapAnalysis.target_role ?? gapAnalysis.targetRole,
+  );
   const targetSkills = asStringArray(
     gapAnalysis.target_skills ?? gapAnalysis.targetSkills,
   );
   const fullyMatching = asNumber(
-    gapAnalysis.fully_matching_candidates ?? gapAnalysis.fullyMatchingCandidates,
+    gapAnalysis.fully_matching_candidates ??
+      gapAnalysis.fullyMatchingCandidates,
   ) ?? 0;
   const partiallyMatching = asNumber(
     gapAnalysis.partially_matching_candidates ??
       gapAnalysis.partiallyMatchingCandidates,
   ) ?? 0;
-  const missingSkills = asArray(gapAnalysis.missing_skills ?? gapAnalysis.missingSkills)
+  const missingSkills = asArray(
+    gapAnalysis.missing_skills ?? gapAnalysis.missingSkills,
+  )
     .map((item) => asRecord(item))
     .slice(0, 3)
     .map((item) => asString(item.skill))
@@ -2123,15 +2133,28 @@ function buildHeuristicInsightReport(
     : "Corpus intelligence brief";
 
   const executiveSummary = reportType === "gap_brief"
-    ? `The tenant corpus indexes ${totalCvs} profiles with an average of ${avgSkills} skills each. For ${focusLabel}, ${fullyMatching} profiles fully match and ${partiallyMatching} are partial matches, indicating ${partiallyMatching > fullyMatching ? "an upskilling opportunity" : "moderate exact-match depth"}.`
+    ? `The tenant corpus indexes ${totalCvs} profiles with an average of ${avgSkills} skills each. For ${focusLabel}, ${fullyMatching} profiles fully match and ${partiallyMatching} are partial matches, indicating ${
+      partiallyMatching > fullyMatching
+        ? "an upskilling opportunity"
+        : "moderate exact-match depth"
+    }.`
     : reportType === "job_family_analysis"
-    ? `${focusLabel} sits within a corpus of ${totalCvs} indexed profiles. Leading families are ${topFamilies || "not yet classified"}, with seniority mix led by ${topSeniority || "unknown bands"}.`
-    : `This workspace indexes ${totalCvs} CVs with ${avgSkills} average skills per profile. Job-family coverage is led by ${topFamilies || "unclassified roles"}, while geo concentration is strongest in ${topLocations || "unknown locations"}.`;
+    ? `${focusLabel} sits within a corpus of ${totalCvs} indexed profiles. Leading families are ${
+      topFamilies || "not yet classified"
+    }, with seniority mix led by ${topSeniority || "unknown bands"}.`
+    : `This workspace indexes ${totalCvs} CVs with ${avgSkills} average skills per profile. Job-family coverage is led by ${
+      topFamilies || "unclassified roles"
+    }, while geo concentration is strongest in ${
+      topLocations || "unknown locations"
+    }.`;
 
   const sections: InsightReportPayload["sections"] = [
     {
       title: "Corpus snapshot",
-      body: `Total indexed profiles: ${totalCvs}. Average skills per profile: ${avgSkills}. Top locations: ${topLocations || "n/a"}.`,
+      body:
+        `Total indexed profiles: ${totalCvs}. Average skills per profile: ${avgSkills}. Top locations: ${
+          topLocations || "n/a"
+        }.`,
       citations: [
         {
           metricKey: "total_cvs_indexed",
@@ -2147,7 +2170,11 @@ function buildHeuristicInsightReport(
     },
     {
       title: "Seniority and family mix",
-      body: `Seniority distribution is led by ${topSeniority || "unknown bands"}. Production taxonomy is concentrated in ${topFamilies || "unclassified families"}.`,
+      body: `Seniority distribution is led by ${
+        topSeniority || "unknown bands"
+      }. Production taxonomy is concentrated in ${
+        topFamilies || "unclassified families"
+      }.`,
       citations: jobFamilies.slice(0, 2).map((item, index) => ({
         metricKey: `job_family_${index + 1}`,
         label: asString(item.label) ?? "Job family",
@@ -2160,7 +2187,11 @@ function buildHeuristicInsightReport(
     sections.push({
       title: "Requirement coverage",
       body: targetSkills.length
-        ? `Resolved requirements: ${targetSkills.join(", ")}. Fully matching profiles: ${fullyMatching}. Partial matches: ${partiallyMatching}. Top missing skills among partial profiles: ${missingSkills.join(", ") || "none surfaced"}.`
+        ? `Resolved requirements: ${
+          targetSkills.join(", ")
+        }. Fully matching profiles: ${fullyMatching}. Partial matches: ${partiallyMatching}. Top missing skills among partial profiles: ${
+          missingSkills.join(", ") || "none surfaced"
+        }.`
         : `No resolved skill requirements were available for ${focusLabel}. Review the Gap Engine tab to map role text to catalog skills.`,
       citations: [
         {
@@ -2180,7 +2211,9 @@ function buildHeuristicInsightReport(
   const recommendations = reportType === "gap_brief"
     ? [
       partiallyMatching > fullyMatching && missingSkills[0]
-        ? `Prioritize upskilling around ${missingSkills[0]} before expanding search criteria.`
+        ? `Prioritize upskilling around ${
+          missingSkills[0]
+        } before expanding search criteria.`
         : "Run a targeted search for fully matching profiles before widening requirements.",
       "Export the gap verdict and share it with hiring stakeholders.",
       "Re-run this brief after the next ingestion batch to track supply movement.",
@@ -2202,7 +2235,9 @@ function buildHeuristicInsightReport(
       ? "Corpus volume is too low for reliable supply conclusions."
       : null,
     missingSkills.length && reportType === "gap_brief"
-      ? `${missingSkills[0]} appears as a recurring blocker in partial profiles.`
+      ? `${
+        missingSkills[0]
+      } appears as a recurring blocker in partial profiles.`
       : null,
     "Insights remain read-only; validate critical hiring decisions with dossier review.",
   ].filter((item): item is string => Boolean(item));
@@ -2210,7 +2245,9 @@ function buildHeuristicInsightReport(
   const assistantPrompts = reportType === "gap_brief"
     ? [
       `Which partial profiles are closest to ${focusLabel}?`,
-      `What training cohort could close ${missingSkills[0] ?? "the top skill gap"} fastest?`,
+      `What training cohort could close ${
+        missingSkills[0] ?? "the top skill gap"
+      } fastest?`,
       "Show me fully matching candidates in Search.",
     ]
     : reportType === "job_family_analysis"
@@ -2281,7 +2318,9 @@ async function startInsightReportRun(
   body: JsonRecord,
 ) {
   if (tenantIds.length !== 1) {
-    throw new Error("Exactly one tenant_id is required for insight report generation.");
+    throw new Error(
+      "Exactly one tenant_id is required for insight report generation.",
+    );
   }
   const tenantId = tenantIds[0];
   const userId = await getCurrentUserId(supabase);
@@ -2302,7 +2341,10 @@ async function startInsightReportRun(
     targetSkills,
     topSkills: Math.max(
       1,
-      Math.min(200, Math.trunc(asNumber(body.top_skills ?? body.topSkills) ?? 50)),
+      Math.min(
+        200,
+        Math.trunc(asNumber(body.top_skills ?? body.topSkills) ?? 50),
+      ),
     ),
   };
 
@@ -2385,7 +2427,9 @@ async function startInsightReportRun(
       report: generation.payload,
     };
   } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
+    const failureReason = error instanceof Error
+      ? error.message
+      : String(error);
     await supabase
       .from("insight_report_runs")
       .update({
