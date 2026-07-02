@@ -1,0 +1,9 @@
+# Default owners for the whole repo
+* @abdulqdaer-q @abdalhadihaidar
+
+# Protect CODEOWNERS itself
+/.github/CODEOWNERS @abdulqdaer-q
+
+# Deployment / env / workflow-sensitive files
+/.github/workflows/ @abdulqdaer-q @abdalhadihaidar
+/.env.example @abdulqdaer-q @abdalhadihaidar

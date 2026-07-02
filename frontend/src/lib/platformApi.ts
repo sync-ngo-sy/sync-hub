@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccessRoster,
   AccountProvisionResult,
   MembershipRole,
@@ -49,6 +49,7 @@ import {
   mapEvidenceSnippet,
   mapRemoteCandidate,
 } from "@/features/candidates/apiMappers";
+import { fetchCandidatesListRpc } from "@/features/candidates/apiMappers";
 import {
   fetchInsightsDashboardFromRpc,
   fetchInsightsDashboardFromSearchCache,
@@ -79,7 +80,15 @@ import {
   shortlistInputPayload,
 } from "@/features/search/apiMappers";
 import { countRemoteRows } from "@/lib/api/countRows";
-import { asArray, asRecord, errorMessage, nullableString, toNumber, toStringArray, type JsonRecord } from "@/lib/api/json";
+import {
+  asArray,
+  asRecord,
+  errorMessage,
+  nullableString,
+  toNumber,
+  toStringArray,
+  type JsonRecord,
+} from "@/lib/api/json";
 import { invokeFunction, invokePlatform } from "@/lib/api/platformClient";
 import {
   buildParsingDocumentDetail,
@@ -97,238 +106,34 @@ import type {
   ParsingRemoteSnapshot,
   ParsingSourceDocumentRow,
 } from "@/lib/api/platformRows";
-import type { OriginalDocumentUrlContext, ParsingOverviewOptions, PlatformApi } from "@/lib/platformApiTypes";
+import type {
+  OriginalDocumentUrlContext,
+  ParsingOverviewOptions,
+  PlatformApi,
+} from "@/lib/platformApiTypes";
 import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
 
 const MAX_VISIBLE_CITATIONS = 3;
 const MAX_CONTEXT_BLOCKS = 6;
-const USE_INSIGHTS_PLATFORM_API = import.meta.env.VITE_USE_INSIGHTS_PLATFORM_API !== "false";
-
-type PlatformApi = {
-  search: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchResponse>;
-  listCandidates: (tenantIds?: string[], options?: CandidateListOptions) => Promise<CandidateListResponse>;
-  searchDebug: (query: string, filters: SearchFilters, options?: SearchQueryOptions, tenantIds?: string[]) => Promise<SearchDebugResponse>;
-  getSearchFilterOptions: (tenantIds?: string[]) => Promise<SearchFilterOptions>;
-  getWorkspaceStats: (tenantIds?: string[]) => Promise<WorkspaceStats>;
-  getManatalSyncStatus: (tenantIds?: string[]) => Promise<ManatalSyncStatus>;
-  getManatalCandidateId: (candidateId: string) => Promise<string | null>;
-  getCandidate: (candidateId: string) => Promise<CandidateDetail>;
-  compare: (candidateIds: string[], requiredSkills?: string[]) => Promise<ComparisonResponse>;
-  ask: (question: string, candidateIds: string[]) => Promise<AskResponse>;
-  agent: (
-    question: string,
-    candidateIds?: string[],
-    messages?: Array<{ role: "user" | "assistant"; content: string }>,
-    tenantIds?: string[],
-  ) => Promise<AgentResponse>;
-  getOriginalDocumentUrl: (storagePath?: string | null, sourceUri?: string | null, context?: OriginalDocumentUrlContext) => Promise<string | null>;
-  getShortlist: (tenantIds?: string[]) => Promise<CandidateShortlistItem[]>;
-  saveShortlistItem: (item: CandidateShortlistInput) => Promise<CandidateShortlistItem>;
-  removeShortlistItem: (candidateId: string, tenantId?: string | null) => Promise<void>;
-  clearShortlist: (tenantIds?: string[]) => Promise<void>;
-  listJobPostings: (tenantIds?: string[]) => Promise<JobPosting[]>;
-  getJobPosting: (jobId: string) => Promise<JobPosting>;
-  saveJobPosting: (job: JobPostingInput) => Promise<JobPosting>;
-  extractJobPosting: (input: {
-    tenantId: string;
-    jobId?: string;
-    title?: string;
-    employerRegion?: string;
-    jobDescription: string;
-  }) => Promise<JobExtractionResult>;
-  startJobMatchingRun: (input: {
-    jobId: string;
-    limit?: number;
-    semanticPoolSize?: number;
-    rerankPoolSize?: number;
-    mandatoryCriteria?: Record<string, unknown>;
-  }) => Promise<JobMatchingRunDetail>;
-  listJobMatchingRuns: (jobId: string) => Promise<JobMatchingRun[]>;
-  getJobMatchingRun: (runId: string) => Promise<JobMatchingRunDetail>;
-  listJobShortlists: (jobId: string) => Promise<JobShortlist[]>;
-  getJobShortlist: (shortlistId: string) => Promise<JobShortlistDetail>;
-  saveJobShortlist: (input: JobShortlistInput) => Promise<JobShortlistDetail>;
-  listJobApplications: (jobId: string) => Promise<JobApplication[]>;
-  updateJobApplicationStatus: (applicationId: string, status: JobApplicationStatus) => Promise<JobApplication>;
-  listPublicJobPostings: () => Promise<PublicJobPosting[]>;
-  getPublicJobPosting: (slug: string) => Promise<PublicJobPosting>;
-  submitPublicJobApplication: (slug: string, application: PublicJobApplicationInput) => Promise<PublicJobApplicationReceipt>;
-  getParsingOverview: (tenantIds?: string[], options?: ParsingOverviewOptions) => Promise<ParsingOverview>;
-  getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;
-  getParserProfiles: (tenantIds?: string[]) => Promise<ParserProfile[]>;
-  saveParserProfile: (profile: ParserProfileInput, tenantId?: string) => Promise<ParserProfile>;
-  publishParserProfile: (profileId: string, tenantId?: string) => Promise<ParserProfile>;
-  getAnalytics: () => Promise<AnalyticsSnapshot>;
-  getInsightsDashboard: (options?: InsightsDashboardOptions, tenantIds?: string[]) => Promise<InsightsDashboardSnapshot>;
-  getInsightsGapAnalysis: (options?: InsightsDashboardOptions, tenantIds?: string[]) => Promise<InsightsGapAnalysis>;
-  getSystemHealth: () => Promise<SystemHealth>;
-  getOpsAlerts: (tenantIds?: string[]) => Promise<OpsAlert[]>;
-  acknowledgeOpsAlert: (dedupeKey: string) => Promise<OpsAlert | null>;
-  getDataConnectors: () => Promise<DataConnector[]>;
-  getIndexingWorkbench: () => Promise<IndexingWorkbench>;
-  getAccessRoster: () => Promise<AccessRoster>;
-  listAdminTenants: () => Promise<TenantAdminSummary[]>;
-  createTenantAccount: (input: {
-    email: string;
-    password: string;
-    tenantName: string;
-    tenantSlug?: string;
-    tenantIcon?: string;
-    fullName?: string;
-    role?: MembershipRole;
-  }) => Promise<AccountProvisionResult>;
-  addUserToTenant: (input: {
-    email: string;
-    password: string;
-    tenantSlug: string;
-    fullName?: string;
-    role?: MembershipRole;
-  }) => Promise<AccountProvisionResult>;
-  getPlatformRuntimeConfig: () => Promise<PlatformRuntimeConfig>;
-  savePlatformRuntimeConfig: (settings: Record<string, string | null>) => Promise<PlatformRuntimeConfig>;
-};
-
-type OriginalDocumentUrlContext = {
-  candidateId?: string | null;
-  documentId?: string | null;
-  tenantId?: string | null;
-  tenantIds?: string[];
-};
-
-type ParsingOverviewOptions = {
-  pageSize?: number;
-  pageIndex?: number;
-  reviewFilter?: "all" | "needsReview";
-  searchQuery?: string;
-};
-
-type CandidateDossierRow = {
-  candidate_id: string;
-  source_document_id?: string | null;
-  name: string;
-  headline: string | null;
-  current_title: string | null;
-  location: string | null;
-  years_experience: number | null;
-  seniority: string | null;
-  primary_role: string | null;
-  top_skills: string[] | null;
-  email: string | null;
-  phone: string | null;
-  links: string[] | null;
-  summary_short: string | null;
-  short_summary: string | null;
-  long_summary: string | null;
-  strengths: unknown;
-  risks: unknown;
-  recommended_roles: unknown;
-  timeline_json: unknown;
-  profile_json: unknown;
-  original_filename: string | null;
-  mime_type: string | null;
-  storage_path: string | null;
-  source_uri: string | null;
-  manatal_candidate_id?: string | null;
-  confidence: number | null;
-};
-
-type CandidateChunkRow = {
-  id: string;
-  chunk_type: string;
-  text: string;
-};
-
-type CandidateSearchFacetRow = {
-  seniority: string | null;
-  skills: string[] | null;
-  companies: string[] | null;
-  location: string | null;
-};
-
-type CandidateSearchRow = CandidateSearchFacetRow & {
-  tenant_id: string;
-  candidate_id: string;
-  name: string | null;
-  headline: string | null;
-  current_title: string | null;
-  years_experience: number | null;
-  primary_role: string | null;
-  summary_short: string | null;
-  stored_short_summary: string | null;
-};
-
-type CandidateTimelineRow = {
-  timeline_json: unknown;
-};
-
-type ParsingRemoteSnapshot = {
-  documents: ParsingSourceDocumentRow[];
-  candidates: ParsingCandidateRow[];
-  profiles: ParsingProfileRow[];
-  runs: ParsingProcessingRunRow[];
-};
-
-type ParserProfileRow = {
-  id: string;
-  tenant_id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  status: string;
-  extraction_provider: string;
-  extraction_model: string;
-  parser_version: string;
-  model_version: string;
-  prompt_version: string;
-  chunk_version: string;
-  embedding_provider: string;
-  embedding_model: string;
-  embedding_version: string;
-  chunking_profile: string;
-  ocr_enabled: boolean;
-  allow_heuristic_fallback: boolean;
-  prompt_template: string;
-  notes: string | null;
-  last_evaluated_at: string | null;
-  avg_parse_percentage: number | null;
-  avg_confidence: number | null;
-  documents_evaluated: number | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type CandidateShortlistRow = {
-  user_id: string;
-  tenant_id: string;
-  candidate_id: string;
-  candidate_name: string | null;
-  current_title: string | null;
-  location: string | null;
-  years_experience: number | null;
-  seniority: string | null;
-  primary_role: string | null;
-  top_skills: string[] | null;
-  match_rate: number | null;
-  cv_url: string | null;
-  original_filename: string | null;
-  source_query: string | null;
-  search_snapshot: unknown;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-};
+const USE_INSIGHTS_PLATFORM_API =
+  import.meta.env.VITE_USE_INSIGHTS_PLATFORM_API !== "false";
 
 const STORAGE_BUCKET = "cv-originals";
 const SEARCH_FACET_CACHE_TTL_MS = 60_000;
 
-const searchFacetRowsCache = new Map<string, { expiresAt: number; promise: Promise<CandidateSearchFacetRow[]> }>();
+const searchFacetRowsCache = new Map<
+  string,
+  { expiresAt: number; promise: Promise<CandidateSearchFacetRow[]> }
+>();
 
 type PlatformApiMethod = (...args: unknown[]) => Promise<unknown>;
 
 let mockApiPromise: Promise<PlatformApi> | null = null;
 
 async function getMockApi() {
-  mockApiPromise ??= import("@/lib/api/mockPlatformApi").then(({ createMockApi }) => createMockApi());
+  mockApiPromise ??= import("@/lib/api/mockPlatformApi").then(
+    ({ createMockApi }) => createMockApi(),
+  );
   return mockApiPromise;
 }
 
@@ -363,7 +168,9 @@ async function fetchSearchFacetRows(tenantIds?: string[]) {
   }
 
   const promise = (async () => {
-    const payload = await invokePlatform<JsonRecord>("search_filter_options", { tenant_ids: tenantIds ?? [] });
+    const payload = await invokePlatform<JsonRecord>("search_filter_options", {
+      tenant_ids: tenantIds ?? [],
+    });
     return [
       {
         seniority: null,
@@ -386,7 +193,10 @@ async function fetchSearchFacetRows(tenantIds?: string[]) {
     ] satisfies CandidateSearchFacetRow[];
   })();
 
-  searchFacetRowsCache.set(key, { expiresAt: Date.now() + SEARCH_FACET_CACHE_TTL_MS, promise });
+  searchFacetRowsCache.set(key, {
+    expiresAt: Date.now() + SEARCH_FACET_CACHE_TTL_MS,
+    promise,
+  });
   try {
     return await promise;
   } catch (error) {
@@ -396,7 +206,9 @@ async function fetchSearchFacetRows(tenantIds?: string[]) {
 }
 
 async function fetchWorkspaceStatsRpc(tenantIds?: string[]) {
-  const row = await invokePlatform<JsonRecord>("workspace_stats", { tenant_ids: tenantIds ?? [] });
+  const row = await invokePlatform<JsonRecord>("workspace_stats", {
+    tenant_ids: tenantIds ?? [],
+  });
   return {
     documentCount: toNumber(row.document_count),
     candidateCount: toNumber(row.candidate_count),
@@ -404,8 +216,12 @@ async function fetchWorkspaceStatsRpc(tenantIds?: string[]) {
   } satisfies WorkspaceStats;
 }
 
-async function fetchParsingOverviewSnapshotRpc(tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
-  const payload = await invokePlatform<JsonRecord>("parsing_overview", { tenant_ids: tenantIds });
+async function fetchParsingOverviewSnapshotRpc(
+  tenantIds: string[],
+): Promise<ParsingRemoteSnapshot> {
+  const payload = await invokePlatform<JsonRecord>("parsing_overview", {
+    tenant_ids: tenantIds,
+  });
   return {
     documents: asArray(payload.documents) as ParsingSourceDocumentRow[],
     candidates: asArray(payload.candidates) as ParsingCandidateRow[],
@@ -414,7 +230,9 @@ async function fetchParsingOverviewSnapshotRpc(tenantIds: string[]): Promise<Par
   };
 }
 
-function mapRemoteParsingSummary(row: JsonRecord): ParsingOverview["items"][number] {
+function mapRemoteParsingSummary(
+  row: JsonRecord,
+): ParsingOverview["items"][number] {
   const qualityBand = String(row.qualityBand ?? "critical");
   return {
     documentId: String(row.documentId ?? ""),
@@ -431,7 +249,11 @@ function mapRemoteParsingSummary(row: JsonRecord): ParsingOverview["items"][numb
     extractionConfidence: toNumber(row.extractionConfidence),
     rawTextLength: toNumber(row.rawTextLength),
     status: String(row.status ?? "queued"),
-    qualityBand: (qualityBand === "healthy" || qualityBand === "review" || qualityBand === "critical" ? qualityBand : "critical") as ParsingOverview["items"][number]["qualityBand"],
+    qualityBand: (qualityBand === "healthy" ||
+    qualityBand === "review" ||
+    qualityBand === "critical"
+      ? qualityBand
+      : "critical") as ParsingOverview["items"][number]["qualityBand"],
     parserVersion: String(row.parserVersion ?? "unknown"),
     modelVersion: String(row.modelVersion ?? "unknown"),
     promptVersion: String(row.promptVersion ?? "unknown"),
@@ -454,168 +276,14 @@ function mapRemoteWorkspaceRollup(row: JsonRecord) {
   };
 }
 
-function mapRemoteCandidateListItem(row: JsonRecord): CandidateListItem {
-  return {
-    tenantId: String(row.tenantId ?? ""),
-    candidateId: String(row.candidateId ?? ""),
-    name: String(row.name ?? "Unnamed candidate"),
-    email: typeof row.email === "string" ? row.email : null,
-    location: String(row.location ?? ""),
-    primaryRole: String(row.primaryRole ?? ""),
-    appliedRole: typeof row.appliedRole === "string" ? row.appliedRole : null,
-    stage: String(row.stage ?? "Unknown"),
-    stageKey: String(row.stageKey ?? "unknown"),
-    source: String(row.source ?? "unknown"),
-    seniority: String(row.seniority ?? ""),
-    updatedAt: String(row.updatedAt ?? ""),
-    groupKey: typeof row.groupKey === "string" ? row.groupKey : null,
-    groupLabel: typeof row.groupLabel === "string" ? row.groupLabel : null,
-  };
-}
-
-function mapRemoteCandidateListResponse(payload: JsonRecord): CandidateListResponse {
-  const groupByRaw = String(payload.groupBy ?? "");
-  const groupBy = (groupByRaw === "status" || groupByRaw === "role" || groupByRaw === "source" || groupByRaw === "location"
-    ? groupByRaw
-    : "") as CandidateListGroupBy | "";
-  const filterOptions = asRecord(payload.filterOptions);
-  return {
-    items: asArray(payload.items).map((item) => mapRemoteCandidateListItem(asRecord(item))),
-    itemsTotalCount: toNumber(payload.itemsTotalCount),
-    pageLimit: toNumber(payload.pageLimit),
-    pageOffset: toNumber(payload.pageOffset),
-    groupBy: groupBy || null,
-    groups: asArray(payload.groups).map((item) => {
-      const row = asRecord(item);
-      return {
-        key: String(row.key ?? ""),
-        label: String(row.label ?? ""),
-        count: toNumber(row.count),
-      };
-    }),
-    filterOptions: {
-      statuses: toStringArray(filterOptions.statuses),
-      roles: toStringArray(filterOptions.roles),
-      sources: toStringArray(filterOptions.sources),
-      locations: toStringArray(filterOptions.locations),
-    },
-  };
-}
-
-async function fetchCandidatesListRpc(tenantIds: string[], options: CandidateListOptions = {}): Promise<CandidateListResponse> {
-  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
-  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
-  const filters = options.filters ?? {};
-  const payload = await invokePlatform<JsonRecord>("candidates_list", {
-    tenant_ids: tenantIds,
-    limit: pageSize,
-    offset: pageIndex * pageSize,
-    query: filters.query?.trim() || null,
-    status: filters.status || null,
-    role: filters.role || null,
-    source: filters.source || null,
-    location: filters.location || null,
-    updated_from: filters.updatedFrom || null,
-    updated_to: filters.updatedTo || null,
-    group_by: filters.groupBy || null,
-  });
-  return mapRemoteCandidateListResponse(payload);
-}
-
-function buildMockCandidatesList(options: CandidateListOptions = {}): CandidateListResponse {
-  const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
-  const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
-  const filters = options.filters ?? {};
-  const groupBy = (filters.groupBy ?? "") as CandidateListGroupBy | "";
-  const allResults = searchCandidates("", {}, { limit: 100, offset: 0 }).results;
-  const query = filters.query?.trim().toLowerCase() ?? "";
-
-  const baseItems: CandidateListItem[] = allResults.map((candidate) => {
-    const stageKey = candidate.stage.toLowerCase().replace(/\s+/g, "_");
-    const roleLabel = candidate.primaryRole || "Unassigned role";
-    const locationLabel = candidate.location.trim() || "Unknown location";
-    const sourceLabel = "mock_upload";
-    return {
-      tenantId: "mock-tenant",
-      candidateId: candidate.candidateId,
-      name: candidate.name,
-      email: null,
-      location: candidate.location,
-      primaryRole: candidate.primaryRole,
-      appliedRole: candidate.primaryRole,
-      stage: candidate.stage,
-      stageKey,
-      source: sourceLabel,
-      seniority: candidate.seniority,
-      updatedAt: new Date().toISOString(),
-      groupKey: groupBy === "status" ? stageKey : groupBy === "role" ? roleLabel : groupBy === "source" ? sourceLabel : groupBy === "location" ? locationLabel : null,
-      groupLabel: groupBy === "status" ? candidate.stage : groupBy === "role" ? roleLabel : groupBy === "source" ? "Mock upload" : groupBy === "location" ? locationLabel : null,
-    };
-  });
-
-  const filtered = baseItems.filter((item) => {
-    if (query && !`${item.name} ${item.email ?? ""}`.toLowerCase().includes(query)) {
-      return false;
-    }
-    if (filters.status && item.stageKey !== filters.status) {
-      return false;
-    }
-    if (filters.role) {
-      const roleQuery = filters.role.toLowerCase();
-      if (!`${item.primaryRole} ${item.appliedRole ?? ""}`.toLowerCase().includes(roleQuery)) {
-        return false;
-      }
-    }
-    if (filters.source && item.source !== filters.source) {
-      return false;
-    }
-    if (filters.location && !item.location.toLowerCase().includes(filters.location.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
-
-  filtered.sort((left, right) => {
-    const groupCompare = String(left.groupKey ?? "").localeCompare(String(right.groupKey ?? ""));
-    if (groupCompare !== 0) {
-      return groupCompare;
-    }
-    return right.updatedAt.localeCompare(left.updatedAt);
-  });
-
-  const offset = pageIndex * pageSize;
-  const items = filtered.slice(offset, offset + pageSize);
-  const groupCounts = new Map<string, CandidateListGroup>();
-  for (const item of filtered) {
-    if (!item.groupKey || !item.groupLabel) {
-      continue;
-    }
-    const current = groupCounts.get(item.groupKey);
-    if (current) {
-      current.count += 1;
-    } else {
-      groupCounts.set(item.groupKey, { key: item.groupKey, label: item.groupLabel, count: 1 });
-    }
-  }
-
-  return {
-    items,
-    itemsTotalCount: filtered.length,
-    pageLimit: pageSize,
-    pageOffset: offset,
-    groupBy: groupBy || null,
-    groups: Array.from(groupCounts.values()).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)),
-    filterOptions: {
-      statuses: Array.from(new Set(baseItems.map((item) => item.stageKey))).sort(),
-      roles: Array.from(new Set(baseItems.map((item) => item.primaryRole).filter(Boolean))).sort(),
-      sources: Array.from(new Set(baseItems.map((item) => item.source))).sort(),
-      locations: Array.from(new Set(baseItems.map((item) => item.location).filter(Boolean))).sort(),
-    },
-  };
-}
-
-async function fetchParsingOverviewRpc(tenantIds: string[], options: ParsingOverviewOptions = {}): Promise<ParsingOverview> {
-  const pageSize = Math.max(0, Math.min(500, Math.trunc(options.pageSize ?? 100)));
+async function fetchParsingOverviewRpc(
+  tenantIds: string[],
+  options: ParsingOverviewOptions = {},
+): Promise<ParsingOverview> {
+  const pageSize = Math.max(
+    0,
+    Math.min(500, Math.trunc(options.pageSize ?? 100)),
+  );
   const pageIndex = Math.max(0, Math.trunc(options.pageIndex ?? 0));
   const payload = await invokePlatform<JsonRecord>("parsing_overview", {
     tenant_ids: tenantIds,
@@ -638,8 +306,12 @@ async function fetchParsingOverviewRpc(tenantIds: string[], options: ParsingOver
       itemsTotalCount: toNumber(payload.itemsTotalCount),
       pageLimit: toNumber(payload.pageLimit),
       pageOffset: toNumber(payload.pageOffset),
-      workspaceRollups: asArray(payload.workspaceRollups).map((item) => mapRemoteWorkspaceRollup(asRecord(item))),
-      items: asArray(payload.items).map((item) => mapRemoteParsingSummary(asRecord(item))),
+      workspaceRollups: asArray(payload.workspaceRollups).map((item) =>
+        mapRemoteWorkspaceRollup(asRecord(item)),
+      ),
+      items: asArray(payload.items).map((item) =>
+        mapRemoteParsingSummary(asRecord(item)),
+      ),
     };
   }
 
@@ -659,7 +331,10 @@ function createEmptyWorkspaceStats(): WorkspaceStats {
   };
 }
 
-async function fetchParsingDocumentSnapshot(documentId: string, tenantIds: string[]): Promise<ParsingRemoteSnapshot> {
+async function fetchParsingDocumentSnapshot(
+  documentId: string,
+  tenantIds: string[],
+): Promise<ParsingRemoteSnapshot> {
   const payload = await invokePlatform<JsonRecord>("parsing_document", {
     document_id: documentId,
     tenant_ids: tenantIds,
@@ -679,20 +354,34 @@ function percent(numerator: number, denominator: number) {
   return Math.round((numerator / denominator) * 100);
 }
 
-function mapManatalSyncRow(row: JsonRecord): ManatalSyncStatus["recentRows"][number] {
+function mapManatalSyncRow(
+  row: JsonRecord,
+): ManatalSyncStatus["recentRows"][number] {
   return {
     manatalCandidateId: String(row.manatal_candidate_id ?? ""),
     candidateName: String(row.manatal_full_name ?? "Unknown candidate"),
-    email: typeof row.manatal_email === "string" && row.manatal_email ? row.manatal_email : null,
+    email:
+      typeof row.manatal_email === "string" && row.manatal_email
+        ? row.manatal_email
+        : null,
     syncStatus: String(row.sync_status ?? "unknown"),
-    lastSyncedAt: typeof row.last_synced_at === "string" ? row.last_synced_at : null,
+    lastSyncedAt:
+      typeof row.last_synced_at === "string" ? row.last_synced_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
-    sourceDocumentId: typeof row.source_document_id === "string" ? row.source_document_id : null,
-    errorMessage: typeof row.error_message === "string" && row.error_message ? row.error_message : null,
+    sourceDocumentId:
+      typeof row.source_document_id === "string"
+        ? row.source_document_id
+        : null,
+    errorMessage:
+      typeof row.error_message === "string" && row.error_message
+        ? row.error_message
+        : null,
   };
 }
 
-async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<ManatalSyncStatus> {
+async function fetchManatalSyncStatusDirect(
+  tenantIds: string[],
+): Promise<ManatalSyncStatus> {
   if (!supabase || !tenantIds.length) {
     return (await getMockApi()).getManatalSyncStatus(tenantIds);
   }
@@ -709,19 +398,35 @@ async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<Manata
     skippedRows,
   ] = await Promise.all([
     countRemoteRows("source_documents", tenantIds),
-    countRemoteRows("source_documents", tenantIds, (query) => query.like("source_uri", "gs://%")),
-    countRemoteRows("source_documents", tenantIds, (query) => query.ilike("source_uri", "%drive.google.com%")),
+    countRemoteRows("source_documents", tenantIds, (query) =>
+      query.like("source_uri", "gs://%"),
+    ),
+    countRemoteRows("source_documents", tenantIds, (query) =>
+      query.ilike("source_uri", "%drive.google.com%"),
+    ),
     countRemoteRows("manatal_candidate_sync", tenantIds),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.not("source_document_id", "is", null)),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "synced")),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "pending")),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "failed")),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) => query.eq("sync_status", "skipped")),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
+      query.not("source_document_id", "is", null),
+    ),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
+      query.eq("sync_status", "synced"),
+    ),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
+      query.eq("sync_status", "pending"),
+    ),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
+      query.eq("sync_status", "failed"),
+    ),
+    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
+      query.eq("sync_status", "skipped"),
+    ),
   ]);
 
   const recentResult = await supabase
     .from("manatal_candidate_sync")
-    .select("manatal_candidate_id, manatal_full_name, manatal_email, sync_status, last_synced_at, updated_at, source_document_id, error_message")
+    .select(
+      "manatal_candidate_id, manatal_full_name, manatal_email, sync_status, last_synced_at, updated_at, source_document_id, error_message",
+    )
     .in("tenant_id", tenantIds)
     .order("updated_at", { ascending: false })
     .limit(12);
@@ -743,7 +448,9 @@ async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<Manata
 
   const lastFailureResult = await supabase
     .from("manatal_candidate_sync")
-    .select("manatal_candidate_id, manatal_full_name, error_message, updated_at")
+    .select(
+      "manatal_candidate_id, manatal_full_name, error_message, updated_at",
+    )
     .in("tenant_id", tenantIds)
     .eq("sync_status", "failed")
     .order("updated_at", { ascending: false })
@@ -772,20 +479,32 @@ async function fetchManatalSyncStatusDirect(tenantIds: string[]): Promise<Manata
       manatalSyncedPercent: percent(syncedRows, manatalRows),
       mappedRowsPercent: percent(mappedManatalRows, manatalRows),
     },
-    lastSyncedAt: typeof lastSynced.last_synced_at === "string" ? lastSynced.last_synced_at : null,
+    lastSyncedAt:
+      typeof lastSynced.last_synced_at === "string"
+        ? lastSynced.last_synced_at
+        : null,
     lastFailure: lastFailure.manatal_candidate_id
       ? {
           manatalCandidateId: String(lastFailure.manatal_candidate_id),
-          candidateName: String(lastFailure.manatal_full_name ?? "Unknown candidate"),
+          candidateName: String(
+            lastFailure.manatal_full_name ?? "Unknown candidate",
+          ),
           errorMessage: String(lastFailure.error_message ?? ""),
-          updatedAt: typeof lastFailure.updated_at === "string" ? lastFailure.updated_at : null,
+          updatedAt:
+            typeof lastFailure.updated_at === "string"
+              ? lastFailure.updated_at
+              : null,
         }
       : null,
-    recentRows: asArray(recentResult.data).map((row) => mapManatalSyncRow(asRecord(row))),
+    recentRows: asArray(recentResult.data).map((row) =>
+      mapManatalSyncRow(asRecord(row)),
+    ),
   };
 }
 
-async function fetchCandidateDetailDirect(candidateId: string): Promise<CandidateDetail> {
+async function fetchCandidateDetailDirect(
+  candidateId: string,
+): Promise<CandidateDetail> {
   if (!supabase) {
     return (await getMockApi()).getCandidate(candidateId);
   }
@@ -818,12 +537,18 @@ async function fetchCandidateDetailDirect(candidateId: string): Promise<Candidat
   }
 
   return mapRemoteCandidate(
-    { ...(asRecord(dossier.data) as CandidateDossierRow), manatal_candidate_id: await fetchManatalCandidateIdByCandidateId(candidateId) },
+    {
+      ...(asRecord(dossier.data) as CandidateDossierRow),
+      manatal_candidate_id:
+        await fetchManatalCandidateIdByCandidateId(candidateId),
+    },
     asArray(chunks.data) as CandidateChunkRow[],
   );
 }
 
-async function fetchManatalCandidateIdByCandidateId(candidateId: string): Promise<string | null> {
+async function fetchManatalCandidateIdByCandidateId(
+  candidateId: string,
+): Promise<string | null> {
   if (!supabase) {
     return null;
   }
@@ -837,7 +562,10 @@ async function fetchManatalCandidateIdByCandidateId(candidateId: string): Promis
     throw dossierResult.error;
   }
 
-  const sourceDocumentId = typeof dossierResult.data?.source_document_id === "string" ? dossierResult.data.source_document_id : "";
+  const sourceDocumentId =
+    typeof dossierResult.data?.source_document_id === "string"
+      ? dossierResult.data.source_document_id
+      : "";
   if (!sourceDocumentId) {
     return null;
   }
@@ -852,7 +580,9 @@ async function fetchManatalCandidateIdByCandidateId(candidateId: string): Promis
   }
 
   const row = asRecord(asArray(syncResult.data)[0]);
-  return typeof row.manatal_candidate_id === "string" ? row.manatal_candidate_id : null;
+  return typeof row.manatal_candidate_id === "string"
+    ? row.manatal_candidate_id
+    : null;
 }
 
 function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
@@ -861,7 +591,9 @@ function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
   const rawItems = asArray(normalized.items);
 
   return {
-    source: String(payload.source ?? normalized.source ?? "deterministic_fallback") as ComparisonResponse["source"],
+    source: String(
+      payload.source ?? normalized.source ?? "deterministic_fallback",
+    ) as ComparisonResponse["source"],
     overlap: toStringArray(normalized.overlap),
     recommendedCandidateId: normalized.recommended_candidate_id
       ? String(normalized.recommended_candidate_id)
@@ -874,11 +606,17 @@ function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
         tenantId: record.tenant_id ? String(record.tenant_id) : null,
         candidateId: String(record.candidate_id ?? record.candidateId),
         name: String(record.name ?? "Unknown candidate"),
-        currentTitle: String(record.current_title ?? record.currentTitle ?? "Candidate"),
-        yearsExperience: toNumber(record.years_experience ?? record.yearsExperience),
+        currentTitle: String(
+          record.current_title ?? record.currentTitle ?? "Candidate",
+        ),
+        yearsExperience: toNumber(
+          record.years_experience ?? record.yearsExperience,
+        ),
         seniority: String(record.seniority ?? "unknown"),
         score: toNumber(record.score),
-        matchedSkills: toStringArray(record.matched_skills ?? record.matchedSkills),
+        matchedSkills: toStringArray(
+          record.matched_skills ?? record.matchedSkills,
+        ),
         gaps: toStringArray(record.gaps),
         strengths: toStringArray(record.strengths),
         risks: toStringArray(record.risks),
@@ -886,46 +624,82 @@ function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
       };
     }),
     meta: {
-      comparedCount: toNumber(asRecord(normalized.meta).compared_count ?? asRecord(normalized.meta).comparedCount, rawItems.length),
+      comparedCount: toNumber(
+        asRecord(normalized.meta).compared_count ??
+          asRecord(normalized.meta).comparedCount,
+        rawItems.length,
+      ),
     },
   };
 }
 
-function mapRemoteAsk(payload: JsonRecord, candidateIds: string[]): AskResponse {
+function mapRemoteAsk(
+  payload: JsonRecord,
+  candidateIds: string[],
+): AskResponse {
   return {
     intent: String(payload.intent ?? "why_matched"),
     facts: asArray(payload.facts).map((row) => {
       const record = asRecord(row);
       return {
         candidateId: String(record.candidate_id ?? record.candidateId),
-        candidateName: String(record.candidate_name ?? record.candidateName ?? "Candidate"),
+        candidateName: String(
+          record.candidate_name ?? record.candidateName ?? "Candidate",
+        ),
         fact: String(record.fact ?? ""),
       };
     }),
-    citations: asArray(payload.citations).slice(0, MAX_VISIBLE_CITATIONS).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
-    contextBlocks: asArray(payload.context_blocks).slice(0, MAX_CONTEXT_BLOCKS).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    citations: asArray(payload.citations)
+      .slice(0, MAX_VISIBLE_CITATIONS)
+      .map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    contextBlocks: asArray(payload.context_blocks)
+      .slice(0, MAX_CONTEXT_BLOCKS)
+      .map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
     extractiveAnswer: String(payload.extractive_answer ?? ""),
     meta: {
-      candidateCount: toNumber(asRecord(payload.meta).candidate_count, candidateIds.length),
+      candidateCount: toNumber(
+        asRecord(payload.meta).candidate_count,
+        candidateIds.length,
+      ),
       topK: toNumber(asRecord(payload.meta).top_k, 6),
       answerSource: String(asRecord(payload.meta).answer_source ?? "remote"),
-      scopeSource: String(asRecord(payload.meta).scope_source ?? (candidateIds.length ? "explicit" : "retrieved")) as AskResponse["meta"]["scopeSource"],
-      resolvedCandidateIds: toStringArray(asRecord(payload.meta).resolved_candidate_ids),
+      scopeSource: String(
+        asRecord(payload.meta).scope_source ??
+          (candidateIds.length ? "explicit" : "retrieved"),
+      ) as AskResponse["meta"]["scopeSource"],
+      resolvedCandidateIds: toStringArray(
+        asRecord(payload.meta).resolved_candidate_ids,
+      ),
     },
   };
 }
 
-function mapRemoteAgent(payload: JsonRecord, candidateIds: string[]): AgentResponse {
+function mapRemoteAgent(
+  payload: JsonRecord,
+  candidateIds: string[],
+): AgentResponse {
   return {
     answer: String(payload.answer ?? payload.extractive_answer ?? ""),
-    citations: asArray(payload.citations).slice(0, MAX_VISIBLE_CITATIONS).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
-    contextBlocks: asArray(payload.context_blocks).slice(0, MAX_CONTEXT_BLOCKS).map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    citations: asArray(payload.citations)
+      .slice(0, MAX_VISIBLE_CITATIONS)
+      .map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
+    contextBlocks: asArray(payload.context_blocks)
+      .slice(0, MAX_CONTEXT_BLOCKS)
+      .map((row, index) => mapEvidenceSnippet(asRecord(row), index)),
     meta: {
-      candidateCount: toNumber(asRecord(payload.meta).candidate_count, candidateIds.length),
+      candidateCount: toNumber(
+        asRecord(payload.meta).candidate_count,
+        candidateIds.length,
+      ),
       topK: toNumber(asRecord(payload.meta).top_k, 6),
       answerSource: String(asRecord(payload.meta).answer_source ?? "remote"),
-      scopeSource: String(asRecord(payload.meta).scope_source ?? (candidateIds.length ? "explicit" : "retrieved")) as AgentResponse["meta"]["scopeSource"],
-      resolvedCandidateIds: toStringArray(asRecord(payload.meta).resolved_candidate_ids),
+      scopeSource: String(
+        asRecord(payload.meta).scope_source ??
+          (candidateIds.length ? "explicit" : "retrieved"),
+      ) as AgentResponse["meta"]["scopeSource"],
+      resolvedCandidateIds: toStringArray(
+        asRecord(payload.meta).resolved_candidate_ids,
+      ),
     },
   };
 }
@@ -962,11 +736,15 @@ function mapRemoteParserProfile(row: ParserProfileRow): ParserProfile {
 }
 
 function normalizeOpsSeverity(value: unknown): OpsAlert["severity"] {
-  return value === "P0" || value === "P1" || value === "P2" || value === "P3" ? value : "P3";
+  return value === "P0" || value === "P1" || value === "P2" || value === "P3"
+    ? value
+    : "P3";
 }
 
 function normalizeOpsStatus(value: unknown): OpsAlert["status"] {
-  return value === "firing" || value === "acknowledged" || value === "resolved" ? value : "firing";
+  return value === "firing" || value === "acknowledged" || value === "resolved"
+    ? value
+    : "firing";
 }
 
 function mapTenantAdminSummary(row: unknown): TenantAdminSummary {
@@ -976,15 +754,24 @@ function mapTenantAdminSummary(row: unknown): TenantAdminSummary {
     slug: String(record.slug ?? ""),
     name: String(record.name ?? ""),
     iconUrl: String(record.iconUrl ?? record.icon_url ?? ""),
-    createdAt: typeof record.createdAt === "string" ? record.createdAt : typeof record.created_at === "string" ? record.created_at : null,
-    membershipCount: toNumber(record.membershipCount ?? record.membership_count),
+    createdAt:
+      typeof record.createdAt === "string"
+        ? record.createdAt
+        : typeof record.created_at === "string"
+          ? record.created_at
+          : null,
+    membershipCount: toNumber(
+      record.membershipCount ?? record.membership_count,
+    ),
     candidateCount: toNumber(record.candidateCount ?? record.candidate_count),
     documentCount: toNumber(record.documentCount ?? record.document_count),
   };
 }
 
 function mapRuntimeConfigSource(value: unknown): PlatformRuntimeConfigSource {
-  return value === "database" || value === "environment" || value === "unset" ? value : "unset";
+  return value === "database" || value === "environment" || value === "unset"
+    ? value
+    : "unset";
 }
 
 function mapPlatformRuntimeConfig(payload: unknown): PlatformRuntimeConfig {
@@ -996,7 +783,12 @@ function mapPlatformRuntimeConfig(payload: unknown): PlatformRuntimeConfig {
           key: typeof row.key === "string" ? row.key : "",
           value: typeof row.value === "string" ? row.value : null,
           source: mapRuntimeConfigSource(row.source),
-          envName: typeof row.envName === "string" ? row.envName : typeof row.env_name === "string" ? row.env_name : "",
+          envName:
+            typeof row.envName === "string"
+              ? row.envName
+              : typeof row.env_name === "string"
+                ? row.env_name
+                : "",
         };
       })
     : [];
@@ -1032,15 +824,35 @@ function mapRemoteOpsAlert(row: unknown): OpsAlert {
     dedupeKey: String(record.dedupe_key ?? record.dedupeKey ?? ""),
     severity: normalizeOpsSeverity(record.severity),
     component: String(record.component ?? "system"),
-    tenantId: typeof record.tenant_id === "string" ? record.tenant_id : typeof record.tenantId === "string" ? record.tenantId : null,
+    tenantId:
+      typeof record.tenant_id === "string"
+        ? record.tenant_id
+        : typeof record.tenantId === "string"
+          ? record.tenantId
+          : null,
     alertKey: String(record.alert_key ?? record.alertKey ?? "alert"),
     status: normalizeOpsStatus(record.status),
     message: String(record.message ?? ""),
-    currentValue: record.current_value === null || record.current_value === undefined ? null : toNumber(record.current_value, 0),
-    threshold: record.threshold === null || record.threshold === undefined ? null : toNumber(record.threshold, 0),
-    runbookUrl: typeof record.runbook_url === "string" ? record.runbook_url : typeof record.runbookUrl === "string" ? record.runbookUrl : null,
-    firstSeenAt: String(record.first_seen_at ?? record.firstSeenAt ?? new Date().toISOString()),
-    lastSeenAt: String(record.last_seen_at ?? record.lastSeenAt ?? new Date().toISOString()),
+    currentValue:
+      record.current_value === null || record.current_value === undefined
+        ? null
+        : toNumber(record.current_value, 0),
+    threshold:
+      record.threshold === null || record.threshold === undefined
+        ? null
+        : toNumber(record.threshold, 0),
+    runbookUrl:
+      typeof record.runbook_url === "string"
+        ? record.runbook_url
+        : typeof record.runbookUrl === "string"
+          ? record.runbookUrl
+          : null,
+    firstSeenAt: String(
+      record.first_seen_at ?? record.firstSeenAt ?? new Date().toISOString(),
+    ),
+    lastSeenAt: String(
+      record.last_seen_at ?? record.lastSeenAt ?? new Date().toISOString(),
+    ),
     context: asRecord(record.context_json ?? record.context),
   };
 }
@@ -2138,7 +1950,10 @@ function createRemoteApi(): PlatformApi {
       const explicitFilters = normalizeSearchFilters(filters);
 
       try {
-        const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
+        const limit = Math.max(
+          1,
+          Math.min(50, Math.trunc(options?.limit ?? 12)),
+        );
         const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
         const payload = await invokeFunction<JsonRecord>("search", {
           q: query,
@@ -2149,12 +1964,14 @@ function createRemoteApi(): PlatformApi {
         });
         return mapRemoteSearch(payload);
       } catch (functionError) {
-        throw new Error(`Live search failed. Edge Function error: ${errorMessage(functionError)}.`);
+        throw new Error(
+          `Live search failed. Edge Function error: ${errorMessage(functionError)}.`,
+        );
       }
     },
     async listCandidates(tenantIds, options) {
       if (!supabase || !tenantIds?.length) {
-        return buildMockCandidatesList(options);
+        return mock.listCandidates(tenantIds, options);
       }
 
       try {
@@ -2167,7 +1984,10 @@ function createRemoteApi(): PlatformApi {
       const explicitFilters = normalizeSearchFilters(filters);
 
       try {
-        const limit = Math.max(1, Math.min(50, Math.trunc(options?.limit ?? 12)));
+        const limit = Math.max(
+          1,
+          Math.min(50, Math.trunc(options?.limit ?? 12)),
+        );
         const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
         const payload = await invokeFunction<JsonRecord>("search-debug", {
           q: query,
@@ -2178,7 +1998,9 @@ function createRemoteApi(): PlatformApi {
         });
         return mapRemoteSearchDebug(payload);
       } catch (functionError) {
-        throw new Error(`Live search debug failed. Edge Function error: ${errorMessage(functionError)}.`);
+        throw new Error(
+          `Live search debug failed. Edge Function error: ${errorMessage(functionError)}.`,
+        );
       }
     },
     async getSearchFilterOptions(tenantIds) {
@@ -2209,7 +2031,9 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        return await invokePlatform<ManatalSyncStatus>("manatal_sync_status", { tenant_ids: tenantIds });
+        return await invokePlatform<ManatalSyncStatus>("manatal_sync_status", {
+          tenant_ids: tenantIds,
+        });
       } catch {
         return fetchManatalSyncStatusDirect(tenantIds);
       }
@@ -2227,9 +2051,17 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const payload = await invokePlatform<JsonRecord>("candidate_detail", { candidate_id: candidateId });
-        return mapRemoteCandidate(asRecord(payload.dossier) as CandidateDossierRow, asArray(payload.chunks) as CandidateChunkRow[]);
-      } catch {
+        const payload = await invokePlatform<JsonRecord>("candidate_detail", {
+          candidate_id: candidateId,
+        });
+
+        return mapRemoteCandidate(
+          asRecord(payload.dossier) as CandidateDossierRow,
+          asArray(payload.chunks) as CandidateChunkRow[],
+        );
+      } catch (error) {
+        console.error("candidate_detail platform error", error);
+
         return fetchCandidateDetailDirect(candidateId);
       }
     },
@@ -2269,12 +2101,15 @@ function createRemoteApi(): PlatformApi {
 
       if (supabase && (context?.candidateId || context?.documentId)) {
         try {
-          const payload = await invokePlatform<JsonRecord>("original_document_url", {
-            candidate_id: context.candidateId ?? undefined,
-            document_id: context.documentId ?? undefined,
-            tenant_id: context.tenantId ?? undefined,
-            tenant_ids: context.tenantIds ?? [],
-          });
+          const payload = await invokePlatform<JsonRecord>(
+            "original_document_url",
+            {
+              candidate_id: context.candidateId ?? undefined,
+              document_id: context.documentId ?? undefined,
+              tenant_id: context.tenantId ?? undefined,
+              tenant_ids: context.tenantIds ?? [],
+            },
+          );
           const url = typeof payload.url === "string" ? payload.url : null;
           if (url) {
             return url;
@@ -2285,14 +2120,19 @@ function createRemoteApi(): PlatformApi {
           }
           if (hasGcsOriginal) {
             const detail = errorMessage(error).trim();
-            throw new Error(detail || "This original CV is private in GCS and could not be signed.");
+            throw new Error(
+              detail ||
+                "This original CV is private in GCS and could not be signed.",
+            );
           }
         }
       }
 
       if (supabase && storagePath && !hasGcsOriginal) {
         try {
-          const { data, error } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, 60 * 10);
+          const { data, error } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .createSignedUrl(storagePath, 60 * 10);
           if (error) {
             throw error;
           }
@@ -2315,7 +2155,10 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const rows = await invokePlatform<CandidateShortlistRow[]>("shortlist_items", { tenant_ids: tenantIds });
+        const rows = await invokePlatform<CandidateShortlistRow[]>(
+          "shortlist_items",
+          { tenant_ids: tenantIds },
+        );
         return (rows ?? []).map(mapRemoteShortlistItem);
       } catch {
         return [];
@@ -2326,9 +2169,12 @@ function createRemoteApi(): PlatformApi {
         return mock.saveShortlistItem(item);
       }
 
-      const row = await invokePlatform<CandidateShortlistRow>("save_shortlist_item", {
-        item: shortlistInputPayload(item),
-      });
+      const row = await invokePlatform<CandidateShortlistRow>(
+        "save_shortlist_item",
+        {
+          item: shortlistInputPayload(item),
+        },
+      );
       return mapRemoteShortlistItem(row);
     },
     async removeShortlistItem(candidateId, tenantId) {
@@ -2354,21 +2200,27 @@ function createRemoteApi(): PlatformApi {
       if (!supabase || !tenantIds?.length) {
         return supabase ? [] : mock.listJobPostings(tenantIds);
       }
-      const rows = await invokePlatform<unknown[]>("job_postings", { tenant_ids: tenantIds });
+      const rows = await invokePlatform<unknown[]>("job_postings", {
+        tenant_ids: tenantIds,
+      });
       return (rows ?? []).map(mapRemoteJobPosting);
     },
     async getJobPosting(jobId) {
       if (!supabase) {
         return mock.getJobPosting(jobId);
       }
-      const row = await invokePlatform<unknown>("job_posting", { job_id: jobId });
+      const row = await invokePlatform<unknown>("job_posting", {
+        job_id: jobId,
+      });
       return mapRemoteJobPosting(row);
     },
     async saveJobPosting(job) {
       if (!supabase) {
         return mock.saveJobPosting(job);
       }
-      const row = await invokePlatform<unknown>("save_job_posting", { job: jobPostingPayload(job) });
+      const row = await invokePlatform<unknown>("save_job_posting", {
+        job: jobPostingPayload(job),
+      });
       return mapRemoteJobPosting(row);
     },
     async extractJobPosting(input) {
@@ -2401,28 +2253,36 @@ function createRemoteApi(): PlatformApi {
       if (!supabase) {
         return mock.listJobMatchingRuns(jobId);
       }
-      const rows = await invokePlatform<unknown[]>("matching_runs", { job_id: jobId });
+      const rows = await invokePlatform<unknown[]>("matching_runs", {
+        job_id: jobId,
+      });
       return (rows ?? []).map(mapRemoteJobMatchingRun);
     },
     async getJobMatchingRun(runId) {
       if (!supabase) {
         return mock.getJobMatchingRun(runId);
       }
-      const payload = await invokePlatform<unknown>("matching_run", { run_id: runId });
+      const payload = await invokePlatform<unknown>("matching_run", {
+        run_id: runId,
+      });
       return mapRemoteJobMatchingRunDetail(payload);
     },
     async listJobShortlists(jobId) {
       if (!supabase) {
         return mock.listJobShortlists(jobId);
       }
-      const rows = await invokePlatform<unknown[]>("job_shortlists", { job_id: jobId });
+      const rows = await invokePlatform<unknown[]>("job_shortlists", {
+        job_id: jobId,
+      });
       return (rows ?? []).map(mapRemoteJobShortlist);
     },
     async getJobShortlist(shortlistId) {
       if (!supabase) {
         return mock.getJobShortlist(shortlistId);
       }
-      const payload = await invokePlatform<unknown>("job_shortlist", { shortlist_id: shortlistId });
+      const payload = await invokePlatform<unknown>("job_shortlist", {
+        shortlist_id: shortlistId,
+      });
       return mapRemoteJobShortlistDetail(payload);
     },
     async saveJobShortlist(input) {
@@ -2442,31 +2302,41 @@ function createRemoteApi(): PlatformApi {
       if (!supabase) {
         return mock.listJobApplications(jobId);
       }
-      const rows = await invokePlatform<unknown[]>("job_applications", { job_id: jobId });
+      const rows = await invokePlatform<unknown[]>("job_applications", {
+        job_id: jobId,
+      });
       return (rows ?? []).map(mapRemoteJobApplication);
     },
     async updateJobApplicationStatus(applicationId, status) {
       if (!supabase) {
         return mock.updateJobApplicationStatus(applicationId, status);
       }
-      const row = await invokePlatform<unknown>("update_job_application_status", {
-        application_id: applicationId,
-        status,
-      });
+      const row = await invokePlatform<unknown>(
+        "update_job_application_status",
+        {
+          application_id: applicationId,
+          status,
+        },
+      );
       return mapRemoteJobApplication(row);
     },
     async listPublicJobPostings() {
       if (!supabase) {
         return mock.listPublicJobPostings();
       }
-      const payload = await invokeFunction<JsonRecord>("public-jobs", { action: "list" });
+      const payload = await invokeFunction<JsonRecord>("public-jobs", {
+        action: "list",
+      });
       return asArray(payload.jobs).map(mapRemotePublicJob);
     },
     async getPublicJobPosting(slug) {
       if (!supabase) {
         return mock.getPublicJobPosting(slug);
       }
-      const payload = await invokeFunction<JsonRecord>("public-jobs", { action: "detail", slug });
+      const payload = await invokeFunction<JsonRecord>("public-jobs", {
+        action: "detail",
+        slug,
+      });
       return mapRemotePublicJob(asRecord(payload.job));
     },
     async submitPublicJobApplication(slug, application) {
@@ -2488,7 +2358,9 @@ function createRemoteApi(): PlatformApi {
       try {
         return fetchParsingOverviewRpc(tenantIds, options);
       } catch (error) {
-        throw new Error(`Unable to load live parsing diagnostics: ${errorMessage(error)}`);
+        throw new Error(
+          `Unable to load live parsing diagnostics: ${errorMessage(error)}`,
+        );
       }
     },
     async getParsingDocument(documentId, tenantIds) {
@@ -2497,14 +2369,25 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const snapshot = await fetchParsingDocumentSnapshot(documentId, tenantIds);
-        const detail = buildParsingDocumentDetail(documentId, snapshot.documents, snapshot.candidates, snapshot.profiles, snapshot.runs);
+        const snapshot = await fetchParsingDocumentSnapshot(
+          documentId,
+          tenantIds,
+        );
+        const detail = buildParsingDocumentDetail(
+          documentId,
+          snapshot.documents,
+          snapshot.candidates,
+          snapshot.profiles,
+          snapshot.runs,
+        );
         if (!detail) {
           throw new Error(`Document ${documentId} was not found.`);
         }
         return detail;
       } catch (error) {
-        throw new Error(`Unable to load live parsing document ${documentId}: ${errorMessage(error)}`);
+        throw new Error(
+          `Unable to load live parsing document ${documentId}: ${errorMessage(error)}`,
+        );
       }
     },
     async getParserProfiles(tenantIds) {
@@ -2513,7 +2396,10 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const data = await invokePlatform<ParserProfileRow[]>("parser_profiles", { tenant_ids: tenantIds });
+        const data = await invokePlatform<ParserProfileRow[]>(
+          "parser_profiles",
+          { tenant_ids: tenantIds },
+        );
         return (data ?? []).map(mapRemoteParserProfile);
       } catch {
         return mock.getParserProfiles();
@@ -2525,10 +2411,13 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const data = await invokePlatform<ParserProfileRow>("save_parser_profile", {
-          tenant_id: tenantId,
-          profile,
-        });
+        const data = await invokePlatform<ParserProfileRow>(
+          "save_parser_profile",
+          {
+            tenant_id: tenantId,
+            profile,
+          },
+        );
         return mapRemoteParserProfile(data as ParserProfileRow);
       } catch {
         return mock.saveParserProfile(profile);
@@ -2540,7 +2429,10 @@ function createRemoteApi(): PlatformApi {
       }
 
       try {
-        const data = await invokePlatform<ParserProfileRow>("publish_parser_profile", { profile_id: profileId });
+        const data = await invokePlatform<ParserProfileRow>(
+          "publish_parser_profile",
+          { profile_id: profileId },
+        );
         return mapRemoteParserProfile(data as ParserProfileRow);
       } catch {
         return mock.publishParserProfile(profileId);
@@ -2556,13 +2448,16 @@ function createRemoteApi(): PlatformApi {
 
       if (USE_INSIGHTS_PLATFORM_API) {
         try {
-          const payload = await invokePlatform<JsonRecord>("insights_dashboard", {
-            tenant_ids: tenantIds,
-            top_skills: options?.topSkills ?? 50,
-            target_role: options?.targetRole ?? null,
-            target_skills: options?.targetSkills ?? [],
-            trace_id: `insights-${Date.now()}`,
-          });
+          const payload = await invokePlatform<JsonRecord>(
+            "insights_dashboard",
+            {
+              tenant_ids: tenantIds,
+              top_skills: options?.topSkills ?? 50,
+              target_role: options?.targetRole ?? null,
+              target_skills: options?.targetSkills ?? [],
+              trace_id: `insights-${Date.now()}`,
+            },
+          );
           return mapRemoteInsightsDashboard(payload);
         } catch {
           // Fall through to direct RPC so deployed database functions can still serve the page
@@ -2583,12 +2478,15 @@ function createRemoteApi(): PlatformApi {
 
       if (USE_INSIGHTS_PLATFORM_API) {
         try {
-          const payload = await invokePlatform<JsonRecord>("insights_gap_analysis", {
-            tenant_ids: tenantIds,
-            target_role: options?.targetRole ?? null,
-            target_skills: options?.targetSkills ?? [],
-            trace_id: `insights-gap-${Date.now()}`,
-          });
+          const payload = await invokePlatform<JsonRecord>(
+            "insights_gap_analysis",
+            {
+              tenant_ids: tenantIds,
+              target_role: options?.targetRole ?? null,
+              target_skills: options?.targetSkills ?? [],
+              trace_id: `insights-gap-${Date.now()}`,
+            },
+          );
           return mapRemoteInsightsGapAnalysis(payload);
         } catch {
           // Same rollout-safe fallback as the dashboard endpoint.
@@ -2598,8 +2496,16 @@ function createRemoteApi(): PlatformApi {
       try {
         return await fetchInsightsGapAnalysisFromRpc(options, tenantIds);
       } catch {
-        return (await fetchInsightsDashboardFromSearchCache({ topSkills: 1, targetRole: options?.targetRole, targetSkills: options?.targetSkills }, tenantIds))
-          .gapAnalysis;
+        return (
+          await fetchInsightsDashboardFromSearchCache(
+            {
+              topSkills: 1,
+              targetRole: options?.targetRole,
+              targetSkills: options?.targetSkills,
+            },
+            tenantIds,
+          )
+        ).gapAnalysis;
       }
     },
     async getSystemHealth() {
@@ -2611,7 +2517,9 @@ function createRemoteApi(): PlatformApi {
     },
     async getOpsAlerts(tenantIds) {
       try {
-        const rows = await invokePlatform<unknown[]>("ops_alerts", { tenant_ids: tenantIds ?? [] });
+        const rows = await invokePlatform<unknown[]>("ops_alerts", {
+          tenant_ids: tenantIds ?? [],
+        });
         return (rows ?? []).map(mapRemoteOpsAlert);
       } catch {
         return mock.getOpsAlerts();
@@ -2619,7 +2527,9 @@ function createRemoteApi(): PlatformApi {
     },
     async acknowledgeOpsAlert(dedupeKey) {
       try {
-        const row = await invokePlatform<unknown>("ops_ack_alert", { dedupe_key: dedupeKey });
+        const row = await invokePlatform<unknown>("ops_ack_alert", {
+          dedupe_key: dedupeKey,
+        });
         return row ? mapRemoteOpsAlert(row) : null;
       } catch {
         return null;
@@ -2665,14 +2575,21 @@ function createRemoteApi(): PlatformApi {
       return mapAccountProvisionResult(payload);
     },
     async getPlatformRuntimeConfig() {
-      const payload = await invokePlatform<unknown>("get_platform_runtime_config");
+      const payload = await invokePlatform<unknown>(
+        "get_platform_runtime_config",
+      );
       return mapPlatformRuntimeConfig(payload);
     },
     async savePlatformRuntimeConfig(settings) {
-      const payload = await invokePlatform<unknown>("save_platform_runtime_config", { settings });
+      const payload = await invokePlatform<unknown>(
+        "save_platform_runtime_config",
+        { settings },
+      );
       return mapPlatformRuntimeConfig(payload);
     },
   };
 }
 
-export const platformApi = hasSupabaseConfig ? createRemoteApi() : createLazyMockApi();
+export const platformApi = hasSupabaseConfig
+  ? createRemoteApi()
+  : createLazyMockApi();

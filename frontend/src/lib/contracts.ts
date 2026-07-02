@@ -45,6 +45,7 @@ export type CandidateSearchResult = {
 };
 
 export type CandidateDetail = CandidateSearchResult & {
+  profileAttributes?: Record<string, unknown> | null;
   longSummary: string;
   email?: string | null;
   phone?: string | null;
@@ -53,6 +54,7 @@ export type CandidateDetail = CandidateSearchResult & {
   storagePath?: string | null;
   cvUrl?: string | null;
   manatalCandidateId?: string | null;
+
   links: string[];
   education: string[];
   certifications: string[];
@@ -61,6 +63,44 @@ export type CandidateDetail = CandidateSearchResult & {
   timeline: TimelineEntry[];
   evidence: EvidenceSnippet[];
   cvPreview: string[];
+  strengths?: string[];
+
+risks?: string[];
+
+recommendedRoles?: string[];
+  status?: CandidateAvailabilityStatus | null;
+
+  jobReadinessLevel?: JobReadinessLevel | null;
+
+  preferredWorkMode?: PreferredWorkMode | null;
+
+  yearsOfExperience?: number | null;
+
+  primarySkills?: string[];
+
+  noticePeriod?: NoticePeriod | null;
+
+  englishProficiency?: EnglishProficiency | null;
+
+  expectedSalary?: ExpectedSalary | null;
+
+  isPreScreened?: boolean;
+
+  syncAffiliation?: SyncAffiliation | null;
+
+  internalVettingNotes?: string | null;
+
+  currentLocationCity?: string | null;
+
+  willingnessToRelocate?: boolean;
+
+  externalProfiles?: ExternalProfiles | null;
+
+  aiProfileSummary?: string | null;
+
+  employmentTypePreference?: EmploymentType[];
+
+  lastInteractionDate?: string | null;
 };
 
 export type SearchFilters = {
@@ -168,7 +208,7 @@ export type CandidateShortlistItem = {
   yearsExperience: number | null;
   seniority: string | null;
   primaryRole: string | null;
-  topSkills: string[];
+    topSkills: string[];
   matchRate: number | null;
   cvUrl?: string | null;
   originalFilename?: string | null;
@@ -973,4 +1013,56 @@ export type AccessRoster = {
     summary: string;
     permissions: string[];
   }>;
+};
+export type CandidateAvailabilityStatus =
+  | "active"
+  | "passive"
+  | "unavailable";
+
+export type JobReadinessLevel =
+  | "L1"
+  | "L2"
+  | "L3"
+  | "L4"
+  | "L5";
+
+export type PreferredWorkMode =
+  | "onsite"
+  | "remote"
+  | "hybrid";
+
+export type NoticePeriod =
+  | "immediate"
+  | "2_weeks"
+  | "1_month"
+  | "2_months"
+  | "3_months";
+
+export type EnglishProficiency =
+  | "basic"
+  | "intermediate"
+  | "fluent"
+  | "native";
+
+export type EmploymentType =
+  | "full_time"
+  | "part_time"
+  | "contract"
+  | "freelance";
+
+export type SyncAffiliation =
+  | "member"
+  | "bootcamp_graduate"
+  | "mentor"
+  | "partner";
+
+export type ExpectedSalary = {
+  amount: number;
+  currency: string;
+};
+
+export type ExternalProfiles = {
+  linkedin?: string | null;
+  github?: string | null;
+  portfolio?: string | null;
 };

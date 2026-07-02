@@ -1,0 +1,129 @@
+.candidate-list-page .candidate-list-filters {
+  padding: 18px 20px;
+}
+
+.candidate-list-filters__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.candidate-list-filters__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.candidate-list-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.candidate-list-panel {
+  padding: 20px;
+}
+
+.candidate-list-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.candidate-list-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+}
+
+.candidate-list-table th,
+.candidate-list-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.candidate-list-table th {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.candidate-list-table tbody tr:hover {
+  background: color-mix(in srgb, var(--surface-muted) 55%, transparent);
+}
+
+.candidate-list__name-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.candidate-list__name-link:hover strong {
+  color: var(--accent);
+}
+
+.candidate-list__email {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.candidate-list-group-row td {
+  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  padding: 10px 16px;
+}
+
+.candidate-list-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.candidate-list-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.candidate-list-skeleton__row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.2fr 1fr 0.8fr;
+  gap: 12px;
+}
+
+.candidate-list-skeleton__cell {
+  display: block;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.candidate-list-skeleton__cell--name {
+  height: 22px;
+}
+
+.candidate-list-skeleton__cell--small {
+  max-width: 88px;
+}
+
+@media (max-width: 900px) {
+  .candidate-list-filters__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-list-skeleton__row {
+    grid-template-columns: 1fr;
+  }
+}
