@@ -193,7 +193,7 @@ function DossierSkeleton() {
 
               <span className="stat-card__skeleton dossier-skeleton__line dossier-skeleton__line--medium" />
 
-              <div className="meta-list">
+              <div className="candidate-info-grid">
                 <span className="stat-card__skeleton dossier-skeleton__tag" />
                 <span className="stat-card__skeleton dossier-skeleton__tag" />
               </div>
@@ -229,7 +229,7 @@ export function CandidateDossierPage() {
   const candidateQuery = useQuery({
     queryKey: ["candidate-dossier", candidateId],
     queryFn: () =>
-      platformApi.getCandidate(candidateId as string),
+      platformApi.getCandidate(candidateId!),
     enabled: Boolean(candidateId),
     staleTime: 10 * 60 * 1000,
     gcTime: 45 * 60 * 1000,
@@ -241,9 +241,9 @@ export function CandidateDossierPage() {
   const manatalCandidateIdQuery = useQuery({
     queryKey: ["candidate-manatal-id", candidateId],
     queryFn: () =>
-      platformApi.getManatalCandidateId(
-        candidateId as string
-      ),
+     platformApi.getManatalCandidateId(
+      candidateId!
+    ),
     enabled: Boolean(candidateId && isAdmin),
     staleTime: 10 * 60 * 1000,
   });
@@ -325,10 +325,9 @@ export function CandidateDossierPage() {
     );
 
 
-  const currentEmployer =
-    candidate.timeline[0]?.employer?.trim() ||
-    null;
-
+ const currentEmployer =
+  candidate.timeline?.[0]?.employer?.trim() ||
+  null;
 
   const canOpenOriginal = Boolean(
     candidate.storagePath ||
@@ -713,15 +712,13 @@ export function CandidateDossierPage() {
               </span>
             )}
 
-
-            {candidate.expectedSalary && (
-              <span className="tag">
-                Expected salary:{" "}
-                {candidate.expectedSalary.amount}{" "}
-                {candidate.expectedSalary.currency}
-              </span>
-            )}
-
+        {candidate.expectedSalary?.amount && (
+  <span className="tag">
+    Expected salary:{" "}
+    {candidate.expectedSalary.amount}{" "}
+    {candidate.expectedSalary.currency}
+  </span>
+)}
 
             {candidate.noticePeriod && (
               <span className="tag">
@@ -758,63 +755,64 @@ export function CandidateDossierPage() {
   </div>
 </Panel>
 
-{candidate.externalProfiles && (
-  <Panel className="table-card">
+ {candidate.externalProfiles &&
+  Object.values(candidate.externalProfiles).some(Boolean) && (
+    <Panel className="table-card">
 
-    <div className="stack">
+      <div className="stack">
 
-      <h3>
-        External profiles
-      </h3>
+        <h3>
+          External profiles
+        </h3>
 
-      <div className="meta-list">
+        <div className="meta-list">
 
-        {candidate.externalProfiles.linkedin && (
-          <a
-  className="tag"
-  href={candidate.externalProfiles.linkedin}
-  target="_blank"
-  rel="noreferrer noopener"
->
-  LinkedIn
-</a>
-        )}
-
-        {candidate.externalProfiles.github && (
-          <a
-            className="tag"
-            href={candidate.externalProfiles.github}
-            target="_blank"
-            rel="noreferrer noopener"
+          {candidate.externalProfiles.linkedin && (
+            <a
+              className="tag"
+              href={candidate.externalProfiles.linkedin}
+              target="_blank"
+              rel="noreferrer noopener"
             >
-            GitHub
-          </a>
-        )}
+              <ExternalLink size={14} />
+              LinkedIn
+            </a>
+          )}
 
-        {candidate.externalProfiles.portfolio && (
-          <a
-            className="tag"
-            href={candidate.externalProfiles.portfolio}
-            target="_blank"
-            rel="noreferrer noopener"
+          {candidate.externalProfiles.github && (
+            <a
+              className="tag"
+              href={candidate.externalProfiles.github}
+              target="_blank"
+              rel="noreferrer noopener"
             >
-            Portfolio
-          </a>
-        )}
+              <ExternalLink size={14} />
+              GitHub
+            </a>
+          )}
+
+          {candidate.externalProfiles.portfolio && (
+            <a
+              className="tag"
+              href={candidate.externalProfiles.portfolio}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <ExternalLink size={14} />
+              Portfolio
+            </a>
+          )}
+
+        </div>
 
       </div>
 
-    </div>
+    </Panel>
+  )}
 
-  </Panel>
-)}
+<div className="detail-grid">
 
-
-      <div className="detail-grid">
-
-
-        <div className="stack">
-
+  <div className="stack">
 
           <Panel className="timeline-card">
 
@@ -843,7 +841,7 @@ export function CandidateDossierPage() {
 
             <div className="timeline">
 
-              {candidate.timeline.map((entry) => (
+              {candidate.timeline?.map((entry) => (
                 <div
                   key={`${entry.employer}-${entry.role}`}
                   className="timeline-entry"
@@ -899,7 +897,104 @@ export function CandidateDossierPage() {
 
           </Panel>
 
+              <Panel className="table-card">
+  <h3>Education</h3>
 
+  {candidate.education?.length ? (
+    <ul className="bullet-list">
+      {candidate.education.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  ) : (
+    <p className="muted">No education available.</p>
+  )}
+</Panel>
+<Panel className="table-card">
+  <h3>Certifications</h3>
+
+  {candidate.certifications?.length ? (
+    <div className="skill-list">
+      {candidate.certifications.map((item) => (
+        <Tag key={item}>{item}</Tag>
+      ))}
+    </div>
+  ) : (
+    <p className="muted">No certifications.</p>
+  )}
+</Panel>
+<Panel className="table-card">
+  <h3>Languages</h3>
+
+  {candidate.languages?.length ? (
+    <div className="skill-list">
+      {candidate.languages.map((item) => (
+        <Tag key={item}>{item}</Tag>
+      ))}
+    </div>
+  ) : (
+    <p className="muted">No languages.</p>
+  )}
+</Panel>
+<Panel className="table-card">
+  <h3>Projects</h3>
+
+  {candidate.projects?.length ? (
+    <ul className="bullet-list">
+      {candidate.projects.map((project) => (
+        <li key={project}>{project}</li>
+      ))}
+    </ul>
+  ) : (
+    <p className="muted">No projects available.</p>
+  )}
+</Panel>
+<Panel className="table-card">
+  <h3>Strengths</h3>
+
+  <div className="skill-list">
+    {candidate.strengths?.map((item) => (
+      <Tag tone="success" key={item}>
+        {item}
+      </Tag>
+    ))}
+  </div>
+</Panel>
+<Panel className="table-card">
+  <h3>Risks</h3>
+
+  <div className="skill-list">
+    {candidate.risks?.map((item) => (
+      <Tag tone="warning" key={item}>
+        {item}
+      </Tag>
+    ))}
+  </div>
+</Panel>
+<Panel className="table-card">
+  <h3>Recommended Roles</h3>
+
+  <div className="skill-list">
+    {candidate.recommendedRoles?.map((item) => (
+      <Tag key={item}>{item}</Tag>
+    ))}
+  </div>
+</Panel>
+<Panel className="table-card">
+  <h3>CV Information</h3>
+
+  {candidate.cvPreview?.length ? (
+    <ul className="bullet-list">
+      {candidate.cvPreview.map((line) => (
+        <li key={line}>{line}</li>
+      ))}
+    </ul>
+  ) : (
+    <p className="muted">
+      No CV preview available.
+    </p>
+  )}
+</Panel>
         </div>
 
 
@@ -920,7 +1015,7 @@ export function CandidateDossierPage() {
 
             <div className="skill-list">
 
-              {candidate.topSkills.map(
+              {candidate.topSkills?.map(
                 (skill) => (
                   <Tag
                     key={skill}
@@ -952,7 +1047,7 @@ export function CandidateDossierPage() {
             <div className="evidence-list">
 
 
-              {candidate.evidence.map(
+              {candidate.evidence?.map(
                 (item) => (
                   <div
                     key={item.id}

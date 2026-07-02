@@ -272,7 +272,12 @@ export function mapRemoteSearchDebug(payload: JsonRecord): SearchDebugResponse {
 }
 
 export function createFallbackSearchFilterOptions(): SearchFilterOptions {
-  const fallbackSeniorityValues = ["junior", "mid", "senior", "staff-plus"];
+  const fallbackSeniorityValues = [
+ "junior",
+ "mid",
+ "senior",
+ "staff"
+];
 
   return {
     seniority: fallbackSeniorityValues.map((value) => ({
