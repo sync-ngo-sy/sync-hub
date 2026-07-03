@@ -796,6 +796,18 @@ export function CandidateDossierPage() {
   </div>
 </Panel>
 
+<Panel className="table-card">
+  <h3>Primary Skills</h3>
+
+  <div className="skill-list">
+    {candidate.primarySkills?.map(skill => (
+      <Tag key={skill} tone="primary">
+        {skill}
+      </Tag>
+    ))}
+  </div>
+</Panel>
+
  {candidate.externalProfiles &&
   Object.values(candidate.externalProfiles).some(Boolean) && (
     <Panel className="table-card">

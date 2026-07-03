@@ -129,8 +129,24 @@ export function mapRemoteCandidate(
 
     return "hybrid";
   };
+<<<<<<< Updated upstream
   
    const expectedSalary = asRecord(profile.expected_salary);
+=======
+
+  const expectedSalary = asRecord(profile.expected_salary);
+
+const raw =
+  (profile as any).external_profiles ??
+  (row as any).external_profiles ??
+  row;
+
+ const externalProfiles = {
+  linkedin: typeof raw?.linkedin === "string" ? raw.linkedin : null,
+  github: typeof raw?.github === "string" ? raw.github : null,
+  portfolio: typeof raw?.portfolio === "string" ? raw.portfolio : null,
+}; 
+>>>>>>> Stashed changes
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
 
@@ -186,6 +202,7 @@ export function mapRemoteCandidate(
     })
     .filter(Boolean);
 
+    
   return {
     candidateId: row.candidate_id,
 
@@ -250,7 +267,8 @@ export function mapRemoteCandidate(
     recommendedRoles: toStringArray(row.recommended_roles),
 
     stage: "Indexed",
-
+    status: (row as any).status ?? "active",
+    isPreScreened: Boolean((profile as any).is_pre_screened ?? false),
     avatarHue: hueFromId(row.candidate_id),
 
     matchNarrative:
@@ -273,17 +291,17 @@ export function mapRemoteCandidate(
     manatalCandidateId: row.manatal_candidate_id ?? null,
 
     jobReadinessLevel:
-      typeof profile.job_readiness_level === "string"
-        ? (profile.job_readiness_level as JobReadinessLevel)
-        : row.seniority === "staff" || row.seniority === "senior"
-          ? "L4"
-          : row.seniority === "mid"
-            ? "L3"
-            : "L2",
+  typeof profile.job_readiness_level === "string"
+    ? (profile.job_readiness_level as JobReadinessLevel)
+    : row.seniority === "staff" || row.seniority === "senior"
+      ? "L4"
+      : row.seniority === "mid"
+        ? "L3"
+        : "L1",
 
-    preferredWorkMode: normalizeWorkMode(
-      profile.preferred_work_mode ?? profile.preferredWorkMode,
-    ),
+   preferredWorkMode: normalizeWorkMode(
+  profile.preferred_work_mode
+),
 
     primarySkills: toStringArray(profile.primary_skills).length
       ? toStringArray(profile.primary_skills)
