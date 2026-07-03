@@ -45,9 +45,6 @@ import {
 } from "@/features/candidates/apiMappers";
 import { fetchCandidatesListRpc } from "@/features/candidates/apiMappers";
 import {
-  fetchInsightsDashboardFromRpc,
-  fetchInsightsDashboardFromSearchCache,
-  fetchInsightsGapAnalysisFromRpc,
   mapRemoteInsightsDashboard,
   mapRemoteInsightsGapAnalysis,
 } from "@/features/insights/api";
@@ -73,7 +70,7 @@ import {
   normalizeSearchFilters,
   shortlistInputPayload,
 } from "@/features/search/apiMappers";
-import { countRemoteRows } from "@/lib/api/countRows";
+import { invokeFunction, invokePlatform } from "@/lib/api/platformClient";
 import {
   asArray,
   asRecord,
@@ -83,7 +80,6 @@ import {
   toStringArray,
   type JsonRecord,
 } from "@/lib/api/json";
-import { invokeFunction, invokePlatform } from "@/lib/api/platformClient";
 import {
   buildParsingDocumentDetail,
   buildParsingOverview,
@@ -105,14 +101,10 @@ import type {
   ParsingOverviewOptions,
   PlatformApi,
 } from "@/lib/platformApiTypes";
-import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
+import { hasSupabaseConfig } from "@/lib/supabaseClient";
 
 const MAX_VISIBLE_CITATIONS = 3;
 const MAX_CONTEXT_BLOCKS = 6;
-const USE_INSIGHTS_PLATFORM_API =
-  import.meta.env.VITE_USE_INSIGHTS_PLATFORM_API !== "false";
-
-const STORAGE_BUCKET = "cv-originals";
 const SEARCH_FACET_CACHE_TTL_MS = 60_000;
 
 const searchFacetRowsCache = new Map<
@@ -339,244 +331,6 @@ async function fetchParsingDocumentSnapshot(
     profiles: asArray(payload.profiles) as ParsingProfileRow[],
     runs: asArray(payload.runs) as ParsingProcessingRunRow[],
   };
-}
-
-function percent(numerator: number, denominator: number) {
-  if (!denominator) {
-    return 0;
-  }
-  return Math.round((numerator / denominator) * 100);
-}
-
-function mapManatalSyncRow(
-  row: JsonRecord,
-): ManatalSyncStatus["recentRows"][number] {
-  return {
-    manatalCandidateId: String(row.manatal_candidate_id ?? ""),
-    candidateName: String(row.manatal_full_name ?? "Unknown candidate"),
-    email:
-      typeof row.manatal_email === "string" && row.manatal_email
-        ? row.manatal_email
-        : null,
-    syncStatus: String(row.sync_status ?? "unknown"),
-    lastSyncedAt:
-      typeof row.last_synced_at === "string" ? row.last_synced_at : null,
-    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
-    sourceDocumentId:
-      typeof row.source_document_id === "string"
-        ? row.source_document_id
-        : null,
-    errorMessage:
-      typeof row.error_message === "string" && row.error_message
-        ? row.error_message
-        : null,
-  };
-}
-
-async function fetchManatalSyncStatusDirect(
-  tenantIds: string[],
-): Promise<ManatalSyncStatus> {
-  if (!supabase || !tenantIds.length) {
-    return (await getMockApi()).getManatalSyncStatus(tenantIds);
-  }
-
-  const [
-    sourceDocuments,
-    gcsOriginals,
-    driveOriginals,
-    manatalRows,
-    mappedManatalRows,
-    syncedRows,
-    pendingRows,
-    failedRows,
-    skippedRows,
-  ] = await Promise.all([
-    countRemoteRows("source_documents", tenantIds),
-    countRemoteRows("source_documents", tenantIds, (query) =>
-      query.like("source_uri", "gs://%"),
-    ),
-    countRemoteRows("source_documents", tenantIds, (query) =>
-      query.ilike("source_uri", "%drive.google.com%"),
-    ),
-    countRemoteRows("manatal_candidate_sync", tenantIds),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
-      query.not("source_document_id", "is", null),
-    ),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "synced"),
-    ),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "pending"),
-    ),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "failed"),
-    ),
-    countRemoteRows("manatal_candidate_sync", tenantIds, (query) =>
-      query.eq("sync_status", "skipped"),
-    ),
-  ]);
-
-  const recentResult = await supabase
-    .from("manatal_candidate_sync")
-    .select(
-      "manatal_candidate_id, manatal_full_name, manatal_email, sync_status, last_synced_at, updated_at, source_document_id, error_message",
-    )
-    .in("tenant_id", tenantIds)
-    .order("updated_at", { ascending: false })
-    .limit(12);
-  if (recentResult.error) {
-    throw recentResult.error;
-  }
-
-  const lastSyncedResult = await supabase
-    .from("manatal_candidate_sync")
-    .select("last_synced_at")
-    .in("tenant_id", tenantIds)
-    .eq("sync_status", "synced")
-    .not("last_synced_at", "is", null)
-    .order("last_synced_at", { ascending: false })
-    .limit(1);
-  if (lastSyncedResult.error) {
-    throw lastSyncedResult.error;
-  }
-
-  const lastFailureResult = await supabase
-    .from("manatal_candidate_sync")
-    .select(
-      "manatal_candidate_id, manatal_full_name, error_message, updated_at",
-    )
-    .in("tenant_id", tenantIds)
-    .eq("sync_status", "failed")
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  if (lastFailureResult.error) {
-    throw lastFailureResult.error;
-  }
-
-  const lastSynced = asRecord(asArray(lastSyncedResult.data)[0]);
-  const lastFailure = asRecord(asArray(lastFailureResult.data)[0]);
-  return {
-    generatedAt: new Date().toISOString(),
-    totals: {
-      sourceDocuments,
-      gcsOriginals,
-      driveOriginals,
-      manatalRows,
-      mappedManatalRows,
-      syncedRows,
-      pendingRows,
-      failedRows,
-      skippedRows,
-    },
-    coverage: {
-      gcsOriginalsPercent: percent(gcsOriginals, sourceDocuments),
-      manatalSyncedPercent: percent(syncedRows, manatalRows),
-      mappedRowsPercent: percent(mappedManatalRows, manatalRows),
-    },
-    lastSyncedAt:
-      typeof lastSynced.last_synced_at === "string"
-        ? lastSynced.last_synced_at
-        : null,
-    lastFailure: lastFailure.manatal_candidate_id
-      ? {
-          manatalCandidateId: String(lastFailure.manatal_candidate_id),
-          candidateName: String(
-            lastFailure.manatal_full_name ?? "Unknown candidate",
-          ),
-          errorMessage: String(lastFailure.error_message ?? ""),
-          updatedAt:
-            typeof lastFailure.updated_at === "string"
-              ? lastFailure.updated_at
-              : null,
-        }
-      : null,
-    recentRows: asArray(recentResult.data).map((row) =>
-      mapManatalSyncRow(asRecord(row)),
-    ),
-  };
-}
-
-async function fetchCandidateDetailDirect(
-  candidateId: string,
-): Promise<CandidateDetail> {
-  if (!supabase) {
-    return (await getMockApi()).getCandidate(candidateId);
-  }
-
-  const [dossier, chunks] = await Promise.all([
-    supabase
-      .from("candidate_dossier_v1")
-      .select(
-        "candidate_id, source_document_id, name, headline, current_title, location, years_experience, seniority, primary_role, top_skills, email, phone, links, summary_short, short_summary, long_summary, strengths, risks, recommended_roles, timeline_json, profile_json, original_filename, mime_type, storage_path, source_uri, confidence",
-      )
-      .eq("candidate_id", candidateId)
-      .maybeSingle(),
-    supabase
-      .from("candidate_chunks")
-      .select("id, chunk_type, text")
-      .eq("candidate_id", candidateId)
-      .eq("is_active", true)
-      .order("chunk_index", { ascending: true })
-      .limit(6),
-  ]);
-
-  if (dossier.error) {
-    throw dossier.error;
-  }
-  if (!dossier.data) {
-    throw new Error(`Candidate ${candidateId} was not found.`);
-  }
-  if (chunks.error) {
-    throw chunks.error;
-  }
-
-  return mapRemoteCandidate(
-    {
-      ...(asRecord(dossier.data) as CandidateDossierRow),
-      manatal_candidate_id:
-        await fetchManatalCandidateIdByCandidateId(candidateId),
-    },
-    asArray(chunks.data) as CandidateChunkRow[],
-  );
-}
-
-async function fetchManatalCandidateIdByCandidateId(
-  candidateId: string,
-): Promise<string | null> {
-  if (!supabase) {
-    return null;
-  }
-
-  const dossierResult = await supabase
-    .from("candidate_dossier_v1")
-    .select("source_document_id")
-    .eq("candidate_id", candidateId)
-    .maybeSingle();
-  if (dossierResult.error) {
-    throw dossierResult.error;
-  }
-
-  const sourceDocumentId =
-    typeof dossierResult.data?.source_document_id === "string"
-      ? dossierResult.data.source_document_id
-      : "";
-  if (!sourceDocumentId) {
-    return null;
-  }
-
-  const syncResult = await supabase
-    .from("manatal_candidate_sync")
-    .select("manatal_candidate_id")
-    .eq("source_document_id", sourceDocumentId)
-    .limit(1);
-  if (syncResult.error) {
-    throw syncResult.error;
-  }
-
-  const row = asRecord(asArray(syncResult.data)[0]);
-  return typeof row.manatal_candidate_id === "string"
-    ? row.manatal_candidate_id
-    : null;
 }
 
 function mapRemoteComparison(payload: JsonRecord): ComparisonResponse {
@@ -879,7 +633,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async listCandidates(tenantIds, options) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.listCandidates(tenantIds, options);
       }
 
@@ -913,7 +667,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getSearchFilterOptions(tenantIds) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getSearchFilterOptions();
       }
 
@@ -924,7 +678,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getWorkspaceStats(tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return createEmptyWorkspaceStats();
       }
 
@@ -935,7 +689,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getManatalSyncStatus(tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getManatalSyncStatus(tenantIds);
       }
 
@@ -944,35 +698,43 @@ function createRemoteApi(): PlatformApi {
           tenant_ids: tenantIds,
         });
       } catch {
-        return fetchManatalSyncStatusDirect(tenantIds);
+        return mock.getManatalSyncStatus(tenantIds);
       }
     },
     async getManatalCandidateId(candidateId) {
-      try {
-        return await fetchManatalCandidateIdByCandidateId(candidateId);
-      } catch {
+      if (!hasSupabaseConfig) {
         return null;
-      }
-    },
-    async getCandidate(candidateId) {
-      if (!supabase) {
-        return mock.getCandidate(candidateId);
       }
 
       try {
         const payload = await invokePlatform<JsonRecord>("candidate_detail", {
           candidate_id: candidateId,
         });
-
-        return mapRemoteCandidate(
-          asRecord(payload.dossier) as CandidateDossierRow,
-          asArray(payload.chunks) as CandidateChunkRow[],
-        );
-      } catch (error) {
-        console.error("candidate_detail platform error", error);
-
-        return fetchCandidateDetailDirect(candidateId);
+        const manatalCandidateId = payload.manatalCandidateId;
+        return typeof manatalCandidateId === "string" ? manatalCandidateId : null;
+      } catch {
+        return null;
       }
+    },
+    async getCandidate(candidateId) {
+      if (!hasSupabaseConfig) {
+        return mock.getCandidate(candidateId);
+      }
+
+      const payload = await invokePlatform<JsonRecord>("candidate_detail", {
+        candidate_id: candidateId,
+      });
+      const candidateRow = asRecord(
+        payload.candidate ?? payload.dossier,
+      ) as CandidateDossierRow;
+      if (typeof payload.manatalCandidateId === "string") {
+        candidateRow.manatal_candidate_id = payload.manatalCandidateId;
+      }
+
+      return mapRemoteCandidate(
+        candidateRow,
+        asArray(payload.chunks) as CandidateChunkRow[],
+      );
     },
     async compare(candidateIds, requiredSkills) {
       try {
@@ -1008,7 +770,7 @@ function createRemoteApi(): PlatformApi {
     async getOriginalDocumentUrl(storagePath, sourceUri, context) {
       const hasGcsOriginal = isGcsSource(sourceUri) || isGcsSource(storagePath);
 
-      if (supabase && (context?.candidateId || context?.documentId)) {
+      if (hasSupabaseConfig && (context?.candidateId || context?.documentId)) {
         try {
           const payload = await invokePlatform<JsonRecord>(
             "original_document_url",
@@ -1037,29 +799,14 @@ function createRemoteApi(): PlatformApi {
         }
       }
 
-      if (supabase && storagePath && !hasGcsOriginal) {
-        try {
-          const { data, error } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .createSignedUrl(storagePath, 60 * 10);
-          if (error) {
-            throw error;
-          }
-          if (data?.signedUrl) {
-            return data.signedUrl;
-          }
-        } catch {
-          if (isBrowserOpenableSource(sourceUri)) {
-            return sourceUri ?? null;
-          }
-          return null;
-        }
+      if (isBrowserOpenableSource(sourceUri)) {
+        return sourceUri ?? null;
       }
 
       return mock.getOriginalDocumentUrl(storagePath, sourceUri);
     },
     async getShortlist(tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getShortlist(tenantIds);
       }
 
@@ -1074,7 +821,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async saveShortlistItem(item) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.saveShortlistItem(item);
       }
 
@@ -1087,7 +834,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteShortlistItem(row);
     },
     async removeShortlistItem(candidateId, tenantId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.removeShortlistItem(candidateId, tenantId);
       }
 
@@ -1097,7 +844,7 @@ function createRemoteApi(): PlatformApi {
       });
     },
     async clearShortlist(tenantIds) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.clearShortlist(tenantIds);
       }
 
@@ -1106,8 +853,8 @@ function createRemoteApi(): PlatformApi {
       });
     },
     async listJobPostings(tenantIds) {
-      if (!supabase || !tenantIds?.length) {
-        return supabase ? [] : mock.listJobPostings(tenantIds);
+      if (!hasSupabaseConfig || !tenantIds?.length) {
+        return hasSupabaseConfig ? [] : mock.listJobPostings(tenantIds);
       }
       const rows = await invokePlatform<unknown[]>("job_postings", {
         tenant_ids: tenantIds,
@@ -1115,7 +862,7 @@ function createRemoteApi(): PlatformApi {
       return (rows ?? []).map(mapRemoteJobPosting);
     },
     async getJobPosting(jobId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getJobPosting(jobId);
       }
       const row = await invokePlatform<unknown>("job_posting", {
@@ -1124,7 +871,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobPosting(row);
     },
     async saveJobPosting(job) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.saveJobPosting(job);
       }
       const row = await invokePlatform<unknown>("save_job_posting", {
@@ -1133,7 +880,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobPosting(row);
     },
     async extractJobPosting(input) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.extractJobPosting(input);
       }
       const payload = await invokePlatform<unknown>("extract_job_posting", {
@@ -1146,7 +893,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobExtraction(payload);
     },
     async startJobMatchingRun(input) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.startJobMatchingRun(input);
       }
       const payload = await invokePlatform<unknown>("start_job_matching_run", {
@@ -1159,7 +906,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobMatchingRunDetail(payload);
     },
     async listJobMatchingRuns(jobId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.listJobMatchingRuns(jobId);
       }
       const rows = await invokePlatform<unknown[]>("matching_runs", {
@@ -1168,7 +915,7 @@ function createRemoteApi(): PlatformApi {
       return (rows ?? []).map(mapRemoteJobMatchingRun);
     },
     async getJobMatchingRun(runId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getJobMatchingRun(runId);
       }
       const payload = await invokePlatform<unknown>("matching_run", {
@@ -1177,7 +924,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobMatchingRunDetail(payload);
     },
     async listJobShortlists(jobId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.listJobShortlists(jobId);
       }
       const rows = await invokePlatform<unknown[]>("job_shortlists", {
@@ -1186,7 +933,7 @@ function createRemoteApi(): PlatformApi {
       return (rows ?? []).map(mapRemoteJobShortlist);
     },
     async getJobShortlist(shortlistId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getJobShortlist(shortlistId);
       }
       const payload = await invokePlatform<unknown>("job_shortlist", {
@@ -1195,7 +942,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobShortlistDetail(payload);
     },
     async saveJobShortlist(input) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.saveJobShortlist(input);
       }
       const payload = await invokePlatform<unknown>("save_job_shortlist", {
@@ -1208,7 +955,7 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobShortlistDetail(payload);
     },
     async listJobApplications(jobId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.listJobApplications(jobId);
       }
       const rows = await invokePlatform<unknown[]>("job_applications", {
@@ -1217,7 +964,7 @@ function createRemoteApi(): PlatformApi {
       return (rows ?? []).map(mapRemoteJobApplication);
     },
     async updateJobApplicationStatus(applicationId, status) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.updateJobApplicationStatus(applicationId, status);
       }
       const row = await invokePlatform<unknown>(
@@ -1230,37 +977,49 @@ function createRemoteApi(): PlatformApi {
       return mapRemoteJobApplication(row);
     },
     async listPublicJobPostings() {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.listPublicJobPostings();
       }
-      const payload = await invokeFunction<JsonRecord>("public-jobs", {
-        action: "list",
-      });
+      const payload = await invokeFunction<JsonRecord>(
+        "public-jobs",
+        {
+          action: "list",
+        },
+        { requireSession: false },
+      );
       return asArray(payload.jobs).map(mapRemotePublicJob);
     },
     async getPublicJobPosting(slug) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getPublicJobPosting(slug);
       }
-      const payload = await invokeFunction<JsonRecord>("public-jobs", {
-        action: "detail",
-        slug,
-      });
+      const payload = await invokeFunction<JsonRecord>(
+        "public-jobs",
+        {
+          action: "detail",
+          slug,
+        },
+        { requireSession: false },
+      );
       return mapRemotePublicJob(asRecord(payload.job));
     },
     async submitPublicJobApplication(slug, application) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.submitPublicJobApplication(slug, application);
       }
-      const payload = await invokeFunction<unknown>("public-jobs", {
-        action: "apply",
-        slug,
-        application: publicApplicationPayload(application),
-      });
+      const payload = await invokeFunction<unknown>(
+        "public-jobs",
+        {
+          action: "apply",
+          slug,
+          application: publicApplicationPayload(application),
+        },
+        { requireSession: false },
+      );
       return mapPublicReceipt(payload);
     },
     async getParsingOverview(tenantIds, options) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getParsingOverview();
       }
 
@@ -1273,7 +1032,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getParsingDocument(documentId, tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getParsingDocument(documentId);
       }
 
@@ -1300,7 +1059,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getParserProfiles(tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getParserProfiles();
       }
 
@@ -1315,7 +1074,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async saveParserProfile(profile, tenantId) {
-      if (!supabase || !tenantId) {
+      if (!hasSupabaseConfig || !tenantId) {
         return mock.saveParserProfile(profile);
       }
 
@@ -1333,7 +1092,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async publishParserProfile(profileId, tenantId) {
-      if (!supabase || !tenantId) {
+      if (!hasSupabaseConfig || !tenantId) {
         return mock.publishParserProfile(profileId);
       }
 
@@ -1351,70 +1110,38 @@ function createRemoteApi(): PlatformApi {
       return mock.getAnalytics();
     },
     async getInsightsDashboard(options, tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getInsightsDashboard(options, tenantIds);
       }
 
-      if (USE_INSIGHTS_PLATFORM_API) {
-        try {
-          const payload = await invokePlatform<JsonRecord>(
-            "insights_dashboard",
-            {
-              tenant_ids: tenantIds,
-              top_skills: options?.topSkills ?? 50,
-              target_role: options?.targetRole ?? null,
-              target_skills: options?.targetSkills ?? [],
-              trace_id: `insights-${Date.now()}`,
-            },
-          );
-          return mapRemoteInsightsDashboard(payload);
-        } catch {
-          // Fall through to direct RPC so deployed database functions can still serve the page
-          // while the Edge Function rollout catches up.
-        }
-      }
-
       try {
-        return await fetchInsightsDashboardFromRpc(options, tenantIds);
+        const payload = await invokePlatform<JsonRecord>("insights_dashboard", {
+          tenant_ids: tenantIds,
+          top_skills: options?.topSkills ?? 50,
+          target_role: options?.targetRole ?? null,
+          target_skills: options?.targetSkills ?? [],
+          trace_id: `insights-${Date.now()}`,
+        });
+        return mapRemoteInsightsDashboard(payload);
       } catch {
-        return fetchInsightsDashboardFromSearchCache(options, tenantIds);
+        return mock.getInsightsDashboard(options, tenantIds);
       }
     },
     async getInsightsGapAnalysis(options, tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.getInsightsGapAnalysis(options, tenantIds);
       }
 
-      if (USE_INSIGHTS_PLATFORM_API) {
-        try {
-          const payload = await invokePlatform<JsonRecord>(
-            "insights_gap_analysis",
-            {
-              tenant_ids: tenantIds,
-              target_role: options?.targetRole ?? null,
-              target_skills: options?.targetSkills ?? [],
-              trace_id: `insights-gap-${Date.now()}`,
-            },
-          );
-          return mapRemoteInsightsGapAnalysis(payload);
-        } catch {
-          // Same rollout-safe fallback as the dashboard endpoint.
-        }
-      }
-
       try {
-        return await fetchInsightsGapAnalysisFromRpc(options, tenantIds);
+        const payload = await invokePlatform<JsonRecord>("insights_gap_analysis", {
+          tenant_ids: tenantIds,
+          target_role: options?.targetRole ?? null,
+          target_skills: options?.targetSkills ?? [],
+          trace_id: `insights-gap-${Date.now()}`,
+        });
+        return mapRemoteInsightsGapAnalysis(payload);
       } catch {
-        return (
-          await fetchInsightsDashboardFromSearchCache(
-            {
-              topSkills: 1,
-              targetRole: options?.targetRole,
-              targetSkills: options?.targetSkills,
-            },
-            tenantIds,
-          )
-        ).gapAnalysis;
+        return mock.getInsightsGapAnalysis(options, tenantIds);
       }
     },
     async getSystemHealth() {
