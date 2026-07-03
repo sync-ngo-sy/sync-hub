@@ -2,7 +2,7 @@
 -- This script simulates various roles querying the database to ensure tenant isolation and correct access levels.
 -- If any test fails, it raises an exception to fail the CI build.
 
-DO $$ 
+DO $$
 DECLARE
   test_tenant_id uuid := 'b2f56708-30de-441c-b26a-85d7b5c77726';
   victim_tenant_id uuid := '22222222-2222-2222-2222-222222222222';
@@ -36,7 +36,7 @@ BEGIN
   -------------------------------------------------------------------
   RAISE NOTICE 'Testing Anon Role...';
   SET LOCAL ROLE anon;
-  
+
   -- 1a. View: Should fail with permission denied
   BEGIN
     SELECT count(*) INTO v_count FROM public.candidate_search_rows;
@@ -49,7 +49,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.ingestion_capacity_snapshot_v1(NULL);
     RAISE EXCEPTION 'ANON TEST FAILED: anon can execute RPC!';
-  EXCEPTION 
+  EXCEPTION
     WHEN insufficient_privilege THEN
       -- Expected if execute is revoked
     WHEN raise_exception THEN
@@ -66,7 +66,7 @@ BEGIN
 
   -- 2a. View: Should return candidates (no crash)
   SELECT count(*) INTO v_count FROM public.candidate_search_rows;
-  
+
   -- 2b. RPC with NULL: Should fail (tenant_id required)
   BEGIN
     PERFORM * FROM public.ingestion_capacity_snapshot_v1(NULL);

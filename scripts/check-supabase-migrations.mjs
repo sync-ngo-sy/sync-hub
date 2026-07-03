@@ -63,7 +63,7 @@ if (!fs.existsSync(migrationsDir)) {
       while ((matchView = createViewRegex.exec(noCommentsContent)) !== null) {
         if (!/\bsecurity_invoker\s*=\s*true\b/i.test(noCommentsContent)) {
           fail(`${relativePath}: CREATE VIEW must include 'WITH (security_invoker = true)' to prevent RLS bypass`);
-          break; 
+          break;
         }
       }
 
