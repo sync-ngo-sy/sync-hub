@@ -107,10 +107,6 @@ export function mapRemoteCandidate(
   ...asRecord(row.profile_json),
   ...asRecord((row as CandidateDossierRow & { metadata?: unknown }).metadata),
 };
-  const externalProfiles = asRecord(
-  profile.external_profiles ??
-  profile.externalProfiles
-);
 
   const profileSkills = toStringArray(profile.skills);
 
@@ -129,24 +125,19 @@ export function mapRemoteCandidate(
 
     return "hybrid";
   };
-<<<<<<< Updated upstream
-  
-   const expectedSalary = asRecord(profile.expected_salary);
-=======
 
-  const expectedSalary = asRecord(profile.expected_salary);
+   const expectedSalary = asRecord(profile.expected_salary);
 
 const raw =
   (profile as any).external_profiles ??
   (row as any).external_profiles ??
-  row;
+  {};
 
- const externalProfiles = {
+const externalProfiles = {
   linkedin: typeof raw?.linkedin === "string" ? raw.linkedin : null,
   github: typeof raw?.github === "string" ? raw.github : null,
   portfolio: typeof raw?.portfolio === "string" ? raw.portfolio : null,
-}; 
->>>>>>> Stashed changes
+};
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
 
@@ -340,22 +331,22 @@ const raw =
       linkedin:
         typeof externalProfiles.linkedin === "string"
           ? externalProfiles.linkedin
-          : typeof externalProfiles.linkedin_url === "string"
-            ? externalProfiles.linkedin_url
+          : typeof externalProfiles.linkedin === "string"
+            ? externalProfiles.linkedin
             : null,
 
       github:
         typeof externalProfiles.github === "string"
           ? externalProfiles.github
-          : typeof externalProfiles.github_url === "string"
-            ? externalProfiles.github_url
+          : typeof externalProfiles.github === "string"
+            ? externalProfiles.github
             : null,
 
       portfolio:
         typeof externalProfiles.portfolio === "string"
           ? externalProfiles.portfolio
-          : typeof externalProfiles.portfolio_url === "string"
-            ? externalProfiles.portfolio_url
+          : typeof externalProfiles.portfolio === "string"
+            ? externalProfiles.portfolio
             : null,
     },
     aiProfileSummary: profile.ai_profile_summary
