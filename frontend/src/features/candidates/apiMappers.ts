@@ -421,7 +421,7 @@ export async function fetchCandidatesListRpc(
   tenantIds: string[],
   options?: CandidateListOptions,
 ): Promise<CandidateListResponse> {
-  const payload = await invokePlatform<JsonRecord>("candidates_list_page_v1", {
+  const payload = await invokePlatform<JsonRecord>("candidates_list", {
     tenant_ids: tenantIds,
     ...(options ?? {}),
   });

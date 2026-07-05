@@ -110,6 +110,21 @@ jobs:
       - name: Check migration hygiene
         run: node scripts/check-supabase-migrations.mjs
 
+  supabase-security-tests:
+    name: Supabase dynamic security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase
+        run: supabase start
+      - name: Run dynamic security role tests
+        run: psql -U postgres -h 127.0.0.1 -p 54322 -d postgres < scripts/test_security_roles.sql
+        env:
+          PGPASSWORD: postgres
+
   supabase-functions:
     name: Supabase functions
     runs-on: ubuntu-latest
