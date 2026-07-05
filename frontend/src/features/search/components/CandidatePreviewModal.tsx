@@ -226,10 +226,12 @@ export function CandidatePreviewModal({
         </div>
 
         {/* Body Content with Smooth Height Sizing */}
-        <div className="flex-1 relative min-h-0 overflow-hidden px-5">
+        {/* FIX: Changed to flex flex-col to properly bound the scrolling child */}
+        <div className="flex-1 relative min-h-0 flex flex-col px-5">
           <div className="absolute top-0 left-5 right-5 h-6 bg-gradient-to-b from-[#39393a] to-transparent z-10 pointer-events-none" />
 
-          <div className="overflow-y-auto w-full h-full py-4 select-none outline-none focus:outline-none focus:ring-0">
+          {/* FIX: Changed h-full to flex-1 min-h-0 to force overflow scrolling constraints */}
+          <div className="flex-1 min-h-0 overflow-y-auto w-full py-4 select-none outline-none focus:outline-none focus:ring-0">
             <div
               style={{
                 height: typeof panelHeight === "number" ? `${panelHeight}px` : panelHeight,
