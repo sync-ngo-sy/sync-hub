@@ -9,7 +9,7 @@
 # Optional:
 #   VITE_API_BASE_URL        (defaults to ${VITE_SUPABASE_URL}/functions/v1)
 #   VITE_SITE_URL
-#   CPANEL_FTP_SERVER_DIR    (defaults to public_html/)
+#   CPANEL_FTP_SERVER_DIR    (defaults to ./ — FTP login root; use public_html/ only for main-account FTP)
 #
 # See CPANEL_DEPLOYMENT_CHECKLIST.md → "GitHub Actions (cPanel CI)".
 
@@ -113,7 +113,7 @@ jobs:
           protocol: ftps
           port: 21
           local-dir: ./frontend/dist/
-          server-dir: ${{ secrets.CPANEL_FTP_SERVER_DIR || 'public_html/' }}
+          server-dir: ${{ secrets.CPANEL_FTP_SERVER_DIR || './' }}
           dangerous-clean-slate: false
           exclude: |
             **/.ftp-deploy-sync-state.json

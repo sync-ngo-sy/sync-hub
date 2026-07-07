@@ -296,12 +296,14 @@ cPanel shows the account directory as `/home/…/public_html/jobs`. That usually
 | Secret | Value |
 |--------|--------|
 | `CPANEL_FTP_USERNAME` | `subscription@sync.ngo` |
-| `CPANEL_FTP_SERVER_DIR` | `./` (or leave unset and use `./` after first failed deploy try `public_html/jobs/`) |
+| `CPANEL_FTP_SERVER_DIR` | `./` — **do not** use `public_html/` for this account (that creates `jobs/public_html/` by mistake) |
 | `CPANEL_FTP_SERVER` | Hostname from cPanel → **FTP Accounts** (often `sync.ngo`, `ftp.sync.ngo`, or the server name — not `jobs.sync.ngo` unless cPanel lists it) |
 | `CPANEL_FTP_PASSWORD` | Set only in GitHub Secrets (never commit) |
 | `VITE_SITE_URL` | `https://jobs.sync.ngo` |
 
 If files land in the wrong folder, open cPanel **FTP Accounts** → **Configure FTP Client** for this user and note whether the login root is `public_html/jobs` or the account home; adjust `CPANEL_FTP_SERVER_DIR` accordingly.
+
+**Wrong nested folder?** If CI created `public_html/jobs/public_html/`, the secret was `public_html/` while the FTP root is already `jobs`. Set `CPANEL_FTP_SERVER_DIR=./`, delete the nested `public_html` folder in File Manager, and re-run the deploy workflow.
 
 Do **not** add service-role keys, Gemini keys, or OpenAI keys to GitHub secrets for this workflow — only public frontend values and FTP credentials.
 
