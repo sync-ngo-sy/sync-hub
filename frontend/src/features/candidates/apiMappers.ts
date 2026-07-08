@@ -103,9 +103,20 @@ export function mapRemoteCandidate(
     score_raw?: unknown;
   };
 
+    const profileAttributes = asRecord(
+    (row as CandidateDossierRow & {
+      profile_attributes?: unknown;
+    }).profile_attributes,
+  );
+
   const profile = {
     ...asRecord(row.profile_json),
-    ...asRecord((row as CandidateDossierRow & { metadata?: unknown }).metadata),
+    ...profileAttributes,
+    ...asRecord(
+      (row as CandidateDossierRow & {
+        metadata?: unknown;
+      }).metadata,
+    ),
   };
 
   const profileSkills = toStringArray(profile.skills);
@@ -127,30 +138,25 @@ export function mapRemoteCandidate(
   };
 
   const expectedSalary = asRecord(profile.expected_salary);
+  const normalizeArray = (value: unknown) =>
+  Array.from(new Set(toStringArray(value).map((item) => item.trim()).filter(Boolean)));
 
- const externalProfiles = asRecord(
+const primarySkills = normalizeArray(
+  profile.primary_skills ?? profile.primarySkills ?? profile.skills,
+);
+
+const employmentTypePreference = normalizeArray(
+  profile.employment_type_preference ??
+    profile.employmentTypePreference,
+) as EmploymentType[];
+
+const externalProfiles = asRecord(
   profile.external_profiles ??
     profile.externalProfiles ??
     (row as CandidateDossierRow & {
       external_profiles?: unknown;
-      externalProfiles?: unknown;
-      linkedin?: unknown;
-      github?: unknown;
-      portfolio?: unknown;
     }).external_profiles ??
-    (row as CandidateDossierRow & {
-      externalProfiles?: unknown;
-    }).externalProfiles ??
-    {
-      linkedin:
-        (row as CandidateDossierRow & { linkedin?: unknown }).linkedin,
-
-      github:
-        (row as CandidateDossierRow & { github?: unknown }).github,
-
-      portfolio:
-        (row as CandidateDossierRow & { portfolio?: unknown }).portfolio,
-    },
+    {},
 );
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
@@ -231,6 +237,11 @@ export function mapRemoteCandidate(
     ),
 
     seniority: row.seniority ?? "unknown",
+    
+    status:
+  typeof profile.status === "string"
+    ? (profile.status as CandidateAvailabilityStatus)
+    : "active",
 
     primaryRole: row.primary_role ?? "generalist",
 
@@ -306,9 +317,10 @@ export function mapRemoteCandidate(
       profile.preferred_work_mode ?? profile.preferredWorkMode,
     ),
 
-    primarySkills: toStringArray(profile.primary_skills).length
-      ? toStringArray(profile.primary_skills)
-      : fallbackSkills,
+    primarySkills:
+  primarySkills.length > 0
+    ? primarySkills
+    : fallbackSkills,
 
     noticePeriod:
       typeof profile.notice_period === "string"
@@ -330,44 +342,55 @@ export function mapRemoteCandidate(
         ? profile.internal_vetting_notes
         : null,
 
+        isPreScreened:
+  typeof profile.is_pre_screened === "boolean"
+    ? profile.is_pre_screened
+    : false,
+
     currentLocationCity:
-      typeof profile.current_location_city === "string"
-        ? profile.current_location_city
-        : (row.location ?? null),
+  typeof profile.current_location_city === "string"
+    ? profile.current_location_city
+    : typeof profile.currentLocationCity === "string"
+      ? profile.currentLocationCity
+      : row.location ?? null,
 
     willingnessToRelocate:
       typeof profile.willingness_to_relocate === "boolean"
         ? profile.willingness_to_relocate
         : undefined,
-    externalProfiles: {
-      linkedin:
-        typeof externalProfiles.linkedin === "string"
-          ? externalProfiles.linkedin
-          : null,
-
-      github:
-        typeof externalProfiles.github === "string"
-          ? externalProfiles.github
-          : null,
-
-      portfolio:
-        typeof externalProfiles.portfolio === "string"
-          ? externalProfiles.portfolio
-          : null,
-    },
-
-    aiProfileSummary: profile.ai_profile_summary
-      ? String(profile.ai_profile_summary)
+   externalProfiles: {
+  linkedin:
+    typeof externalProfiles.linkedin === "string"
+      ? externalProfiles.linkedin
       : null,
 
-    employmentTypePreference: toStringArray(
-      profile.employment_type_preference,
-    ) as EmploymentType[],
+  github:
+    typeof externalProfiles.github === "string"
+      ? externalProfiles.github
+      : null,
+
+  portfolio:
+    typeof externalProfiles.portfolio === "string"
+      ? externalProfiles.portfolio
+      : null,
+},
+
+    aiProfileSummary:
+  profile.ai_profile_summary || profile.aiProfileSummary
+    ? String(
+        profile.ai_profile_summary ??
+          profile.aiProfileSummary,
+      )
+    : null,
+    
+   employmentTypePreference,
 
     lastInteractionDate:
-      typeof profile.last_interaction_date === "string"
-        ? profile.last_interaction_date
-        : null,
+  typeof profile.last_interaction_date === "string"
+    ? profile.last_interaction_date
+    : typeof profile.lastInteractionDate === "string"
+      ? profile.lastInteractionDate
+      : null,
 
     expectedSalary:
       expectedSalary.amount || expectedSalary.currency
