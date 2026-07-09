@@ -28,7 +28,11 @@ class DraftIngestion:
                 continue
 
             emit(f"processing draft for user {user_id}")
-            self.supabase.update_candidate_draft(user_id, {"parse_status": "parsing"})
+            try:
+                self.supabase.update_candidate_draft(user_id, {"parse_status": "parsing"})
+            except Exception as db_err:
+                emit(f"failed to mark draft {user_id} as parsing: {db_err}")
+                continue
 
             source = DocumentSource(
                 tenant_id=self.config.tenant_id or "default",
@@ -57,14 +61,19 @@ class DraftIngestion:
                 )
                 if result.failures:
                     raise RuntimeError(result.failures[0].get("error") or "Validation/Ingestion failed")
-                
-                self.supabase.update_candidate_draft(user_id, {"parse_status": "published"})
+                try:
+                    self.supabase.update_candidate_draft(user_id, {"parse_status": "published"})
+                except Exception as db_err:
+                    emit(f"failed to mark draft {user_id} as published: {db_err}")
                 processed += 1
             except Exception as exc:
                 emit(f"failed to process draft {user_id}: {exc}")
-                self.supabase.update_candidate_draft(user_id, {
-                    "parse_status": "failed",
-                    "parse_error": str(exc)[:1000]
-                })
+                try:
+                    self.supabase.update_candidate_draft(user_id, {
+                        "parse_status": "failed",
+                        "parse_error": str(exc)[:1000]
+                    })
+                except Exception as db_err:
+                    emit(f"failed to record error for draft {user_id}: {db_err}")
 
         return processed
