@@ -4,7 +4,7 @@ import tempfile
 import asyncio
 import logging
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 import httpx
@@ -132,13 +132,22 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
         except Exception as db_err:
             logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
 
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
 @app.post("/api/v1/parse-cv-fast")
 async def parse_cv_endpoint(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),  # noqa: B008
     user_id: str = Form(...),      # noqa: B008
     api_key: str = Depends(verify_api_key)
 ):
+    if "content-length" in request.headers:
+        try:
+            if int(request.headers["content-length"]) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
+        except ValueError:
+            pass
     # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
 
@@ -146,7 +155,10 @@ async def parse_cv_endpoint(
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
+        content = await file.read(MAX_FILE_SIZE + 1)
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
+        
         tmp.write(content)
         tmp_path = tmp.name
 
