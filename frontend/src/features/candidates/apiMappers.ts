@@ -109,15 +109,32 @@ export function mapRemoteCandidate(
     }).profile_attributes,
   );
 
-  const profile = {
-    ...asRecord(row.profile_json),
-    ...profileAttributes,
-    ...asRecord(
-      (row as CandidateDossierRow & {
-        metadata?: unknown;
-      }).metadata,
+const profile = {
+  ...asRecord(row.profile_json),
+  ...profileAttributes,
+  ...asRecord(
+    (row as CandidateDossierRow & {
+      metadata?: unknown;
+    }).metadata,
+  ),
+};
+
+
+const normalizeArray = (value: unknown) =>
+  Array.from(
+    new Set(
+      toStringArray(value)
+        .map((item) => item.trim())
+        .filter(Boolean),
     ),
-  };
+  );
+
+
+const roleTags = normalizeArray(
+  profile.role_tags ??
+  profile.roleTags ??
+  [],
+);
 
   const profileSkills = toStringArray(profile.skills);
 
@@ -138,8 +155,6 @@ export function mapRemoteCandidate(
   };
 
   const expectedSalary = asRecord(profile.expected_salary);
-  const normalizeArray = (value: unknown) =>
-  Array.from(new Set(toStringArray(value).map((item) => item.trim()).filter(Boolean)));
 
 const primarySkills = normalizeArray(
   profile.primary_skills ?? profile.primarySkills ?? profile.skills,
@@ -150,14 +165,33 @@ const employmentTypePreference = normalizeArray(
     profile.employmentTypePreference,
 ) as EmploymentType[];
 
-const externalProfiles = asRecord(
-  profile.external_profiles ??
-    profile.externalProfiles ??
-    (row as CandidateDossierRow & {
-      external_profiles?: unknown;
-    }).external_profiles ??
-    {},
+const externalLinks = toStringArray(
+  (row as CandidateDossierRow & {
+    external_links?: unknown;
+  }).external_links ??
+    profile.external_links ??
+    profile.externalLinks ??
+    [],
 );
+
+const externalProfiles = {
+  linkedin:
+    externalLinks.find((link) =>
+      link.toLowerCase().includes("linkedin.com"),
+    ) ?? null,
+
+  github:
+    externalLinks.find((link) =>
+      link.toLowerCase().includes("github.com"),
+    ) ?? null,
+
+  portfolio:
+    externalLinks.find(
+      (link) =>
+        !link.toLowerCase().includes("linkedin.com") &&
+        !link.toLowerCase().includes("github.com"),
+    ) ?? null,
+};
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
 
@@ -168,7 +202,7 @@ const externalProfiles = asRecord(
 
     return {
       employer: String(record.company ?? "Unknown company"),
-
+      roleTags,
       role: String(record.title ?? "Role not parsed"),
 
       start: String(record.start_date ?? "Unknown"),
@@ -236,18 +270,38 @@ const externalProfiles = asRecord(
       row.years_experience ?? 0,
     ),
 
-    seniority: row.seniority ?? "unknown",
+    seniority:
+  typeof profile.seniority === "string"
+    ? profile.seniority
+    : typeof row.seniority === "string"
+      ? row.seniority
+      : "unknown",
+
+primaryRole:
+  typeof profile.primary_role === "string"
+    ? profile.primary_role
+    : typeof profile.primaryRole === "string"
+      ? profile.primaryRole
+      : typeof profile.role === "string"
+        ? profile.role
+        : typeof row.primary_role === "string"
+          ? row.primary_role
+          : "generalist",
     
     status:
   typeof profile.status === "string"
     ? (profile.status as CandidateAvailabilityStatus)
     : "active",
 
-    primaryRole: row.primary_role ?? "generalist",
-
     topSkills: fallbackSkills,
 
-    matchScore: toNumber(rowMeta.match_score, 0),
+    matchScore: toNumber(
+  rowMeta.match_score ??
+  rowMeta.match_rate ??
+  rowMeta.score_raw ??
+  profile.match_score,
+  0,
+),
 
     backendMatchRate: toNumber(rowMeta.match_rate, 0),
 
@@ -402,9 +456,15 @@ const externalProfiles = asRecord(
                 : "USD",
           }
         : null,
-
+profileAttributes,
     links: toStringArray(row.links),
-
+yearsOfExperience:
+  toNumber(
+    profile.years_of_experience ??
+    profile.yearsExperience ??
+    row.years_experience,
+    0,
+  ),
     education,
 
     certifications: toStringArray(profile.certifications),
