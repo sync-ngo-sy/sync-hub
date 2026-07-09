@@ -1,8 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// H3 fix: restrict CORS to a specific origin configured via env var.
+// Falls back to * only for local dev (when env var is unset).
+const allowedOrigin = Deno.env.get("ALLOWED_FRONTEND_ORIGIN") || "*";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": allowedOrigin,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
@@ -171,13 +175,14 @@ serve(async (req) => {
       const proxyRes = await fetch(proxyReq);
 
       if (!proxyRes.ok) {
+        // H1 fix: log full upstream error server-side, return only a generic
+        // message to the client to avoid leaking FastAPI paths, LLM errors or PII.
+        const upstreamError = await proxyRes.text();
+        console.error(`[upload-cv] Upstream parser error (${proxyRes.status}):`, upstreamError);
         return new Response(
-          JSON.stringify({
-            error: "Upstream parser failed",
-            details: await proxyRes.text(),
-          }),
+          JSON.stringify({ error: "CV parsing failed. Please try again later." }),
           {
-            status: proxyRes.status,
+            status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           },
         );
@@ -236,16 +241,43 @@ serve(async (req) => {
     // ROUTE 3: /publish
     // ==========================================
     if (path === "publish") {
+      // H4 fix: guard against race condition where /publish is called before the
+      // background CV sync has finished writing parsed_profile_json. Only allow
+      // transitioning to pending_validation if the current status is "completed".
+      const { data: currentDraft, error: fetchError } = await supabase
+        .from("candidate_registration_drafts")
+        .select("parse_status")
+        .eq("user_id", user.id)
+        .single();
+
+      if (fetchError || !currentDraft) {
+        return new Response(
+          JSON.stringify({ error: "Draft not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      if (currentDraft.parse_status !== "completed") {
+        return new Response(
+          JSON.stringify({
+            error: "Draft is not ready to publish",
+            current_status: currentDraft.parse_status,
+          }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       const { error } = await supabase
         .from("candidate_registration_drafts")
         .update({
           parse_status: "pending_validation",
           updated_at: new Date().toISOString(),
         })
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .eq("parse_status", "completed"); // extra guard: DB-level atomic check
 
       if (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        return new Response(JSON.stringify({ error: "Failed to publish draft" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

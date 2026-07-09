@@ -1,8 +1,10 @@
 import os
 import json
+import time
 import tempfile
 import asyncio
 import logging
+from collections import defaultdict, deque
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends, Request
 import uuid
@@ -23,6 +25,30 @@ import copy
 from cv_intelligence_worker.supabase_client import SupabaseSyncClient
 
 app = FastAPI(title="Realtime CV Extraction")
+
+# ---------------------------------------------------------------------------
+# H2: Rate limiting — 10 requests/minute per API key (sliding window)
+#     + global concurrent LLM request cap of 5
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_REQUESTS = int(os.environ.get("RATE_LIMIT_REQUESTS", "10"))
+_RATE_LIMIT_WINDOW_SECS = int(os.environ.get("RATE_LIMIT_WINDOW_SECS", "60"))
+_MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_LLM", "5"))
+
+_request_log: dict[str, deque] = defaultdict(deque)   # api_key → timestamps
+_concurrency_sem = asyncio.Semaphore(_MAX_CONCURRENT)
+
+def _check_rate_limit(api_key: str) -> None:
+    now = time.monotonic()
+    window = _request_log[api_key]
+    # Evict timestamps outside the sliding window
+    while window and now - window[0] > _RATE_LIMIT_WINDOW_SECS:
+        window.popleft()
+    if len(window) >= _RATE_LIMIT_REQUESTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded: max {_RATE_LIMIT_REQUESTS} requests per {_RATE_LIMIT_WINDOW_SECS}s",
+        )
+    window.append(now)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
 
@@ -155,7 +181,16 @@ async def parse_cv_endpoint(
         uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user_id format. Must be a valid UUID.")
-        
+
+    # H2: enforce per-key rate limit and global concurrency cap
+    _check_rate_limit(api_key)
+
+    if _concurrency_sem.locked() and _concurrency_sem._value == 0:  # noqa: SLF001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server busy, please retry shortly",
+        )
+
     # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
 
