@@ -1,0 +1,105 @@
+name: Bug report
+description: Report reproducible behavior that is not working as expected
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem with Sync Hub.
+
+        Do not include passwords, API keys, access tokens, private CVs,
+        candidate personal information, or other sensitive data.
+
+        Security vulnerabilities must be reported privately through the
+        security reporting link in the issue chooser.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of Sync Hub is affected?
+      options:
+        - Frontend
+        - Worker and CV processing
+        - Supabase database
+        - Supabase Edge Functions
+        - Authentication and authorization
+        - Search and ranking
+        - Infrastructure and deployment
+        - CI/CD
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior
+      description: Clearly describe what happened.
+      placeholder: Describe the observed behavior and any error shown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable sequence that reproduces the problem.
+      placeholder: |
+        1. Start...
+        2. Open...
+        3. Perform...
+        4. Observe...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide the release, branch, or commit SHA where the issue occurred.
+      placeholder: main, v0.2.0, or a commit SHA
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the browser, operating system, Node.js version, or Python version when relevant.
+      placeholder: Chrome 150, macOS 15, Node.js 22, Python 3.12
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove secrets and personal data before including logs.
+      render: shell
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add screenshots, related issues, or other useful context.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed secrets, private CV content, and personal data from this report.
+          required: true
+        - label: I agree to follow the project Code of Conduct.
+          required: true
