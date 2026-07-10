@@ -48,4 +48,6 @@ This license does not grant permission to use the names, logos, trademarks, bran
 
 ## No warranty
 
+
+
 Sync Hub is provided without warranty under the terms described in the applicable license.
