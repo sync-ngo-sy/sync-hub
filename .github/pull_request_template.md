@@ -2,6 +2,12 @@
 
 -
 
+## Linked issue
+
+Closes #
+
+> Every feature, bug fix, or technical improvement should be linked to an approved issue on the Sync Hub Delivery Board.
+
 ## Validation
 
 - [ ] `node scripts/check-repo-format.mjs`
