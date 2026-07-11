@@ -225,7 +225,9 @@ serve(async (req) => {
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return new Response(
-            JSON.stringify({ error: "CV parsing timed out. Please try again later." }),
+            JSON.stringify({
+              error: "CV parsing timed out. Please try again later.",
+            }),
             {
               status: 504,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -241,9 +243,14 @@ serve(async (req) => {
         // H1 fix: log full upstream error server-side, return only a generic
         // message to the client to avoid leaking FastAPI paths, LLM errors or PII.
         const upstreamError = await proxyRes.text();
-        console.error(`[upload-cv] Upstream parser error (${proxyRes.status}):`, upstreamError);
+        console.error(
+          `[upload-cv] Upstream parser error (${proxyRes.status}):`,
+          upstreamError,
+        );
         return new Response(
-          JSON.stringify({ error: "CV parsing failed. Please try again later." }),
+          JSON.stringify({
+            error: "CV parsing failed. Please try again later.",
+          }),
           {
             status: 502,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -352,10 +359,13 @@ serve(async (req) => {
         .select("id"); // extra guard: DB-level atomic check
 
       if (error) {
-        return new Response(JSON.stringify({ error: "Failed to publish draft" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Failed to publish draft" }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       if (!updatedDrafts?.length) {
