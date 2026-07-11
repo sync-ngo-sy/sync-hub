@@ -22,6 +22,13 @@ def test_build_extended_system_prompt():
     assert "employment_type" in prompt
     assert "work_mode" in prompt
 
+def test_detect_allowed_mime_type_matches_magic_bytes():
+    from realtime_extractor import _detect_allowed_mime_type
+
+    assert _detect_allowed_mime_type(b"%PDF-1.7\nrest") == "application/pdf"
+    assert _detect_allowed_mime_type(b"PK\x03\x04rest") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert _detect_allowed_mime_type(b"not a document") is None
+
 @patch("realtime_extractor.SupabaseSyncClient")
 def test_sync_to_supabase_background_success(mock_supabase_client_class):
     """Test successful DB sync, extracting field_confidence and setting completed status."""
