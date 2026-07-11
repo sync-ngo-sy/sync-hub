@@ -172,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _json_response(self, 200, _signed_url(bucket, object_name, _expires_seconds(body.get("expiresSeconds"))))
         except Exception as exc:  # noqa: BLE001
-            _json_response(self, 500, {"error": "signing_failed", "details": str(exc)})
+            _json_response(self, 500, {"error": "signing_failed", "details": f"{type(exc).__name__}: {exc}"})
 
 
 def main() -> None:

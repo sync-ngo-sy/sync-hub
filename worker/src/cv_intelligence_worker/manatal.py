@@ -19,7 +19,7 @@ from .gcs_storage import GcsJsonClient
 from .pipeline import IngestionPipeline, IngestionResult
 from .schema import DocumentSource
 from .supabase import SupabaseClient
-from .utils import urlopen
+from .utils import format_error_message, urlopen
 
 
 SUPPORTED_RESUME_SUFFIXES = {".pdf", ".docx", ".txt"}
@@ -172,7 +172,7 @@ class ManatalClient:
                 try:
                     candidates.append(self.get_candidate(candidate_id))
                 except Exception as exc:  # noqa: BLE001
-                    candidates.append(ManatalCandidate(id=candidate_id, raw={"candidate_fetch_error": str(exc)}))
+                    candidates.append(ManatalCandidate(id=candidate_id, raw={"candidate_fetch_error": format_error_message(exc)}))
             return [candidate for candidate in candidates if candidate.id]
 
         page = 1
@@ -469,7 +469,7 @@ class ManatalSync:
                 resumes.append(resume)
                 sources.append(source)
             except Exception as exc:  # noqa: BLE001
-                error = str(exc)
+                error = format_error_message(exc)
                 status = "skipped" if "failed (404)" in error or "Not found" in error else "failed"
                 failures.append({"manatal_candidate_id": candidate.id, "error": error})
                 state_rows.append(self._candidate_state_row(candidate, status, error))
@@ -497,7 +497,7 @@ class ManatalSync:
                         try:
                             self._sync_original_to_gcs(resume, source, source_document_id)
                         except Exception as exc:  # noqa: BLE001
-                            error = str(exc)
+                            error = format_error_message(exc)
                 state_rows.append(self._sync_state_row(resume, source, "failed" if error else "synced", error, source_document_id))
         if sync_to_supabase and self.supabase and state_rows:
             self.supabase.upsert_manatal_sync_states(state_rows)

@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import List
 from xml.etree import ElementTree as ET
 
+
 from .schema import DocumentSource, DocumentText
+from .utils import format_error_message
 
 
 PDF_TEXT_PATTERN = re.compile(r"\((.*?)\)\s*Tj", re.DOTALL)
@@ -199,9 +201,9 @@ def extract_pdf_text(path: Path) -> DocumentText:
                 parser_name = "tesseract-ocr"
                 warnings.append("PDF text layer was empty; used OCR fallback")
         except FileNotFoundError as exc:
-            warnings.append(str(exc))
+            warnings.append(format_error_message(exc))
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"OCR fallback failed: {exc}")
+            warnings.append(f"OCR fallback failed: {format_error_message(exc)}")
 
     if not raw_text.strip():
         fallback_text = extract_pdf_text_from_bytes(pdf_bytes)

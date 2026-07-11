@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
+
 from .config import WorkerConfig
 from .discovery import compute_sha256, guess_mime_type, stable_document_id
 from .pipeline import IngestionPipeline
 from .schema import DocumentSource
 from .supabase import SupabaseClient
+from .utils import format_error_message
 
 
 @dataclass(frozen=True)
@@ -142,7 +144,7 @@ class PublicApplicationIngestion:
                 candidate_ids.append(candidate_id)
                 parsed += 1
             except Exception as exc:  # noqa: BLE001
-                message = str(exc)
+                message = format_error_message(exc)
                 failed += 1
                 failures.append({"application_id": application_id, "error": message})
                 if application_id:
