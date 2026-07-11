@@ -11,7 +11,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const fastApiProxyTimeoutMs = Number(Deno.env.get("FASTAPI_PROXY_TIMEOUT_MS") || "75000");
+const fastApiProxyTimeoutMs = Number(
+  Deno.env.get("FASTAPI_PROXY_TIMEOUT_MS") || "75000",
+);
 
 function detectAllowedMimeType(fileBytes: Uint8Array): string | null {
   if (
@@ -129,7 +131,10 @@ serve(async (req) => {
         "application/msword",
       ];
       const detectedType = detectAllowedMimeType(fileBytes);
-      if (!detectedType || !allowedTypes.includes(detectedType) || (file.type && file.type !== detectedType)) {
+      if (
+        !detectedType || !allowedTypes.includes(detectedType) ||
+        (file.type && file.type !== detectedType)
+      ) {
         return new Response(
           JSON.stringify({
             error:
@@ -217,7 +222,10 @@ serve(async (req) => {
       );
 
       const proxyController = new AbortController();
-      const proxyTimeout = setTimeout(() => proxyController.abort(), fastApiProxyTimeoutMs);
+      const proxyTimeout = setTimeout(
+        () => proxyController.abort(),
+        fastApiProxyTimeoutMs,
+      );
       let proxyRes: Response;
 
       try {
@@ -334,7 +342,10 @@ serve(async (req) => {
       if (fetchError || !currentDraft) {
         return new Response(
           JSON.stringify({ error: "Draft not found" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
 
@@ -344,7 +355,10 @@ serve(async (req) => {
             error: "Draft is not ready to publish",
             current_status: currentDraft.parse_status,
           }),
-          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
 
@@ -371,7 +385,10 @@ serve(async (req) => {
       if (!updatedDrafts?.length) {
         return new Response(
           JSON.stringify({ error: "Draft is not ready to publish" }),
-          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
 
