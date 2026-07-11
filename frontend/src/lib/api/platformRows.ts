@@ -14,33 +14,70 @@ export type {
 
 export type CandidateDossierRow = {
   metadata?: unknown;
+
   candidate_id: string;
+
   source_document_id?: string | null;
+
   name: string;
+
   headline: string | null;
+
   current_title: string | null;
+
   location: string | null;
+
   years_experience: number | null;
+
   seniority: string | null;
+
   primary_role: string | null;
+
+  status: string | null;
+
   top_skills: string[] | null;
+
   email: string | null;
+
   phone: string | null;
+
   links: string[] | null;
+
   summary_short: string | null;
+
   short_summary: string | null;
+
   long_summary: string | null;
+
   strengths: unknown;
+
   risks: unknown;
+
   recommended_roles: unknown;
+
+  evidence_refs?: unknown;
+
   timeline_json: unknown;
+
   profile_json: unknown;
+
+  skill_matrix_json?: unknown;
+
+  missing_fields?: string[] | null;
+
+  parse_warnings?: string[] | null;
+
   original_filename: string | null;
+
   mime_type: string | null;
+
   storage_path: string | null;
+
   source_uri: string | null;
+
   manatal_candidate_id?: string | null;
-  confidence: number | null;
+
+  confidence?: number | null;
 };
 
 export type CandidateChunkRow = {

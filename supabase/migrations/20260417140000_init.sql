@@ -471,6 +471,7 @@ select
   s.short_summary as stored_short_summary,
   s.confidence as summary_confidence,
   c.status,
+  c.metadata_json as profile_attributes,
   c.parse_version,
   c.normalization_version,
   c.embedding_version,

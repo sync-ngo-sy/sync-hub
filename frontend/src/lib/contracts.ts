@@ -45,6 +45,7 @@ export type CandidateSearchResult = {
 };
 
 export type CandidateDetail = CandidateSearchResult & {
+  roleTags?: string[];
   profileAttributes?: Record<string, unknown> | null;
   longSummary: string;
   email?: string | null;

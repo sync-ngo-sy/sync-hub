@@ -93,6 +93,82 @@ export function buildCandidateCvUrl(sourceUri?: string | null) {
   return isBrowserOpenableSource(sourceUri) ? (sourceUri ?? null) : null;
 }
 
+export function normalizeSeniority(value?: unknown): string {
+  const text = String(value ?? "")
+    .toLowerCase()
+    .trim();
+
+  if (["senior", "lead", "principal", "expert"].includes(text)) {
+    return "Senior";
+  }
+
+  if (["mid", "middle", "intermediate"].includes(text)) {
+    return "Mid";
+  }
+
+  if (["junior", "entry", "intern"].includes(text)) {
+    return "Junior";
+  }
+
+  return "Professional";
+}
+
+export function inferPrimaryRole(profile: JsonRecord): string | null {
+  const titleText = [
+    profile.current_title,
+    profile.currentTitle,
+    profile.job_title,
+    profile.title,
+    profile.primary_role,
+    profile.headline,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  if (/(database|oracle|sql|core banking|dba|pl\/sql)/i.test(titleText)) {
+    return "Database";
+  }
+
+  if (/(devops|cloud engineer|aws|azure)/i.test(titleText)) {
+    return "DevOps";
+  }
+
+  if (
+    /(data analyst|data scientist|machine learning|ai engineer)/i.test(
+      titleText,
+    )
+  ) {
+    return "Data / AI";
+  }
+
+  if (
+    /(software engineer|frontend|react|next|javascript|typescript)/i.test(
+      titleText,
+    )
+  ) {
+    return "Frontend";
+  }
+
+  const skillText = [
+    profile.summary,
+    ...(Array.isArray(profile.skills) ? profile.skills : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (/(security|cyber|soc|penetration|threat)/i.test(skillText)) {
+    return "Security";
+  }
+
+  if (/(react|frontend|javascript|typescript|css|html)/i.test(skillText)) {
+    return "Frontend";
+  }
+
+  return null;
+}
+
 export function mapRemoteCandidate(
   row: CandidateDossierRow,
   chunks: CandidateChunkRow[],
@@ -103,15 +179,50 @@ export function mapRemoteCandidate(
     score_raw?: unknown;
   };
 
+  const profileAttributes = asRecord(
+    (
+      row as CandidateDossierRow & {
+        profile_attributes?: unknown;
+      }
+    ).profile_attributes,
+  );
+
   const profile = {
     ...asRecord(row.profile_json),
-    ...asRecord((row as CandidateDossierRow & { metadata?: unknown }).metadata),
+    ...profileAttributes,
+    ...asRecord(
+      (
+        row as CandidateDossierRow & {
+          metadata?: unknown;
+        }
+      ).metadata,
+    ),
   };
 
-  const profileSkills = toStringArray(profile.skills);
+  const normalizeArray = (value: unknown): string[] =>
+    Array.from(
+      new Set(
+        toStringArray(value)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    );
+
+  const roleTags = normalizeArray(profile.role_tags ?? profile.roleTags ?? []);
+
+  const profileSkills = normalizeArray(
+    profile.skills ??
+      profile.primary_skills ??
+      profile.technical_skills ??
+      profile.core_skills ??
+      profile.skill_matrix ??
+      null,
+  );
 
   const fallbackSkills =
     profileSkills.length > 0 ? profileSkills : toStringArray(row.top_skills);
+
+  const cleanSkills = fallbackSkills.filter(Boolean).slice(0, 8);
 
   const normalizeWorkMode = (value?: unknown): PreferredWorkMode => {
     if (typeof value !== "string") {
@@ -128,30 +239,74 @@ export function mapRemoteCandidate(
 
   const expectedSalary = asRecord(profile.expected_salary);
 
- const externalProfiles = asRecord(
-  profile.external_profiles ??
-    profile.externalProfiles ??
-    (row as CandidateDossierRow & {
-      external_profiles?: unknown;
-      externalProfiles?: unknown;
-      linkedin?: unknown;
-      github?: unknown;
-      portfolio?: unknown;
-    }).external_profiles ??
-    (row as CandidateDossierRow & {
-      externalProfiles?: unknown;
-    }).externalProfiles ??
-    {
-      linkedin:
-        (row as CandidateDossierRow & { linkedin?: unknown }).linkedin,
+  const primarySkills = normalizeArray(
+    profile.primary_skills ?? profile.primarySkills ?? profile.skills,
+  );
 
-      github:
-        (row as CandidateDossierRow & { github?: unknown }).github,
+  const employmentTypePreference = normalizeArray(
+    profile.employment_type_preference ?? profile.employmentTypePreference,
+  ) as EmploymentType[];
 
-      portfolio:
-        (row as CandidateDossierRow & { portfolio?: unknown }).portfolio,
-    },
-);
+  const externalLinks = toStringArray(
+    (
+      row as CandidateDossierRow & {
+        external_links?: unknown;
+      }
+    ).external_links ??
+      profile.external_links ??
+      profile.externalLinks ??
+      [],
+  );
+
+  function getExternalProfileUrl(
+  links: string[],
+  domain: string,
+): string | null {
+  return (
+    links.find((link) => {
+      try {
+        const url = new URL(link);
+        const hostname = url.hostname.toLowerCase();
+
+        return (
+          hostname === domain ||
+          hostname.endsWith(`.${domain}`)
+        );
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
+}
+
+const externalProfiles = {
+  linkedin: getExternalProfileUrl(
+    externalLinks,
+    "linkedin.com",
+  ),
+
+  github: getExternalProfileUrl(
+    externalLinks,
+    "github.com",
+  ),
+
+  portfolio:
+    externalLinks.find((link) => {
+      try {
+        const url = new URL(link);
+        const hostname = url.hostname.toLowerCase();
+
+        return (
+          hostname !== "linkedin.com" &&
+          !hostname.endsWith(".linkedin.com") &&
+          hostname !== "github.com" &&
+          !hostname.endsWith(".github.com")
+        );
+      } catch {
+        return false;
+      }
+    }) ?? null,
+};
 
   const cvUrl = buildCandidateCvUrl(row.source_uri);
 
@@ -162,7 +317,7 @@ export function mapRemoteCandidate(
 
     return {
       employer: String(record.company ?? "Unknown company"),
-
+      roleTags,
       role: String(record.title ?? "Role not parsed"),
 
       start: String(record.start_date ?? "Unknown"),
@@ -193,16 +348,18 @@ export function mapRemoteCandidate(
     })
     .filter(Boolean);
 
+  const listSkills = toStringArray(row.top_skills).slice(0, 5);
+
   const education = asArray(profile.education)
     .map((entry) => {
+      if (typeof entry === "string") {
+        return entry;
+      }
+
       const record = asRecord(entry);
 
-      return [
-        String(record.degree ?? "").trim(),
-        String(record.field ?? "").trim(),
-        String(record.institution ?? "").trim(),
-      ]
-        .filter(Boolean)
+      return [record.degree, record.field, record.institution, record.year]
+        .filter((value) => typeof value === "string" && value.trim())
         .join(" · ");
     })
     .filter(Boolean);
@@ -213,30 +370,70 @@ export function mapRemoteCandidate(
     name: row.name,
 
     currentTitle:
-      String(profile.current_title ?? "") || row.current_title || "Candidate",
+      String(
+        profile.current_title ??
+          profile.currentTitle ??
+          profile.job_title ??
+          profile.title ??
+          row.current_title ??
+          "",
+      ) || "Candidate",
 
     headline:
-      String(profile.headline ?? "") ||
-      row.headline ||
-      row.short_summary ||
-      row.summary_short ||
-      row.current_title ||
-      "Candidate",
+      String(
+        profile.headline ??
+          profile.summary ??
+          profile.short_summary ??
+          profile.current_title ??
+          row.headline ??
+          row.short_summary ??
+          row.summary_short ??
+          "",
+      ) || "Candidate",
 
     location: row.location ?? "Unknown",
 
     yearsExperience: toNumber(
-      profile.years_experience,
-      row.years_experience ?? 0,
+      profile.years_experience ??
+        profile.yearsExperience ??
+        profile.total_experience ??
+        row.years_experience,
+      0,
     ),
 
-    seniority: row.seniority ?? "unknown",
+    seniority: normalizeSeniority(
+      row.seniority ??
+        profile.seniority ??
+        profile.level ??
+        profile.experience_level,
+    ),
 
-    primaryRole: row.primary_role ?? "generalist",
+    primaryRole:
+      inferPrimaryRole(asRecord(row)) ??
+      String(row.primary_role ?? row.current_title ?? "Professional"),
 
-    topSkills: fallbackSkills,
+    status:
+      typeof profile.status === "string"
+        ? (profile.status as CandidateAvailabilityStatus)
+        : "active",
 
-    matchScore: toNumber(rowMeta.match_score, 0),
+    topSkills: cleanSkills,
+
+    matchScore: Math.round(
+      Math.min(
+        1,
+        Math.max(
+          0,
+          toNumber(
+            rowMeta.match_score ??
+              rowMeta.match_rate ??
+              rowMeta.score_raw ??
+              profile.match_score,
+            0,
+          ),
+        ),
+      ) * 100,
+    ),
 
     backendMatchRate: toNumber(rowMeta.match_rate, 0),
 
@@ -245,7 +442,7 @@ export function mapRemoteCandidate(
     matchSignals: {
       semantic: 0,
 
-      skill: Math.min(1, Math.max(0.3, fallbackSkills.length / 10)),
+      skill: Math.min(1, Math.max(0.3, cleanSkills.length / 10)),
 
       experience: Math.min(1, toNumber(row.years_experience) / 10),
     },
@@ -296,9 +493,9 @@ export function mapRemoteCandidate(
     jobReadinessLevel:
       typeof profile.job_readiness_level === "string"
         ? (profile.job_readiness_level as JobReadinessLevel)
-        : row.seniority === "staff" || row.seniority === "senior"
+        : normalizeSeniority(profile.seniority ?? row.seniority) === "Senior"
           ? "L4"
-          : row.seniority === "mid"
+          : normalizeSeniority(profile.seniority ?? row.seniority) === "Mid"
             ? "L3"
             : "L2",
 
@@ -306,9 +503,7 @@ export function mapRemoteCandidate(
       profile.preferred_work_mode ?? profile.preferredWorkMode,
     ),
 
-    primarySkills: toStringArray(profile.primary_skills).length
-      ? toStringArray(profile.primary_skills)
-      : fallbackSkills,
+    primarySkills: primarySkills.length > 0 ? primarySkills : cleanSkills,
 
     noticePeriod:
       typeof profile.notice_period === "string"
@@ -318,7 +513,11 @@ export function mapRemoteCandidate(
     englishProficiency:
       typeof profile.english_proficiency === "string"
         ? (profile.english_proficiency as EnglishProficiency)
-        : "fluent",
+        : typeof profile.english === "string"
+          ? (profile.english as EnglishProficiency)
+          : typeof profile.language_level === "string"
+            ? (profile.language_level as EnglishProficiency)
+            : null,
 
     syncAffiliation:
       typeof profile.sync_affiliation === "string"
@@ -330,10 +529,21 @@ export function mapRemoteCandidate(
         ? profile.internal_vetting_notes
         : null,
 
+    isPreScreened:
+      typeof profile.is_pre_screened === "boolean"
+        ? profile.is_pre_screened
+        : false,
+
     currentLocationCity:
       typeof profile.current_location_city === "string"
         ? profile.current_location_city
-        : (row.location ?? null),
+        : typeof profile.currentLocationCity === "string"
+          ? profile.currentLocationCity
+          : typeof profile.location_city === "string"
+            ? profile.location_city
+            : typeof profile.city === "string"
+              ? profile.city
+              : (row.location ?? null),
 
     willingnessToRelocate:
       typeof profile.willingness_to_relocate === "boolean"
@@ -356,18 +566,19 @@ export function mapRemoteCandidate(
           : null,
     },
 
-    aiProfileSummary: profile.ai_profile_summary
-      ? String(profile.ai_profile_summary)
-      : null,
+    aiProfileSummary:
+      profile.ai_profile_summary || profile.aiProfileSummary
+        ? String(profile.ai_profile_summary ?? profile.aiProfileSummary)
+        : null,
 
-    employmentTypePreference: toStringArray(
-      profile.employment_type_preference,
-    ) as EmploymentType[],
+    employmentTypePreference,
 
     lastInteractionDate:
       typeof profile.last_interaction_date === "string"
         ? profile.last_interaction_date
-        : null,
+        : typeof profile.lastInteractionDate === "string"
+          ? profile.lastInteractionDate
+          : null,
 
     expectedSalary:
       expectedSalary.amount || expectedSalary.currency
@@ -379,34 +590,54 @@ export function mapRemoteCandidate(
                 : "USD",
           }
         : null,
-
+    profileAttributes,
     links: toStringArray(row.links),
-
+    yearsOfExperience: toNumber(
+      profile.years_of_experience ??
+        profile.yearsExperience ??
+        row.years_experience,
+      0,
+    ),
     education,
 
-    certifications: toStringArray(profile.certifications),
+    certifications: normalizeArray(
+      profile.certifications ??
+        profile.certificates ??
+        profile.licenses ??
+        null,
+    ),
 
-    languages: toStringArray(profile.languages),
+    languages: normalizeArray(profile.languages ?? profile.language ?? null),
 
     projects,
 
     timeline,
 
-    evidence: chunks.map((chunk, index) =>
-      mapEvidenceSnippet(
-        {
-          id: chunk.id,
+    evidence: chunks
+      .map((chunk, index) => {
+        const chunkMeta = chunk as CandidateChunkRow & {
+          relevance?: unknown;
+          semantic_similarity?: unknown;
+          score?: unknown;
+        };
 
-          chunk_type: chunk.chunk_type,
+        return mapEvidenceSnippet(
+          {
+            id: chunk.id,
+            chunk_type: chunk.chunk_type,
+            text: chunk.text,
 
-          text: chunk.text,
-
-          relevance: Math.max(0.4, 0.95 - index * 0.08),
-        },
-
-        index,
-      ),
-    ),
+            relevance: toNumber(
+              chunkMeta.relevance ??
+                chunkMeta.semantic_similarity ??
+                chunkMeta.score,
+              0.5,
+            ),
+          },
+          index,
+        );
+      })
+      .sort((a, b) => b.relevance - a.relevance),
 
     cvPreview: [
       row.original_filename ? `CV file: ${row.original_filename}` : "",
@@ -443,7 +674,9 @@ export async function fetchCandidatesListRpc(
 
         location: String(row.location ?? "Unknown"),
 
-        primaryRole: String(row.primary_role ?? "generalist"),
+        primaryRole: String(
+          row.primary_role ?? row.current_title ?? "Professional",
+        ),
 
         appliedRole:
           typeof row.applied_role === "string" ? row.applied_role : null,
@@ -454,7 +687,7 @@ export async function fetchCandidatesListRpc(
 
         source: String(row.source ?? "platform"),
 
-        seniority: String(row.seniority ?? "unknown"),
+        seniority: normalizeSeniority(row.seniority),
 
         updatedAt:
           typeof row.updated_at === "string"

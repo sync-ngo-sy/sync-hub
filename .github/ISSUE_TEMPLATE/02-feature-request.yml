@@ -1,0 +1,100 @@
+name: Feature request
+description: Propose a new capability or meaningful product improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user problem before describing the implementation.
+
+        Feature proposals should explain who benefits, why the change matters,
+        and how success can be evaluated.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Candidate search
+        - CV ingestion and processing
+        - Candidate comparison
+        - Recruitment workflows
+        - Job listings and applications
+        - Authentication and organizations
+        - Reporting and analytics
+        - Administration
+        - Developer experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem or unmet need should this feature address?
+      placeholder: |
+        As a...
+        I need...
+        Because...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior without over-constraining the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: users
+    attributes:
+      label: Intended users and impact
+      description: Who benefits from this feature, and what outcome should improve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Provide observable conditions that would make the feature complete.
+      placeholder: |
+        - [ ] A recruiter can...
+        - [ ] The system prevents...
+        - [ ] The result displays...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe existing workarounds or alternative approaches.
+
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and security considerations
+      description: Could this affect candidate data, permissions, tenant isolation, or AI-provider data sharing?
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add designs, examples, related issues, or supporting material.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched existing issues and did not find an equivalent proposal.
+          required: true
+        - label: I agree to follow the project Code of Conduct.
+          required: true
