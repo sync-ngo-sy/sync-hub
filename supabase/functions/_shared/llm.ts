@@ -61,7 +61,7 @@ function envText(name: string) {
 }
 
 function normalizeBaseUrl(url: string) {
-  return url.replace(/\/$/, "");
+  return url.replace(/\/+$/, "");
 }
 
 function isLocalRuntime() {
