@@ -60,6 +60,10 @@ function envText(name: string) {
   return value && value.length > 0 ? value : null;
 }
 
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/$/, "");
+}
+
 function isLocalRuntime() {
   const supabaseUrl = envText("SUPABASE_URL") ?? "";
   return supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
@@ -96,8 +100,10 @@ async function buildGeminiConfig(
     provider: "gemini",
     apiKey,
     model: modelId,
-    baseUrl: envText("GEMINI_BASE_URL") ??
-      "https://generativelanguage.googleapis.com/v1beta",
+    baseUrl: normalizeBaseUrl(
+      envText("GEMINI_BASE_URL") ??
+        "https://generativelanguage.googleapis.com/v1beta",
+    ),
     timeoutMs,
   };
 }
@@ -121,10 +127,10 @@ async function resolveLlmConfig(): Promise<LlmConfig | null> {
   const geminiConfig = await buildGeminiConfig(timeoutMs);
   const openaiModel =
     (await resolveRuntimeOrEnv("openai_model", "OPENAI_MODEL")) ??
-    "gpt-4.1-mini";
+      "gpt-4.1-mini";
   const ollamaModel =
     (await resolveRuntimeOrEnv("ollama_model", "OLLAMA_MODEL")) ??
-    defaultLocalOllamaModel;
+      defaultLocalOllamaModel;
 
   if (
     (provider?.toLowerCase() === "openai" || !provider) &&
@@ -134,7 +140,9 @@ async function resolveLlmConfig(): Promise<LlmConfig | null> {
       provider: "openai",
       apiKey: envText("OPENAI_API_KEY") as string,
       model: openaiModel,
-      baseUrl: envText("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      baseUrl: normalizeBaseUrl(
+        envText("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      ),
       timeoutMs,
     };
   }
@@ -147,8 +155,9 @@ async function resolveLlmConfig(): Promise<LlmConfig | null> {
     return {
       provider: "ollama",
       model: ollamaModel,
-      baseUrl: envText("OLLAMA_BASE_URL") ??
-        "http://host.docker.internal:11434",
+      baseUrl: normalizeBaseUrl(
+        envText("OLLAMA_BASE_URL") ?? "http://host.docker.internal:11434",
+      ),
       timeoutMs,
     };
   }
@@ -234,8 +243,9 @@ async function parseResponseBody(response: Response) {
 }
 
 function geminiUrl(baseUrl: string, model: string, apiKey: string) {
-  return `${baseUrl.replace(/\/$/, "")}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)
-    }`;
+  return `${baseUrl}/models/${model}:generateContent?key=${
+    encodeURIComponent(apiKey)
+  }`;
 }
 
 async function callLlmEndpoint(options: {
@@ -260,7 +270,8 @@ async function callLlmEndpoint(options: {
     const payload = await parseResponseBody(response);
     if (!response.ok) {
       throw new Error(
-        `${options.providerName}_error:${response.status}:${JSON.stringify(payload)
+        `${options.providerName}_error:${response.status}:${
+          JSON.stringify(payload)
         }`,
       );
     }
@@ -281,7 +292,7 @@ async function callOpenAiText(
   request: TextGenerationRequest,
 ): Promise<TextGenerationResult> {
   const text = await callLlmEndpoint({
-    url: `${config.baseUrl.replace(/\/$/, "")}/responses`,
+    url: `${config.baseUrl}/responses`,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`,
@@ -328,7 +339,7 @@ async function callOllamaText(
   request: TextGenerationRequest,
 ): Promise<TextGenerationResult> {
   const text = await callLlmEndpoint({
-    url: `${config.baseUrl.replace(/\/$/, "")}/api/chat`,
+    url: `${config.baseUrl}/api/chat`,
     headers: { "Content-Type": "application/json" },
     body: {
       model: config.model,
@@ -352,7 +363,7 @@ async function callOpenAi<T>(
   request: StructuredGenerationRequest,
 ): Promise<StructuredGenerationResult<T>> {
   const text = await callLlmEndpoint({
-    url: `${config.baseUrl.replace(/\/$/, "")}/responses`,
+    url: `${config.baseUrl}/responses`,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`,
@@ -419,7 +430,7 @@ async function callOllama<T>(
   request: StructuredGenerationRequest,
 ): Promise<StructuredGenerationResult<T>> {
   const text = await callLlmEndpoint({
-    url: `${config.baseUrl.replace(/\/$/, "")}/api/chat`,
+    url: `${config.baseUrl}/api/chat`,
     headers: { "Content-Type": "application/json" },
     body: {
       model: config.model,
