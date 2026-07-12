@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Building2,
-  ExternalLink,
-  FileText,
-  Mail,
-  Phone,
-} from "lucide-react";
+import { Building2, ExternalLink, FileText, Mail, Phone } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import { buildChatHref } from "@/lib/chatAgent";
@@ -47,20 +41,33 @@ function candidateFirstName(name: string) {
   return name.trim().split(/\s+/)[0] || name;
 }
 
+function groupEvidence(items: CandidateDetail["evidence"] = []) {
+  const bestByType = new Map<string, CandidateDetail["evidence"][number]>();
+
+  for (const item of items) {
+    const existing = bestByType.get(item.chunkType);
+
+    if (!existing || item.relevance > existing.relevance) {
+      bestByType.set(item.chunkType, item);
+    }
+  }
+
+  return Array.from(bestByType.values())
+    .sort((a, b) => b.relevance - a.relevance)
+    .slice(0, 5);
+}
+
 function titleCaseWords(value: string) {
   return value
     .split(/[\s._-]+/)
     .filter(Boolean)
-    .map(
-      (part) =>
-        part.charAt(0).toUpperCase() + part.slice(1)
-    )
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
 
 function recruiterDisplayName(
   email: string | null | undefined,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
 ) {
   const explicitName = [
     metadata.full_name,
@@ -68,9 +75,7 @@ function recruiterDisplayName(
     metadata.display_name,
     metadata.recruiter_name,
   ]
-    .map((value) =>
-      typeof value === "string" ? value.trim() : ""
-    )
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
     .find(Boolean);
 
   if (explicitName) {
@@ -79,14 +84,12 @@ function recruiterDisplayName(
 
   const emailHandle = email?.split("@")[0]?.trim();
 
-  return emailHandle
-    ? titleCaseWords(emailHandle)
-    : "Recruiter";
+  return emailHandle ? titleCaseWords(emailHandle) : "Recruiter";
 }
 
 function recruiterPhone(
   metadata: Record<string, unknown>,
-  sessionPhone?: string | null
+  sessionPhone?: string | null,
 ) {
   const candidates = [
     sessionPhone,
@@ -94,9 +97,7 @@ function recruiterPhone(
     metadata.phone_number,
     metadata.mobile,
   ]
-    .map((value) =>
-      typeof value === "string" ? value.trim() : ""
-    )
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
     .filter(Boolean);
 
   return candidates[0] ?? null;
@@ -110,7 +111,7 @@ function buildContactMailto(
     email: string | null;
     phone: string | null;
   },
-  searchQuery?: string
+  searchQuery?: string,
 ) {
   if (!candidate.email) {
     return null;
@@ -119,9 +120,7 @@ function buildContactMailto(
   const firstName = candidateFirstName(candidate.name);
 
   const roleContext =
-    searchQuery?.trim() ||
-    candidate.currentTitle ||
-    "a role on our team";
+    searchQuery?.trim() || candidate.currentTitle || "a role on our team";
 
   const subject = `Opportunity to discuss ${roleContext}`;
 
@@ -146,7 +145,7 @@ function buildContactMailto(
   ].join("\n");
 
   return `mailto:${candidate.email}?subject=${encodeURIComponent(
-    subject
+    subject,
   )}&body=${encodeURIComponent(body)}`;
 }
 
@@ -206,20 +205,117 @@ function DossierSkeleton() {
     </div>
   );
 }
+function CandidateTabContent({
+  activeTab,
+  candidate,
+  visibleEvidence,
+}: {
+  activeTab: "overview" | "timeline" | "skills" | "evidence" | "cv";
+  candidate: CandidateDetail;
+  visibleEvidence: CandidateDetail["evidence"];
+}) {
+  switch (activeTab) {
+    case "overview":
+      return (
+        <Panel className="table-card">
+          <h3>Overview</h3>
+
+          <p>
+            {candidate.aiProfileSummary ||
+              candidate.longSummary ||
+              "No summary available."}
+          </p>
+        </Panel>
+      );
+
+    case "timeline":
+      return (
+        <Panel className="timeline-card">
+          <h3>Career Timeline</h3>
+
+          <div className="timeline">
+            {candidate.timeline?.map((entry) => (
+              <div
+                key={`${entry.employer}-${entry.role}`}
+                className="timeline-entry"
+              >
+                <strong>{entry.role}</strong>
+
+                <p>{entry.employer}</p>
+
+                <span>
+                  {entry.start} - {entry.end}
+                </span>
+
+                <p>{entry.scope}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      );
+
+    case "skills":
+      return (
+        <Panel className="table-card">
+          <h3>Skills</h3>
+
+          <div className="skill-list">
+            {candidate.primarySkills?.map((skill) => (
+              <Tag key={skill}>{skill}</Tag>
+            ))}
+          </div>
+        </Panel>
+      );
+
+    case "evidence":
+      return (
+        <Panel className="table-card">
+          <h3>Evidence</h3>
+
+          <div className="evidence-list">
+            {visibleEvidence.map((item) => (
+              <div key={item.id} className="evidence-card">
+                <strong>{item.chunkType}</strong>
+
+                <p>{item.excerpt}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      );
+
+    case "cv":
+      return (
+        <Panel className="table-card">
+          <h3>CV Data</h3>
+
+          {candidate.cvPreview?.length ? (
+            <ul className="bullet-list">
+              {candidate.cvPreview.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>No CV data.</p>
+          )}
+        </Panel>
+      );
+
+    default:
+      return null;
+  }
+}
 
 export function CandidateDossierPage() {
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "timeline" | "skills" | "evidence" | "cv"
+  >("overview");
   const { candidateId } = useParams();
   const location = useLocation();
 
-  const {
-    currentTenant,
-    isAdmin,
-    session,
-    userEmail,
-  } = useAuth();
+  const { currentTenant, isAdmin, session, userEmail } = useAuth();
 
-  const routeState =
-    (location.state ?? {}) as DossierLocationState;
+  const routeState = (location.state ?? {}) as DossierLocationState;
 
   const contextualMatchScore =
     typeof routeState.searchMatchScore === "number"
@@ -228,8 +324,7 @@ export function CandidateDossierPage() {
 
   const candidateQuery = useQuery({
     queryKey: ["candidate-dossier", candidateId],
-    queryFn: () =>
-      platformApi.getCandidate(candidateId!),
+    queryFn: () => platformApi.getCandidate(candidateId!),
     enabled: Boolean(candidateId),
     staleTime: 10 * 60 * 1000,
     gcTime: 45 * 60 * 1000,
@@ -237,23 +332,19 @@ export function CandidateDossierPage() {
   });
 
   const candidate = candidateQuery.data ?? null;
-
+  const visibleEvidence = candidate ? groupEvidence(candidate.evidence) : [];
   const manatalCandidateIdQuery = useQuery({
     queryKey: ["candidate-manatal-id", candidateId],
-    queryFn: () =>
-     platformApi.getManatalCandidateId(
-      candidateId!
-    ),
+    queryFn: () => platformApi.getManatalCandidateId(candidateId!),
     enabled: Boolean(candidateId && isAdmin),
     staleTime: 10 * 60 * 1000,
   });
 
-  const [openingOriginal, setOpeningOriginal] =
-    useState(false);
+  const [openingOriginal, setOpeningOriginal] = useState(false);
 
-  const [openOriginalError, setOpenOriginalError] =
-    useState<string | null>(null);
-
+  const [openOriginalError, setOpenOriginalError] = useState<string | null>(
+    null,
+  );
 
   if (!candidateId) {
     return (
@@ -263,7 +354,6 @@ export function CandidateDossierPage() {
       />
     );
   }
-
 
   if (!candidate) {
     if (candidateQuery.isError) {
@@ -279,9 +369,7 @@ export function CandidateDossierPage() {
             <button
               type="button"
               className="button button--secondary"
-              onClick={() =>
-                void candidateQuery.refetch()
-              }
+              onClick={() => void candidateQuery.refetch()}
             >
               Retry
             </button>
@@ -293,117 +381,74 @@ export function CandidateDossierPage() {
     return <DossierSkeleton />;
   }
 
-
-  const userMetadata =
-    (session?.user.user_metadata ??
-      {}) as Record<string, unknown>;
-
+  const userMetadata = (session?.user.user_metadata ?? {}) as Record<
+    string,
+    unknown
+  >;
 
   const recruiter = {
-    name: recruiterDisplayName(
-      userEmail,
-      userMetadata
-    ),
+    name: recruiterDisplayName(userEmail, userMetadata),
 
-    company:
-      currentTenant?.name ?? "your team",
+    company: currentTenant?.name ?? "your team",
 
     email: userEmail,
 
-    phone: recruiterPhone(
-      userMetadata,
-      session?.user.phone ?? null
-    ),
+    phone: recruiterPhone(userMetadata, session?.user.phone ?? null),
   };
 
-
-  const contactMailto =
-    buildContactMailto(
-      candidate,
-      recruiter,
-      routeState.searchQuery
-    );
-
-
- const currentEmployer =
-  candidate.timeline?.[0]?.employer?.trim() ||
-  null;
-
-  const canOpenOriginal = Boolean(
-    candidate.storagePath ||
-      candidate.sourceUri ||
-      candidate.cvUrl
+  const contactMailto = buildContactMailto(
+    candidate,
+    recruiter,
+    routeState.searchQuery,
   );
 
+  const currentEmployer = candidate.timeline?.[0]?.employer?.trim() || null;
+
+  const canOpenOriginal = Boolean(
+    candidate.storagePath || candidate.sourceUri || candidate.cvUrl,
+  );
 
   const manatalCandidateId =
-    candidate.manatalCandidateId ??
-    manatalCandidateIdQuery.data ??
-    null;
-
+    candidate.manatalCandidateId ?? manatalCandidateIdQuery.data ?? null;
 
   const manatalUrl = isAdmin
-    ? buildManatalCandidateUrl(
-        manatalCandidateId
-      )
+    ? buildManatalCandidateUrl(manatalCandidateId)
     : null;
-
 
   async function handleOpenOriginalCv() {
     if (!candidate || openingOriginal) {
       return;
     }
 
-
     setOpeningOriginal(true);
     setOpenOriginalError(null);
 
-
     try {
-      const documentUrl =
-        await platformApi.getOriginalDocumentUrl(
-          candidate.storagePath,
-          candidate.sourceUri ??
-            candidate.cvUrl,
-          {
-            candidateId:
-              candidate.candidateId,
-            tenantId:
-              currentTenant?.id,
-          }
-        );
-
+      const documentUrl = await platformApi.getOriginalDocumentUrl(
+        candidate.storagePath,
+        candidate.sourceUri ?? candidate.cvUrl,
+        {
+          candidateId: candidate.candidateId,
+          tenantId: currentTenant?.id,
+        },
+      );
 
       if (!documentUrl) {
-        throw new Error(
-          "The original CV is not available."
-        );
+        throw new Error("The original CV is not available.");
       }
 
-
-      window.open(
-        documentUrl,
-        "_blank",
-        "noopener,noreferrer"
-      );
-
-
+      window.open(documentUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       setOpenOriginalError(
-        error instanceof Error
-          ? error.message
-          : "Unable to open CV."
+        error instanceof Error ? error.message : "Unable to open CV.",
       );
-
     } finally {
       setOpeningOriginal(false);
     }
   }
 
-
   return (
     <div className="page-stack">
-
       <PageIntro
         eyebrow="Grounded candidate view"
         title={candidate.name}
@@ -411,44 +456,32 @@ export function CandidateDossierPage() {
 
         actions={
           <div className="skill-list">
-
-            <Link
-              className="button button--secondary"
-              to="/search"
-            >
+            <Link className="button button--secondary" to="/search">
               Back to Search
             </Link>
-
 
             <Link
               className="button button--secondary"
               to={buildChatHref(
                 [candidate.candidateId],
-                routeState.searchQuery ||
-                  "Why is this candidate a strong fit?"
+                routeState.searchQuery || "Why is this candidate a strong fit?",
               )}
             >
               Ask Agent
             </Link>
 
-
             {canOpenOriginal && (
               <button
                 className="button button--secondary"
                 type="button"
-                onClick={() =>
-                  void handleOpenOriginalCv()
-                }
+                onClick={() => void handleOpenOriginalCv()}
                 disabled={openingOriginal}
               >
                 <FileText size={16} />
 
-                {openingOriginal
-                  ? "Opening..."
-                  : "Open CV"}
+                {openingOriginal ? "Opening..." : "Open CV"}
               </button>
             )}
-
 
             {manatalUrl && (
               <a
@@ -462,75 +495,36 @@ export function CandidateDossierPage() {
               </a>
             )}
 
-
             {contactMailto && (
-              <a
-                className="button button--primary"
-                href={contactMailto}
-              >
+              <a className="button button--primary" href={contactMailto}>
                 Contact candidate
               </a>
             )}
-
           </div>
         }
       />
 
-
-      {openOriginalError && (
-        <p className="form-error">
-          {openOriginalError}
-        </p>
-      )}
-
-
+      {openOriginalError && <p className="form-error">{openOriginalError}</p>}
 
       <Panel className="candidate-card">
-
         <div className="candidate-profile__header">
-
           <div className="candidate-profile__identity">
-
-            <Avatar
-              name={candidate.name}
-              hue={candidate.avatarHue}
-              size="lg"
-            />
-
+            <Avatar name={candidate.name} hue={candidate.avatarHue} size="lg" />
 
             <div className="stack">
-
               <div className="skill-list">
+                <Tag tone="primary">{candidate.seniority}</Tag>
 
-                <Tag tone="primary">
-                  {candidate.seniority}
-                </Tag>
+                <Tag>{candidate.primaryRole}</Tag>
 
-
-                <Tag>
-                  {candidate.primaryRole}
-                </Tag>
-
-
-                <Tag tone="success">
-                  {candidate.stage}
-                </Tag>
-
+                <Tag tone="success">{candidate.stage}</Tag>
               </div>
 
+              <h2>{candidate.currentTitle}</h2>
 
-              <h2>
-                {candidate.currentTitle}
-              </h2>
-
-
-              <p>
-                {candidate.location}
-              </p>
-
+              <p>{candidate.location}</p>
 
               <div className="meta-list">
-
                 {currentEmployer && (
                   <span className="tag">
                     <Building2 size={14} />
@@ -538,17 +532,12 @@ export function CandidateDossierPage() {
                   </span>
                 )}
 
-
                 <span className="tag">
-                {formatYearsExperience(candidate.yearsExperience)}
+                  {formatYearsExperience(candidate.yearsExperience)}
                 </span>
-
               </div>
-
             </div>
-
           </div>
-
 
           {contextualMatchScore !== null && (
             <ScorePill
@@ -556,50 +545,34 @@ export function CandidateDossierPage() {
               label="Current search fit"
             />
           )}
-
         </div>
 
-
-
         <div className="meta-list">
-
           {contactMailto && (
-            <a
-              className="tag"
-              href={contactMailto}
-            >
+            <a className="tag" href={contactMailto}>
               <Mail size={14} />
               {candidate.email}
             </a>
           )}
 
-
           {candidate.phone && (
-            <a
-              className="tag"
-              href={`tel:${candidate.phone}`}
-            >
+            <a className="tag" href={`tel:${candidate.phone}`}>
               <Phone size={14} />
               {candidate.phone}
             </a>
           )}
 
-
           {canOpenOriginal && (
             <button
               className="tag"
               type="button"
-              onClick={() =>
-                void handleOpenOriginalCv()
-              }
+              onClick={() => void handleOpenOriginalCv()}
               disabled={openingOriginal}
             >
               <FileText size={14} />
-              {candidate.originalFilename ??
-                "Original CV"}
+              {candidate.originalFilename ?? "Original CV"}
             </button>
           )}
-
 
           {manatalUrl && (
             <a
@@ -612,487 +585,193 @@ export function CandidateDossierPage() {
               Manatal {manatalCandidateId}
             </a>
           )}
-
-        </div>
-
-      </Panel>
-
-            <Panel className="table-card">
-        <div className="stack">
-
-          <h3>
-            Candidate readiness
-          </h3>
-
-
-          <div className="skill-list">
-{candidate.jobReadinessLevel && (
-  <Tag>
-    Level: {candidate.jobReadinessLevel}
-  </Tag>
-)}
-
-            {candidate.status && (
-              <Tag>
-                Status:{" "}
-                {candidate.status}
-              </Tag>
-            )}
-
-          </div>
-
         </div>
       </Panel>
+      <div className="section-header">
+        <h2>Candidate Intelligence</h2>
+        <p>AI-grounded profile analysis and hiring signals</p>
+      </div>
 
+      <Panel className="table-card">
+        <div className="skill-list">
+          {[
+            ["overview", "Overview"],
+            ["timeline", "Timeline"],
+            ["skills", "Skills"],
+            ["evidence", "Evidence"],
+            ["cv", "CV Data"],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={
+                activeTab === key
+                  ? "button button--primary"
+                  : "button button--secondary"
+              }
+              onClick={() => setActiveTab(key as typeof activeTab)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Panel className="candidate-stats-grid">
+        <div className="stat-card">
+          <span>Experience</span>
+          <strong>{formatYearsExperience(candidate.yearsExperience)}</strong>
+        </div>
+
+        <div className="stat-card">
+          <span>Seniority</span>
+          <strong>{candidate.seniority}</strong>
+        </div>
+
+        <div className="stat-card">
+          <span>Location</span>
+          <strong>
+            {candidate.currentLocationCity || candidate.location || "Unknown"}
+          </strong>
+        </div>
+
+        <div className="stat-card">
+          <span>Status</span>
+          <strong>{candidate.status || "Available"}</strong>
+        </div>
+      </Panel>
+      {activeTab === "overview" && (
         <Panel className="table-card">
-
           <div className="stack">
-
-            <h3>
-              SYNC profile
-            </h3>
+            <h3>SYNC profile</h3>
 
             <div className="skill-list">
-
               {candidate.syncAffiliation && (
-             <Tag>
-            {candidate.syncAffiliation ?? "Not provided"}
-              </Tag>
+                <Tag>{candidate.syncAffiliation ?? "Not provided"}</Tag>
               )}
 
               {candidate.isPreScreened && (
-                <Tag tone="success">
-                  Pre-screened
-                </Tag>
+                <Tag tone="success">Pre-screened</Tag>
               )}
-
             </div>
-
 
             {candidate.internalVettingNotes && (
-              <p className="muted">
-                {candidate.internalVettingNotes}
-              </p>
+              <p className="muted">{candidate.internalVettingNotes}</p>
             )}
-
           </div>
-
         </Panel>
-
-      <Panel className="table-card">
-
-        <div className="stack">
-
-          <h3>
-            Professional details
-          </h3>
-
-
-          <div className="meta-list">
-
-            {candidate.currentLocationCity && (
-  <div>
-    Location: {candidate.currentLocationCity}
-  </div>
-)}
-
-{candidate.englishProficiency && (
-  <div>
-    English: {candidate.englishProficiency}
-  </div>
-)}
-
-            {candidate.willingnessToRelocate !==
-              undefined && (
-              <span className="tag">
-                Relocation:{" "}
-                {candidate.willingnessToRelocate
-                  ? "Open"
-                  : "Not available"}
-              </span>
-            )}
-
-        {candidate.expectedSalary?.amount && (
-  <span className="tag">
-    Expected salary:{" "}
-    {candidate.expectedSalary.amount}{" "}
-    {candidate.expectedSalary.currency}
-  </span>
-)}
-
-            {candidate.noticePeriod && (
-              <span className="tag">
-                Notice:{" "}
-                {candidate.noticePeriod.replace(
-                  "_",
-                  " "
-                )}
-              </span>
-            )}
-
-          </div>
-
-        </div>
-
-      </Panel>
-            <Panel className="table-card">
-  <div className="stack">
-    <h3>
-      Candidate preferences
-    </h3>
-
-    <div className="meta-list">
-
-      {candidate.preferredWorkMode && (
-        <span className="tag">
-          Mode:
-          {" "}
-          {candidate.preferredWorkMode}
-        </span>
       )}
+      {activeTab === "overview" && (
+        <>
+          <Panel className="table-card">
+            <div className="stack">
+              <h3>Professional details</h3>
 
-    </div>
-  </div>
-</Panel>
+              <div className="meta-list">
+                {!candidate.currentLocationCity &&
+                  !candidate.englishProficiency &&
+                  !candidate.noticePeriod &&
+                  !candidate.expectedSalary && (
+                    <p className="muted">No professional details available.</p>
+                  )}
 
- {candidate.externalProfiles &&
-  Object.values(candidate.externalProfiles).some(Boolean) && (
-    <Panel className="table-card">
+                {candidate.currentLocationCity && (
+                  <div>Location: {candidate.currentLocationCity}</div>
+                )}
 
-      <div className="stack">
+                {candidate.englishProficiency && (
+                  <div>English: {candidate.englishProficiency}</div>
+                )}
 
-        <h3>
-          External profiles
-        </h3>
+                {candidate.willingnessToRelocate !== undefined && (
+                  <span className="tag">
+                    Relocation:{" "}
+                    {candidate.willingnessToRelocate ? "Open" : "Not available"}
+                  </span>
+                )}
 
-        <div className="meta-list">
+                {candidate.expectedSalary && (
+                  <span className="tag">
+                    Expected salary: {candidate.expectedSalary.amount}{" "}
+                    {candidate.expectedSalary.currency}
+                  </span>
+                )}
 
-          {candidate.externalProfiles.linkedin && (
-            <a
-              className="tag"
-              href={candidate.externalProfiles.linkedin}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <ExternalLink size={14} />
-              LinkedIn
-            </a>
-          )}
+                {candidate.noticePeriod && (
+                  <span className="tag">
+                    Notice: {candidate.noticePeriod.replace("_", " ")}
+                  </span>
+                )}
+              </div>
+            </div>
+          </Panel>
+          <Panel className="table-card">
+            <div className="stack">
+              <h3>Candidate preferences</h3>
 
-          {candidate.externalProfiles.github && (
-            <a
-              className="tag"
-              href={candidate.externalProfiles.github}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <ExternalLink size={14} />
-              GitHub
-            </a>
-          )}
-
-          {candidate.externalProfiles.portfolio && (
-            <a
-              className="tag"
-              href={candidate.externalProfiles.portfolio}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <ExternalLink size={14} />
-              Portfolio
-            </a>
-          )}
-
-        </div>
-
-      </div>
-
-    </Panel>
-  )}
-
-<div className="detail-grid">
-
-  <div className="stack">
-
-          <Panel className="timeline-card">
-
-            <h3>
-              Executive synthesis
-            </h3>
-
-
-            <p>
-              {candidate.aiProfileSummary ||
-                candidate.longSummary}
-            </p>
-
-
+              <div className="meta-list">
+                {candidate.preferredWorkMode && (
+                  <span className="tag">
+                    Mode: {candidate.preferredWorkMode}
+                  </span>
+                )}
+              </div>
+            </div>
           </Panel>
 
+          {candidate.externalProfiles &&
+            Object.values(candidate.externalProfiles).some(Boolean) && (
+              <Panel className="table-card">
+                <div className="stack">
+                  <h3>External profiles</h3>
 
-
-
-          <Panel className="timeline-card">
-
-            <h3>
-              Career timeline
-            </h3>
-
-
-            <div className="timeline">
-
-              {candidate.timeline?.map((entry) => (
-                <div
-                  key={`${entry.employer}-${entry.role}`}
-                  className="timeline-entry"
-                >
-
-                  <div className="signal-row">
-
-                    <strong>
-                      {entry.role}
-                    </strong>
-
-
-                    <span>
-                      {entry.start} - {entry.end}
-                    </span>
-
-                  </div>
-
-
-                  <p className="muted">
-
-                    <Building2 size={14} />
-
-                    {entry.employer}
-
-                  </p>
-
-
-                  <p>
-                    {entry.scope}
-                  </p>
-
-
-
-                  <ul className="bullet-list">
-
-                    {entry.highlights.map(
-                      (highlight) => (
-                        <li key={highlight}>
-                          {highlight}
-                        </li>
-                      )
+                  <div className="meta-list">
+                    {candidate.externalProfiles.linkedin && (
+                      <a
+                        className="tag"
+                        href={candidate.externalProfiles.linkedin}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        <ExternalLink size={14} />
+                        LinkedIn
+                      </a>
                     )}
 
-                  </ul>
+                    {candidate.externalProfiles.github && (
+                      <a
+                        className="tag"
+                        href={candidate.externalProfiles.github}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        <ExternalLink size={14} />
+                        GitHub
+                      </a>
+                    )}
 
-
-                </div>
-              ))}
-
-
-            </div>
-
-          </Panel>
-
-              <Panel className="table-card">
-  <h3>Education</h3>
-
-  {candidate.education?.length ? (
-    <ul className="bullet-list">
-      {candidate.education.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  ) : (
-    <p className="muted">No education available.</p>
-  )}
-</Panel>
-<Panel className="table-card">
-  <h3>Certifications</h3>
-
-  {candidate.certifications?.length ? (
-    <div className="skill-list">
-      {candidate.certifications.map((item) => (
-        <Tag key={item}>{item}</Tag>
-      ))}
-    </div>
-  ) : (
-    <p className="muted">No certifications.</p>
-  )}
-</Panel>
-<Panel className="table-card">
-  <h3>Languages</h3>
-
-  {candidate.languages?.length ? (
-    <div className="skill-list">
-      {candidate.languages.map((item) => (
-        <Tag key={item}>{item}</Tag>
-      ))}
-    </div>
-  ) : (
-    <p className="muted">No languages.</p>
-  )}
-</Panel>
-<Panel className="table-card">
-  <h3>Projects</h3>
-
-  {candidate.projects?.length ? (
-    <ul className="bullet-list">
-      {candidate.projects.map((project) => (
-        <li key={project}>{project}</li>
-      ))}
-    </ul>
-  ) : (
-    <p className="muted">No projects available.</p>
-  )}
-</Panel>
-<Panel className="table-card">
-  <h3>Strengths</h3>
-
-  <div className="skill-list">
-    {candidate.strengths?.map((item) => (
-      <Tag tone="success" key={item}>
-        {item}
-      </Tag>
-    ))}
-  </div>
-</Panel>
-<Panel className="table-card">
-  <h3>Risks</h3>
-
-  <div className="skill-list">
-    {candidate.risks?.map((item) => (
-      <Tag tone="warning" key={item}>
-        {item}
-      </Tag>
-    ))}
-  </div>
-</Panel>
-<Panel className="table-card">
-  <h3>Recommended Roles</h3>
-
-  <div className="skill-list">
-    {candidate.recommendedRoles?.map((item) => (
-      <Tag key={item}>{item}</Tag>
-    ))}
-  </div>
-</Panel>
-<Panel className="table-card">
-  <h3>CV Information</h3>
-
-  {candidate.cvPreview?.length ? (
-    <ul className="bullet-list">
-      {candidate.cvPreview.map((line) => (
-        <li key={line}>{line}</li>
-      ))}
-    </ul>
-  ) : (
-    <p className="muted">
-      No CV preview available.
-    </p>
-  )}
-</Panel>
-        </div>
-
-
-
-
-
-        <div className="stack">
-
-
-          <Panel className="table-card">
-
-
-            <h3>
-              Top skills
-            </h3>
-
-
-
-            <div className="skill-list">
-
-              {candidate.topSkills?.map(
-                (skill) => (
-                  <Tag
-                    key={skill}
-                    tone="primary"
-                  >
-                    {skill}
-                  </Tag>
-                )
-              )}
-
-            </div>
-
-
-          </Panel>
-
-
-
-
-
-          <Panel className="table-card">
-
-
-            <h3>
-              Supporting evidence
-            </h3>
-
-
-
-            <div className="evidence-list">
-
-
-              {candidate.evidence?.map(
-                (item) => (
-                  <div
-                    key={item.id}
-                    className="evidence-card"
-                  >
-
-                    <div className="evidence-card__meta">
-
-                      <span>
-                        {item.chunkType}
-                      </span>
-
-
-                      <span>
-                        {Math.round(
-                          item.relevance * 100
-                        )}
-                        % relevance
-                      </span>
-
-                    </div>
-
-
-                    <p>
-                      {item.excerpt}
-                    </p>
-
-
+                    {candidate.externalProfiles.portfolio && (
+                      <a
+                        className="tag"
+                        href={candidate.externalProfiles.portfolio}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        <ExternalLink size={14} />
+                        Portfolio
+                      </a>
+                    )}
                   </div>
-                )
-              )}
+                </div>
+              </Panel>
+            )}
+        </>
+      )}
 
-
-            </div>
-
-
-          </Panel>
-
-
-        </div>
-
-
-      </div>
-
-
+      <CandidateTabContent
+        activeTab={activeTab}
+        candidate={candidate}
+        visibleEvidence={visibleEvidence}
+      />
     </div>
   );
 }
