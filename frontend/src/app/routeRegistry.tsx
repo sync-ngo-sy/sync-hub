@@ -132,7 +132,7 @@ export const protectedRoutes: RegisteredRoute[] = [
     path: "insights",
     element: <InsightsDashboardPage/>,
     title: "Insights",
-    subtitle: "Read-only corpus intelligence, job-family distribution, skills gaps, and seniority mix",
+    subtitle: "Read-only corpus intelligence, job-family distribution, skills gaps, seniority mix, and AI briefs",
   },
   {path: "search-config", element: <Navigate to="/admin/search-simulator" replace/>},
   {path: "intelligence", element: <Navigate to="/chat" replace/>},

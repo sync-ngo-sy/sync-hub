@@ -155,7 +155,17 @@ class IngestionPipeline:
         return unique_sources, duplicate_count
 
     def _build_bundle(self, source, ingestion_run_id: str) -> tuple[ArtifactBundle, Path]:
-        document_text = parse_document(source)
+        # Bug#4 fix: candidate_draft sources carry pre-validated merged JSON in
+        # their metadata. Calling parse_document would re-read the *original* CV
+        # text, and a subsequent LLM extraction call would silently overwrite the
+        # user edits that already passed AI validation. Use an empty DocumentText
+        # placeholder instead so extract_candidate_profile routes to the fast
+        # is_draft branch without any OCR/text-parsing overhead.
+        if source.source_type == "candidate_draft":
+            from .parsing import DocumentText
+            document_text = DocumentText(source=source, raw_text="", parser_name="draft_skip", parser_version=self.config.parser_version)
+        else:
+            document_text = parse_document(source)
         profile = extract_candidate_profile(source, document_text, self.config)
         profile = CandidateProfile(
             **{

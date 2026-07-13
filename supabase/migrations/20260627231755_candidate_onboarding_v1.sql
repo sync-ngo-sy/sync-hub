@@ -13,7 +13,7 @@ create table if not exists public.candidate_registration_drafts (
   field_confidence_json jsonb not null default '{}'::jsonb,
   user_overrides_json jsonb not null default '{}'::jsonb,
   parse_status text not null default 'pending'
-    check (parse_status in ('pending','parsing','completed','failed')),
+    check (parse_status in ('pending','parsing','completed','failed','pending_validation')),
   parse_error text,
   parse_started_at timestamptz,
   parse_completed_at timestamptz,
@@ -105,7 +105,7 @@ values (
   'candidate-cvs',
   false,
   5242880,
-  array['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+  array['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']
 ) on conflict (id) do nothing;
 
 create policy "Allow candidates to upload CVs" on storage.objects

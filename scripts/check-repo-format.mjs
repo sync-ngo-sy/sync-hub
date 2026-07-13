@@ -9,6 +9,7 @@ const roots = targets.length ? targets : [repoRoot];
 const SKIP_DIRS = new Set([
   ".git",
   ".mypy_cache",
+  ".omo",
   ".pytest_cache",
   ".ruff_cache",
   ".supabase",

@@ -889,6 +889,59 @@ export type InsightsDashboardSnapshot = {
   gapAnalysis: InsightsGapAnalysis;
 };
 
+export type InsightReportType = "corpus_overview" | "gap_brief" | "job_family_analysis";
+
+export type InsightReportCitation = {
+  metricKey: string;
+  label: string;
+  value: string;
+};
+
+export type InsightReportSection = {
+  title: string;
+  body: string;
+  citations: InsightReportCitation[];
+};
+
+export type InsightReportResult = {
+  title: string;
+  executiveSummary: string;
+  sections: InsightReportSection[];
+  recommendations: string[];
+  risks: string[];
+  assistantPrompts: string[];
+};
+
+export type InsightReportRunStatus = "queued" | "running" | "completed" | "failed";
+
+export type InsightReportRun = {
+  id: string;
+  tenantId: string;
+  initiatedByUserId: string | null;
+  status: InsightReportRunStatus;
+  reportType: InsightReportType;
+  inputConfig: Record<string, unknown>;
+  failureReason: string | null;
+  llmProvider: string | null;
+  llmModel: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+export type InsightReportRunDetail = {
+  run: InsightReportRun;
+  report: InsightReportResult | null;
+};
+
+export type InsightReportInput = {
+  reportType: InsightReportType;
+  focus?: string;
+  targetRole?: string;
+  targetSkills?: string[];
+  topSkills?: number;
+};
+
 export type PlatformRuntimeConfigSource = "database" | "environment" | "unset";
 
 export type PlatformRuntimeConfigField = {
