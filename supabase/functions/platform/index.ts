@@ -1,4 +1,9 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import {
+  buildGuardedSystemPrompt,
+  evaluatePlatformAiInput,
+  platformAiGuardErrorMessage,
+} from "../_shared/aiGuardrails.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 import { generateStructuredObject } from "../_shared/llm.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
@@ -3182,8 +3187,10 @@ async function extractJobDescription(input: {
       schemaName: "job_description_extraction",
       schema: jobExtractionSchema,
       temperature: 0,
-      systemPrompt:
+      systemPrompt: buildGuardedSystemPrompt(
         "Extract recruitment job requirements from a job description. Return strict JSON only. Separate required skills from preferred skills. Do not invent skills or employer details. Flag ambiguity in warnings.",
+        "Job extraction",
+      ),
       userPrompt: JSON.stringify({
         title: input.title,
         employerRegion: input.employerRegion,
@@ -3529,6 +3536,14 @@ async function extractJobPosting(
     asString(job?.job_description);
   if (!tenantId || !jobDescription) {
     throw new Error("tenant_id and job_description are required");
+  }
+
+  const jobTextGuard = evaluatePlatformAiInput(
+    [title, jobDescription].filter(Boolean).join("\n"),
+    { injectionOnly: true, maxLength: 50000 },
+  );
+  if (!jobTextGuard.allowed) {
+    throw new Error(platformAiGuardErrorMessage(jobTextGuard));
   }
 
   const { payload, provider, model } = await extractJobDescription({
