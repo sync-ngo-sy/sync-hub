@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
-import { Copy, Check } from "lucide-react";
-import type { ChatStoreState, ChatTurn } from "./chatStore";
+import {useEffect, useRef} from "react";
+import {Copy, Check} from "lucide-react";
+import type {ChatStoreState, ChatTurn} from "./chatStore";
 
 type Props = {
   store: ChatStoreState;
@@ -24,7 +24,7 @@ function renderFormattedText(text: string) {
   });
 }
 
-export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }: Props) {
+export function ChatThread({store, scopedMode, loaderPhrase, copiedId, onCopy}: Props) {
   const chatThreadRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -37,7 +37,21 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
   }, [store.messages, store.loadingAnswer]);
 
   return (
-    <div ref={chatThreadRef} className="chat-thread" style={{ display: "flex", flexDirection: "column" }}>
+    <div
+      ref={chatThreadRef}
+      className="chat-thread"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden",
+        width: "100%",
+        padding: "20px 24px 8px",
+        boxSizing: "border-box",
+      }}
+    >
       {!store.messages.length ? (
         <div style={{
           display: "flex",
@@ -64,7 +78,7 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
             <div
               key={message.id}
               className="chat-message chat-message--user"
-              style={{ width: "fit-content", maxWidth: "80%", alignSelf: "flex-end" }}
+              style={{width: "fit-content", maxWidth: "80%", alignSelf: "flex-end"}}
             >
               <p>{renderFormattedText(message.text)}</p>
               <button
@@ -73,14 +87,14 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
                 onClick={() => onCopy(message.id, message.text)}
                 title="Copy message to clipboard"
               >
-                {copiedId === message.id ? <Check size={14} /> : <Copy size={14} />}
+                {copiedId === message.id ? <Check size={14}/> : <Copy size={14}/>}
               </button>
             </div>
           ) : (
             <div
               key={message.id}
               className="chat-message chat-message--assistant"
-              style={{ width: "fit-content", maxWidth: "85%", alignSelf: "flex-start" }}
+              style={{width: "fit-content", maxWidth: "85%", alignSelf: "flex-start"}}
             >
               <p>{message.text}</p>
               <button
@@ -89,7 +103,7 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
                 onClick={() => onCopy(message.id, message.text)}
                 title="Copy message to clipboard"
               >
-                {copiedId === message.id ? <Check size={14} /> : <Copy size={14} />}
+                {copiedId === message.id ? <Check size={14}/> : <Copy size={14}/>}
               </button>
 
               {message.response.citations.length ? (
@@ -128,7 +142,7 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
       {store.loadingAnswer ? (
         <div
           className="chat-message chat-message--assistant"
-          style={{ width: "fit-content", alignSelf: "flex-start" }}
+          style={{width: "fit-content", alignSelf: "flex-start"}}
         >
           <div style={{
             display: "flex",
@@ -141,7 +155,7 @@ export function ChatThread({ store, scopedMode, loaderPhrase, copiedId, onCopy }
             fontWeight: "bold"
           }}>
             <span>{loaderPhrase}</span>
-            <span className="anim-bullet anim-bullet-1" style={{ marginLeft: "4px" }}>•</span>
+            <span className="anim-bullet anim-bullet-1" style={{marginLeft: "4px"}}>•</span>
             <span className="anim-bullet anim-bullet-2">•</span>
           </div>
         </div>

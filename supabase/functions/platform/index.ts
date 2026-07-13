@@ -1,4 +1,9 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import {
+  buildGuardedSystemPrompt,
+  evaluatePlatformAiInput,
+  platformAiGuardErrorMessage,
+} from "../_shared/aiGuardrails.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 import { generateStructuredObject } from "../_shared/llm.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
@@ -1949,6 +1954,558 @@ async function getInsightsGapAnalysis(
   return data;
 }
 
+const insightReportRunSelect = [
+  "id",
+  "tenant_id",
+  "initiated_by_user_id",
+  "status",
+  "report_type",
+  "input_config",
+  "report_payload",
+  "failure_reason",
+  "llm_provider",
+  "llm_model",
+  "started_at",
+  "completed_at",
+  "created_at",
+].join(", ");
+
+type InsightReportType =
+  | "corpus_overview"
+  | "gap_brief"
+  | "job_family_analysis";
+
+type InsightReportPayload = {
+  title: string;
+  executiveSummary: string;
+  sections: Array<{
+    title: string;
+    body: string;
+    citations: Array<{
+      metricKey: string;
+      label: string;
+      value: string;
+    }>;
+  }>;
+  recommendations: string[];
+  risks: string[];
+  assistantPrompts: string[];
+};
+
+const insightReportSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    executiveSummary: {
+      type: "string",
+      description:
+        "Two to four sentence executive summary grounded in provided metrics.",
+    },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          body: { type: "string" },
+          citations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                metricKey: { type: "string" },
+                label: { type: "string" },
+                value: { type: "string" },
+              },
+              required: ["metricKey", "label", "value"],
+            },
+          },
+        },
+        required: ["title", "body", "citations"],
+      },
+    },
+    recommendations: {
+      type: "array",
+      items: { type: "string" },
+    },
+    risks: {
+      type: "array",
+      items: { type: "string" },
+    },
+    assistantPrompts: {
+      type: "array",
+      description:
+        "Suggested follow-up questions or actions for the recruiter.",
+      items: { type: "string" },
+    },
+  },
+  required: [
+    "title",
+    "executiveSummary",
+    "sections",
+    "recommendations",
+    "risks",
+    "assistantPrompts",
+  ],
+};
+
+function normalizeInsightReportType(value: unknown): InsightReportType | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "corpus_overview" ||
+      normalized === "gap_brief" ||
+      normalized === "job_family_analysis"
+    ? normalized
+    : null;
+}
+
+function metricValue(
+  metrics: JsonRecord[],
+  key: string,
+  fallback = "0",
+) {
+  const metric = metrics.find((item) => asString(item.key) === key);
+  if (!metric) {
+    return fallback;
+  }
+  const value = asNumber(metric.value);
+  return Number.isFinite(value) ? String(Math.round(value)) : fallback;
+}
+
+function distributionTop(
+  items: JsonRecord[],
+  limit = 3,
+) {
+  return items
+    .slice(0, limit)
+    .map((item) => {
+      const label = asString(item.label) ?? "Unknown";
+      const value = asNumber(item.value) ?? 0;
+      const percent = asNumber(item.percent);
+      return percent != null
+        ? `${label} (${Math.round(value)} / ${Math.round(percent)}%)`
+        : `${label} (${Math.round(value)})`;
+    })
+    .join(", ");
+}
+
+function buildHeuristicInsightReport(
+  snapshot: JsonRecord,
+  reportType: InsightReportType,
+  focus: string | null,
+): InsightReportPayload {
+  const metrics = asArray(snapshot.metrics).map((item) => asRecord(item));
+  const totalCvs = metricValue(metrics, "total_cvs_indexed", "0");
+  const avgSkills = metricValue(metrics, "avg_skills_per_profile", "0");
+  const jobFamilies = asArray(snapshot.job_families ?? snapshot.jobFamilies)
+    .map((item) => asRecord(item));
+  const seniority = asArray(
+    snapshot.profiles_by_seniority ?? snapshot.profilesBySeniority,
+  ).map((item) => asRecord(item));
+  const locations = asArray(
+    snapshot.profiles_by_location ?? snapshot.profilesByLocation,
+  ).map((item) => asRecord(item));
+  const gapAnalysis = asRecord(snapshot.gap_analysis ?? snapshot.gapAnalysis);
+  const topFamilies = distributionTop(jobFamilies, 4);
+  const topLocations = distributionTop(locations, 3);
+  const topSeniority = distributionTop(seniority, 4);
+  const targetRole = asString(
+    gapAnalysis.target_role ?? gapAnalysis.targetRole,
+  );
+  const targetSkills = asStringArray(
+    gapAnalysis.target_skills ?? gapAnalysis.targetSkills,
+  );
+  const fullyMatching = asNumber(
+    gapAnalysis.fully_matching_candidates ??
+      gapAnalysis.fullyMatchingCandidates,
+  ) ?? 0;
+  const partiallyMatching = asNumber(
+    gapAnalysis.partially_matching_candidates ??
+      gapAnalysis.partiallyMatchingCandidates,
+  ) ?? 0;
+  const missingSkills = asArray(
+    gapAnalysis.missing_skills ?? gapAnalysis.missingSkills,
+  )
+    .map((item) => asRecord(item))
+    .slice(0, 3)
+    .map((item) => asString(item.skill))
+    .filter(Boolean);
+
+  const focusLabel = focus?.trim() || targetRole || "the indexed corpus";
+  const title = reportType === "gap_brief"
+    ? `Gap brief: ${focusLabel}`
+    : reportType === "job_family_analysis"
+    ? `Job family analysis: ${focusLabel}`
+    : "Corpus intelligence brief";
+
+  const executiveSummary = reportType === "gap_brief"
+    ? `The tenant corpus indexes ${totalCvs} profiles with an average of ${avgSkills} skills each. For ${focusLabel}, ${fullyMatching} profiles fully match and ${partiallyMatching} are partial matches, indicating ${
+      partiallyMatching > fullyMatching
+        ? "an upskilling opportunity"
+        : "moderate exact-match depth"
+    }.`
+    : reportType === "job_family_analysis"
+    ? `${focusLabel} sits within a corpus of ${totalCvs} indexed profiles. Leading families are ${
+      topFamilies || "not yet classified"
+    }, with seniority mix led by ${topSeniority || "unknown bands"}.`
+    : `This workspace indexes ${totalCvs} CVs with ${avgSkills} average skills per profile. Job-family coverage is led by ${
+      topFamilies || "unclassified roles"
+    }, while geo concentration is strongest in ${
+      topLocations || "unknown locations"
+    }.`;
+
+  const sections: InsightReportPayload["sections"] = [
+    {
+      title: "Corpus snapshot",
+      body:
+        `Total indexed profiles: ${totalCvs}. Average skills per profile: ${avgSkills}. Top locations: ${
+          topLocations || "n/a"
+        }.`,
+      citations: [
+        {
+          metricKey: "total_cvs_indexed",
+          label: "Total CVs indexed",
+          value: totalCvs,
+        },
+        {
+          metricKey: "avg_skills_per_profile",
+          label: "Average skills per profile",
+          value: avgSkills,
+        },
+      ],
+    },
+    {
+      title: "Seniority and family mix",
+      body: `Seniority distribution is led by ${
+        topSeniority || "unknown bands"
+      }. Production taxonomy is concentrated in ${
+        topFamilies || "unclassified families"
+      }.`,
+      citations: jobFamilies.slice(0, 2).map((item, index) => ({
+        metricKey: `job_family_${index + 1}`,
+        label: asString(item.label) ?? "Job family",
+        value: String(asNumber(item.value) ?? 0),
+      })),
+    },
+  ];
+
+  if (reportType !== "corpus_overview") {
+    sections.push({
+      title: "Requirement coverage",
+      body: targetSkills.length
+        ? `Resolved requirements: ${
+          targetSkills.join(", ")
+        }. Fully matching profiles: ${fullyMatching}. Partial matches: ${partiallyMatching}. Top missing skills among partial profiles: ${
+          missingSkills.join(", ") || "none surfaced"
+        }.`
+        : `No resolved skill requirements were available for ${focusLabel}. Review the Gap Engine tab to map role text to catalog skills.`,
+      citations: [
+        {
+          metricKey: "fully_matching_candidates",
+          label: "Fully matching candidates",
+          value: String(fullyMatching),
+        },
+        {
+          metricKey: "partially_matching_candidates",
+          label: "Partially matching candidates",
+          value: String(partiallyMatching),
+        },
+      ],
+    });
+  }
+
+  const recommendations = reportType === "gap_brief"
+    ? [
+      partiallyMatching > fullyMatching && missingSkills[0]
+        ? `Prioritize upskilling around ${
+          missingSkills[0]
+        } before expanding search criteria.`
+        : "Run a targeted search for fully matching profiles before widening requirements.",
+      "Export the gap verdict and share it with hiring stakeholders.",
+      "Re-run this brief after the next ingestion batch to track supply movement.",
+    ]
+    : reportType === "job_family_analysis"
+    ? [
+      `Drill into ${focusLabel} from Overview to inspect seniority depth.`,
+      "Compare top two families if delivery planning spans multiple stacks.",
+      "Queue a gap brief if a live role depends on this family.",
+    ]
+    : [
+      "Review unclassified seniority bands if workforce planning needs tighter segmentation.",
+      "Use Top Skills to validate program narratives against real corpus frequency.",
+      "Generate a gap brief when a live hiring requirement needs supply evidence.",
+    ];
+
+  const risks = [
+    Number(totalCvs) <= 0
+      ? "Corpus volume is too low for reliable supply conclusions."
+      : null,
+    missingSkills.length && reportType === "gap_brief"
+      ? `${
+        missingSkills[0]
+      } appears as a recurring blocker in partial profiles.`
+      : null,
+    "Insights remain read-only; validate critical hiring decisions with dossier review.",
+  ].filter((item): item is string => Boolean(item));
+
+  const assistantPrompts = reportType === "gap_brief"
+    ? [
+      `Which partial profiles are closest to ${focusLabel}?`,
+      `What training cohort could close ${
+        missingSkills[0] ?? "the top skill gap"
+      } fastest?`,
+      "Show me fully matching candidates in Search.",
+    ]
+    : reportType === "job_family_analysis"
+    ? [
+      `How deep is ${focusLabel} supply at senior level?`,
+      `Which locations dominate ${focusLabel} profiles?`,
+      `Generate a gap brief for a role in ${focusLabel}.`,
+    ]
+    : [
+      "Which job families show the thinnest senior bench?",
+      "Where is geo coverage weakest outside Damascus?",
+      "What skills should we prioritize for the next training cohort?",
+    ];
+
+  return {
+    title,
+    executiveSummary,
+    sections,
+    recommendations,
+    risks,
+    assistantPrompts,
+  };
+}
+
+async function generateInsightReportPayload(
+  snapshot: JsonRecord,
+  reportType: InsightReportType,
+  focus: string | null,
+) {
+  const fallback = buildHeuristicInsightReport(snapshot, reportType, focus);
+  try {
+    const result = await generateStructuredObject<InsightReportPayload>({
+      schemaName: "insight_report",
+      schema: insightReportSchema,
+      temperature: 0.2,
+      systemPrompt:
+        "You are a recruitment intelligence analyst. Write grounded corpus insight reports using only the supplied metrics. Do not invent counts, locations, or skills. Every section must cite provided metric keys. Keep language concise and actionable for recruiters and program operators.",
+      userPrompt: JSON.stringify({
+        reportType,
+        focus,
+        snapshot,
+      }),
+    });
+    if (!result?.object) {
+      return {
+        payload: fallback,
+        provider: "heuristic",
+        model: "local-fallback",
+      };
+    }
+    return {
+      payload: result.object,
+      provider: result.provider,
+      model: result.model,
+    };
+  } catch {
+    return {
+      payload: fallback,
+      provider: "heuristic",
+      model: "local-fallback",
+    };
+  }
+}
+
+async function startInsightReportRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+  body: JsonRecord,
+) {
+  if (tenantIds.length !== 1) {
+    throw new Error(
+      "Exactly one tenant_id is required for insight report generation.",
+    );
+  }
+  const tenantId = tenantIds[0];
+  const userId = await getCurrentUserId(supabase);
+  const reportType = normalizeInsightReportType(
+    body.report_type ?? body.reportType,
+  );
+  if (!reportType) {
+    throw new Error(
+      "report_type must be corpus_overview, gap_brief, or job_family_analysis.",
+    );
+  }
+  const focus = asString(body.focus ?? body.target_role ?? body.targetRole);
+  const targetSkills = asStringArray(body.target_skills ?? body.targetSkills);
+  const inputConfig = {
+    reportType,
+    focus,
+    targetRole: focus,
+    targetSkills,
+    topSkills: Math.max(
+      1,
+      Math.min(
+        200,
+        Math.trunc(asNumber(body.top_skills ?? body.topSkills) ?? 50),
+      ),
+    ),
+  };
+
+  const runInsert = await supabase
+    .from("insight_report_runs")
+    .insert({
+      tenant_id: tenantId,
+      initiated_by_user_id: userId,
+      status: "running",
+      report_type: reportType,
+      input_config: inputConfig,
+      started_at: new Date().toISOString(),
+    })
+    .select(insightReportRunSelect)
+    .single();
+  if (runInsert.error) {
+    throw runInsert.error;
+  }
+  const insertedRun = asRecord(runInsert.data);
+  const runId = asString(insertedRun.id) ?? "";
+
+  await writeAuditEvent(supabase, {
+    tenantId,
+    actorUserId: userId,
+    action: "INSIGHT_REPORT_STARTED",
+    entityType: "insight_report_run",
+    entityId: runId,
+    payload: inputConfig,
+  });
+
+  try {
+    const snapshot = asRecord(
+      await getInsightsDashboard(supabase, tenantIds, {
+        top_skills: inputConfig.topSkills,
+        target_role: reportType === "gap_brief" ? focus : null,
+        target_skills: reportType === "gap_brief" ? targetSkills : [],
+        trace_id: `insight-report-${runId}`,
+      }),
+    );
+    if (reportType === "job_family_analysis" && focus) {
+      snapshot.focus_job_family = focus;
+    }
+    const generation = await generateInsightReportPayload(
+      snapshot,
+      reportType,
+      focus,
+    );
+    const completedAt = new Date().toISOString();
+    const updateResult = await supabase
+      .from("insight_report_runs")
+      .update({
+        status: "completed",
+        report_payload: generation.payload,
+        llm_provider: generation.provider,
+        llm_model: generation.model,
+        completed_at: completedAt,
+      })
+      .eq("id", runId)
+      .select(insightReportRunSelect)
+      .single();
+    if (updateResult.error) {
+      throw updateResult.error;
+    }
+
+    await writeAuditEvent(supabase, {
+      tenantId,
+      actorUserId: userId,
+      action: "INSIGHT_REPORT_COMPLETED",
+      entityType: "insight_report_run",
+      entityId: runId,
+      payload: {
+        reportType,
+        provider: generation.provider,
+        model: generation.model,
+      },
+    });
+
+    return {
+      run: updateResult.data,
+      report: generation.payload,
+    };
+  } catch (error) {
+    const failureReason = error instanceof Error
+      ? error.message
+      : String(error);
+    await supabase
+      .from("insight_report_runs")
+      .update({
+        status: "failed",
+        failure_reason: failureReason,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", runId)
+      .then(() => null, () => null);
+    await writeAuditEvent(supabase, {
+      tenantId,
+      actorUserId: userId,
+      action: "INSIGHT_REPORT_FAILED",
+      entityType: "insight_report_run",
+      entityId: runId,
+      payload: { failureReason },
+    }).then(() => null, () => null);
+    throw error;
+  }
+}
+
+async function getInsightReportRun(
+  supabase: ReturnType<typeof createAuthedClient>,
+  runId: string,
+) {
+  if (!runId) {
+    throw new Error("run_id is required");
+  }
+  const runResult = await supabase
+    .from("insight_report_runs")
+    .select(insightReportRunSelect)
+    .eq("id", runId)
+    .maybeSingle();
+  if (runResult.error) {
+    throw runResult.error;
+  }
+  if (!runResult.data) {
+    throw new Error(`Insight report run ${runId} was not found.`);
+  }
+  const run = asRecord(runResult.data);
+  return {
+    run: runResult.data,
+    report: run.report_payload ?? run.reportPayload ?? null,
+  };
+}
+
+async function listInsightReportRuns(
+  supabase: ReturnType<typeof createAuthedClient>,
+  tenantIds: string[],
+  body: JsonRecord,
+) {
+  if (!tenantIds.length) {
+    throw new Error("tenant_ids is required");
+  }
+  let query = supabase
+    .from("insight_report_runs")
+    .select(insightReportRunSelect)
+    .order("created_at", { ascending: false })
+    .limit(clampInteger(body.limit, 20, 1, 100));
+  if (tenantIds.length === 1) {
+    query = query.eq("tenant_id", tenantIds[0]);
+  } else {
+    query = query.in("tenant_id", tenantIds);
+  }
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
 async function acknowledgeOpsAlert(
   supabase: ReturnType<typeof createAuthedClient>,
   dedupeKey: string,
@@ -2339,13 +2896,12 @@ async function getParsingDocument(
 async function getOriginalDocumentUrl(
   supabase: ReturnType<typeof createAuthedClient>,
   body: JsonRecord,
-  tenantIds: string[],
+  _tenantIds: string[],
 ) {
   await getCurrentUserId(supabase);
 
   const documentId = asString(body.document_id);
   const candidateId = asString(body.candidate_id);
-  const tenantId = asString(body.tenant_id);
 
   if (!documentId && !candidateId) {
     throw new Error("document_id or candidate_id is required.");
@@ -2363,11 +2919,12 @@ async function getOriginalDocumentUrl(
     query = query.eq("candidate_id", candidateId);
   }
 
-  if (tenantId) {
-    query = query.eq("tenant_id", tenantId);
-  } else if (tenantIds.length) {
-    query = query.in("tenant_id", tenantIds);
-  }
+  // NOTE: No explicit tenant_id filter here — RLS on source_documents
+  // already enforces access control. It allows:
+  //   1. Tenant members to read their own tenant's documents
+  //   2. Hub-visible candidate documents to be read by any active
+  //      tenant member via can_search_cv_hub()
+  // Adding a tenant_id filter would block cross-tenant hub access.
 
   const { data, error } = await query
     .order("updated_at", { ascending: false })
@@ -3182,8 +3739,10 @@ async function extractJobDescription(input: {
       schemaName: "job_description_extraction",
       schema: jobExtractionSchema,
       temperature: 0,
-      systemPrompt:
+      systemPrompt: buildGuardedSystemPrompt(
         "Extract recruitment job requirements from a job description. Return strict JSON only. Separate required skills from preferred skills. Do not invent skills or employer details. Flag ambiguity in warnings.",
+        "Job extraction",
+      ),
       userPrompt: JSON.stringify({
         title: input.title,
         employerRegion: input.employerRegion,
@@ -3529,6 +4088,14 @@ async function extractJobPosting(
     asString(job?.job_description);
   if (!tenantId || !jobDescription) {
     throw new Error("tenant_id and job_description are required");
+  }
+
+  const jobTextGuard = evaluatePlatformAiInput(
+    [title, jobDescription].filter(Boolean).join("\n"),
+    { injectionOnly: true, maxLength: 50000 },
+  );
+  if (!jobTextGuard.allowed) {
+    throw new Error(platformAiGuardErrorMessage(jobTextGuard));
   }
 
   const { payload, provider, model } = await extractJobDescription({
@@ -4224,6 +4791,21 @@ Deno.serve(async (req) => {
         return jsonResponse(
           200,
           await getInsightsGapAnalysis(supabase, tenantIds, body),
+        );
+      case "start_insight_report":
+        return jsonResponse(
+          200,
+          await startInsightReportRun(supabase, tenantIds, body),
+        );
+      case "insight_report_runs":
+        return jsonResponse(
+          200,
+          await listInsightReportRuns(supabase, tenantIds, body),
+        );
+      case "insight_report_run":
+        return jsonResponse(
+          200,
+          await getInsightReportRun(supabase, asString(body.run_id) ?? ""),
         );
       case "ops_ack_alert":
         return jsonResponse(

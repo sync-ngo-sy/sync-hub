@@ -164,6 +164,17 @@ class SupabaseClientTests(unittest.TestCase):
         self.assertIn("resume_ingestion_status.eq.parsing", path)
         self.assertIn("updated_at.lt.", path)
 
+    def test_queued_candidate_drafts_include_stale_parsing_retry(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+        client.queued_candidate_drafts(limit=9, retry_stale_minutes=30)
+        self.assertEqual("GET", client.requests[0][0])
+        path = client.requests[0][1]
+        self.assertIn("limit=9", path)
+        self.assertIn("parse_status.eq.pending_validation", path)
+        self.assertIn("parse_status.eq.parsing", path)
+        self.assertIn("updated_at.lt.", path)
+
     def test_processing_run_update_can_be_scoped_to_public_application(self) -> None:
         config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
         client = RequestRecordingSupabaseClient(config)

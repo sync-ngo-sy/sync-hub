@@ -1037,6 +1037,20 @@ def _merge_extracted_profile(source: DocumentSource, document_text: DocumentText
     return profile
 
 
+def _merge_draft_profile_json(original: Any, overrides: Any) -> Any:
+    if isinstance(original, dict) and isinstance(overrides, dict):
+        merged = dict(original)
+        for key, value in overrides.items():
+            if key in merged:
+                merged[key] = _merge_draft_profile_json(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+    if isinstance(original, list) and isinstance(overrides, list):
+        return overrides if overrides else original
+    return overrides if overrides is not None else original
+
+
 class OpenAICompatibleExtractor:
     def __init__(self, config: WorkerConfig) -> None:
         self.config = config
@@ -1158,6 +1172,23 @@ def heuristic_extract_profile(source: DocumentSource, document_text: DocumentTex
 
 
 def extract_candidate_profile(source: DocumentSource, document_text: DocumentText, config: WorkerConfig) -> CandidateProfile:
+    if source.metadata.get("is_draft"):
+        from .draft_validation import validate_user_overrides_with_llm
+        from .schema import candidate_profile_from_dict
+
+        draft_data = source.metadata.get("draft_data", {})
+        original_profile = draft_data.get("parsed_profile_json") or {}
+        user_overrides = draft_data.get("user_overrides_json") or {}
+
+        merged_profile_json = _merge_draft_profile_json(original_profile, user_overrides)
+
+        is_valid, reason = validate_user_overrides_with_llm(original_profile, user_overrides, config)
+        if not is_valid:
+            raise ValueError(f"AI Validation Rejected: {reason}")
+
+        profile = candidate_profile_from_dict(merged_profile_json)
+        return classify_job_family_with_llm(profile, config)
+
     if not config.extraction_model:
         raise RuntimeError("CV extraction model is not configured; refusing to parse without LLM extraction")
 
