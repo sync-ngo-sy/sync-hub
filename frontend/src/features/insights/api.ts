@@ -65,16 +65,22 @@ export function mapRemoteInsightsDashboard(payload: JsonRecord): InsightsDashboa
 
 export function mapRemoteInsightsGapAnalysis(payload: JsonRecord): InsightsGapAnalysis {
   return {
-    targetRole: typeof payload.targetRole === "string" ? payload.targetRole : null,
-    targetSkills: toStringArray(payload.targetSkills),
-    fullyMatchingCandidates: toNumber(payload.fullyMatchingCandidates),
-    partiallyMatchingCandidates: toNumber(payload.partiallyMatchingCandidates),
-    zeroMatchCandidates: toNumber(payload.zeroMatchCandidates),
-    missingSkills: asArray(payload.missingSkills).map((item) => {
+    targetRole: typeof payload.targetRole === "string"
+      ? payload.targetRole
+      : typeof payload.target_role === "string"
+      ? payload.target_role
+      : null,
+    targetSkills: toStringArray(payload.targetSkills ?? payload.target_skills),
+    fullyMatchingCandidates: toNumber(payload.fullyMatchingCandidates ?? payload.fully_matching_candidates),
+    partiallyMatchingCandidates: toNumber(payload.partiallyMatchingCandidates ?? payload.partially_matching_candidates),
+    zeroMatchCandidates: toNumber(payload.zeroMatchCandidates ?? payload.zero_match_candidates),
+    missingSkills: asArray(payload.missingSkills ?? payload.missing_skills).map((item) => {
       const missing = asRecord(item);
       return {
         skill: String(missing.skill ?? ""),
-        missingFromPartialCandidates: toNumber(missing.missingFromPartialCandidates),
+        missingFromPartialCandidates: toNumber(
+          missing.missingFromPartialCandidates ?? missing.missing_from_partial_candidates,
+        ),
       };
     }),
   };

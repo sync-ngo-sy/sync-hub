@@ -1,22 +1,29 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { PanelRightOpen } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
-import { PlatformScopeControl } from "@/components/PlatformScopeControl";
-import type { CandidateDetail } from "@/lib/contracts";
-import { parseChatCandidateIds } from "@/lib/chatAgent";
-import { platformApi } from "@/lib/platformApi";
-import { usePlatformScope } from "@/lib/platformScope";
-import { Panel, Tag } from "@/components/ui";
+import {useEffect, useMemo, useState, useSyncExternalStore} from "react";
+import {useSearchParams} from "react-router-dom";
+import type {CandidateDetail} from "@/lib/contracts";
+import {parseChatCandidateIds} from "@/lib/chatAgent";
+import {platformApi} from "@/lib/platformApi";
+import {usePlatformScope} from "@/lib/platformScope";
+import {useAuth} from "@/lib/auth";
 
-import { chatStore } from "./chatStore";
-import type { ChatStoreState, ChatTurn } from "./chatStore";
-import { ChatThread } from "./ChatThread";
-import { ChatComposer } from "./ChatComposer";
-import { ContextDrawer } from "./ContextDrawer";
+import {chatStore} from "./chatStore";
+import type {ChatStoreState, ChatTurn} from "./chatStore";
+import {ChatThread} from "./ChatThread";
+import {ChatComposer} from "./ChatComposer";
+import {ContextDrawer} from "./ContextDrawer";
+import {ChatMetaRow} from "./ChatMetaRow";
 
-export { chatStore } from "./chatStore";
+export {chatStore} from "./chatStore";
 
 let lastProcessedPrefilledQuestion = "";
+
+function deriveFirstName(email?: string | null): string {
+  if (!email) return "there";
+  const local = email.split("@")[0] ?? "";
+  const token = local.split(/[.\-_]/)[0] ?? local;
+  if (!token) return "there";
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
 
 export function IntelligenceHubPage() {
   const {
@@ -29,6 +36,9 @@ export function IntelligenceHubPage() {
     setWorkspaceId,
     workspaceOptions,
   } = usePlatformScope();
+
+  const {userEmail} = useAuth();
+  const firstName = useMemo(() => deriveFirstName(userEmail), [userEmail]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const candidateIds = useMemo(() => parseChatCandidateIds(searchParams.get("ids")), [searchParams]);
@@ -48,13 +58,14 @@ export function IntelligenceHubPage() {
   const [loaderPhrase, setLoaderPhrase] = useState("SYNCING");
 
   const contextCandidateIds = scopedMode ? candidateIds : store.resolvedCandidateIds;
+  const hasMessages = store.messages.length > 0;
 
   useEffect(() => {
-    chatStore.update({ hasUnreadResponse: false });
+    chatStore.update({hasUnreadResponse: false});
   }, []);
 
   useEffect(() => {
-    chatStore.update({ question });
+    chatStore.update({question});
   }, [question]);
 
   useEffect(() => {
@@ -105,7 +116,9 @@ export function IntelligenceHubPage() {
           setLoadingContext(false);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [contextCandidateIds]);
 
   async function handleAsk(nextQuestion: string) {
@@ -115,7 +128,7 @@ export function IntelligenceHubPage() {
     const userTurnId = `user-${Date.now()}`;
     const nextHistory: ChatTurn[] = [
       ...store.messages,
-      { id: userTurnId, role: "user" as const, text: normalizedQuestion },
+      {id: userTurnId, role: "user" as const, text: normalizedQuestion},
     ];
     const historyPayload = nextHistory.map((message: ChatTurn) => ({
       role: message.role,
@@ -123,7 +136,7 @@ export function IntelligenceHubPage() {
     }));
 
     setQuestion("");
-    chatStore.update({ loadingAnswer: true, error: null, messages: nextHistory, question: "" });
+    chatStore.update({loadingAnswer: true, error: null, messages: nextHistory, question: ""});
 
     const startTime = Date.now();
 
@@ -161,8 +174,15 @@ export function IntelligenceHubPage() {
 
       const audio = new Audio("/ai-answer-done.mp3");
       audio.play()
-        .then(() => { audio.onended = () => { audio.src = ""; audio.load(); }; })
-        .catch((err) => { console.warn("Audio playback failed:", err); });
+        .then(() => {
+          audio.onended = () => {
+            audio.src = "";
+            audio.load();
+          };
+        })
+        .catch((err) => {
+          console.warn("Audio playback failed:", err);
+        });
 
     } catch (nextError) {
       chatStore.update({
@@ -197,133 +217,109 @@ export function IntelligenceHubPage() {
   const isSendDisabled = store.loadingAnswer || !question.trim();
 
   return (
-    <div className="chat-page" style={{
-      paddingTop: 0,
-      display: "flex",
-      flexDirection: "column",
-      gap: "16px",
-      height: "calc(100vh - 140px)",
-      minHeight: "500px",
-      boxSizing: "border-box"
-    }}>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        .chat-message { position: relative !important; padding: 12px 20px !important; }
-        .chat-message p { margin: 0 !important; white-space: pre-wrap !important; }
-        .copy-btn {
-          position: absolute; top: 50%; transform: translateY(-50%);
-          opacity: 0; transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
-          background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 8px; padding: 6px; color: var(--text-soft, #a1a1aa);
-          cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;
-        }
-        .chat-message--user .copy-btn { left: -44px; right: auto; }
-        .chat-message--assistant .copy-btn { right: -44px; left: auto; }
-        .chat-message:hover .copy-btn { opacity: 1; }
-        .copy-btn:hover {
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(80, 193, 184, 0.25);
-          color: rgba(80, 193, 184, 1);
-        }
-        .chat-context-card:hover { transform: none !important; }
-        .reset-thread-transition {
-          opacity: 0; max-width: 0px; overflow: hidden; pointer-events: none;
-          display: inline-flex; align-items: center;
-          transition: opacity 250ms cubic-bezier(0.4, 0, 0.2, 1), max-width 250ms cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .reset-thread-transition--visible { opacity: 1; max-width: 150px; pointer-events: auto; }
-        @keyframes bulletPulse {
-          0%, 100% { opacity: 0.2; transform: scale(0.9); }
-          50% { opacity: 1; transform: scale(1.15); }
-        }
-        .anim-bullet { animation: bulletPulse 1s infinite ease-in-out both; display: inline-block; font-weight: bold; font-size: 1.1rem; }
-        .anim-bullet-1 { animation-delay: 0s; }
-        .anim-bullet-2 { animation-delay: 0.2s; }
-      `
-      }} />
+    <div
+      style={{
+        position: "relative",
+        height: "calc(100vh - 140px)",
+        minHeight: "500px",
+        boxSizing: "border-box",
+        overflow: "hidden",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{__html: SYNC_AI_STYLES}}/>
 
-      <Panel className="chat-thread-panel chat-thread-panel--flex">
-        <div className="chat-thread-panel__header" style={{ flexWrap: "wrap", gap: "1rem" }}>
-          <div className="skill-list chat-thread-panel__meta" style={{ display: "flex", alignItems: "center" }}>
-            {scopedMode ? (
-              <button
-                type="button"
-                onClick={() => setContextOpen(true)}
-                style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", display: "inline-flex", textAlign: "left" }}
-                title="Click to view candidate context"
-              >
-                <Tag tone="primary">
-                  Scoped mode · {contextCandidateIds.length} candidates in scope
-                </Tag>
-              </button>
-            ) : (
-              <Tag tone="primary">General mode</Tag>
-            )}
+      {/* Ambient backdrop glow, purely decorative — matches reference */}
+      <div className="sync-ai-ambient" aria-hidden="true"/>
 
-            {!scopedMode ? (
-              <Tag>{isAllScope ? `${workspaceOptions.length} workspaces` : currentWorkspace?.name ?? "Current workspace"}</Tag>
-            ) : null}
-
-            {store.messages.length ? (
-              <Tag>{store.messages.filter((m: ChatTurn) => m.role === "assistant").length} answers</Tag>
-            ) : null}
-          </div>
-
-          <div className="chat-thread-panel__actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <button
-              className="button button--secondary"
-              type="button"
-              aria-controls="chat-context-drawer"
-              aria-expanded={contextOpen}
-              onClick={() => setContextOpen(true)}
-              style={{ display: "flex", alignItems: "center", gap: "6px" }}
-            >
-              <PanelRightOpen size={14} />
-              {contextCandidateIds.length ? `Context (${contextCandidateIds.length})` : "Context"}
-            </button>
-
-            {!scopedMode ? (
-              <PlatformScopeControl
-                isPlatformAdmin={isPlatformAdmin}
-                scopeMode={scopeMode}
-                onChangeScopeMode={setScopeMode}
-                currentWorkspace={currentWorkspace}
-                workspaceOptions={workspaceOptions}
-                onChangeWorkspace={setWorkspaceId}
-              />
-            ) : null}
-
-            <div className={`reset-thread-transition ${scopedMode ? "reset-thread-transition--visible" : ""}`}>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={handleResetThread}
-                title="Clear active thread"
-                style={{ whiteSpace: "nowrap" }}
-              >
-                Reset thread
-              </button>
-            </div>
-          </div>
+      {/* Slide animation stage: row1 = thread (always 1fr), row2 = composer block (auto),
+                row3 = bottom spacer that collapses from 1fr -> 0fr once messages exist,
+                which pushes all the leftover space into row1 and slides the composer to the bottom. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateRows: `minmax(0, 1fr) auto minmax(0, ${hasMessages ? 0 : 1}fr)`,
+          transition: "grid-template-rows 460ms cubic-bezier(0.4, 0, 0.2, 1)",
+          height: "100%",
+          position: "relative",
+          zIndex: 1,
+        }}
+      >
+        {/* Row 1: thread */}
+        <div
+          style={{
+            minHeight: 0,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {hasMessages ? (
+            <ChatThread
+              store={store}
+              scopedMode={scopedMode}
+              loaderPhrase={loaderPhrase}
+              copiedId={copiedId}
+              onCopy={handleCopy}
+            />
+          ) : null}
         </div>
 
-        <ChatThread
-          store={store}
-          scopedMode={scopedMode}
-          loaderPhrase={loaderPhrase}
-          copiedId={copiedId}
-          onCopy={handleCopy}
-        />
-      </Panel>
+        {/* Row 2: greeting (collapses) + composer + meta row */}
+        <div style={{width: "100%", maxWidth: "760px", margin: "0 auto", padding: "clamp(12px, 2.5vw, 28px) clamp(12px, 3vw, 20px) clamp(16px, 3vw, 28px)", boxSizing: "border-box"}}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateRows: hasMessages ? "0fr" : "1fr",
+              transition: "grid-template-rows 380ms cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+          >
+            <div style={{overflow: "hidden"}}>
+              <h1
+                style={{
+                  textAlign: "center",
+                  fontSize: "clamp(1.5rem, 3vw, 2.05rem)",
+                  fontWeight: 500,
+                  color: "var(--text)",
+                  margin: "0 0 22px",
+                  letterSpacing: "-0.01em",
+                  opacity: hasMessages ? 0 : 1,
+                  transition: "opacity 220ms ease",
+                }}
+              >
+                What can I help with, {firstName}?
+              </h1>
+            </div>
+          </div>
 
-      <ChatComposer
-        question={question}
-        scopedMode={scopedMode}
-        isSendDisabled={isSendDisabled}
-        error={store.error}
-        onChange={setQuestion}
-        onSubmit={(q) => void handleAsk(q)}
-      />
+          <ChatComposer
+            question={question}
+            scopedMode={scopedMode}
+            isSendDisabled={isSendDisabled}
+            error={store.error}
+            onChange={setQuestion}
+            onSubmit={(q) => void handleAsk(q)}
+          />
+
+          <ChatMetaRow
+            scopedMode={scopedMode}
+            contextCandidateIds={contextCandidateIds}
+            isAllScope={isAllScope}
+            workspaceOptions={workspaceOptions}
+            currentWorkspace={currentWorkspace}
+            answersCount={store.messages.filter((m: ChatTurn) => m.role === "assistant").length}
+            isPlatformAdmin={isPlatformAdmin}
+            scopeMode={scopeMode}
+            setScopeMode={setScopeMode}
+            setWorkspaceId={setWorkspaceId}
+            onOpenContext={() => setContextOpen(true)}
+            onResetThread={handleResetThread}
+          />
+        </div>
+
+        {/* Row 3: bottom spacer — animates 1fr -> 0fr */}
+        <div/>
+      </div>
 
       <ContextDrawer
         open={contextOpen}
@@ -336,3 +332,40 @@ export function IntelligenceHubPage() {
     </div>
   );
 }
+
+const SYNC_AI_STYLES = `
+  .sync-ai-ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(560px 360px at 50% 38%, rgba(80, 193, 184, 0.10), transparent 70%);
+    z-index: 0;
+  }
+  .sync-ai-textarea::placeholder { color: var(--text-soft); opacity: 0.55; }
+  .sync-ai-icon-btn:hover { background: rgba(255, 255, 255, 0.07) !important; }
+  .chat-message { position: relative !important; padding: 12px 20px !important; }
+  .chat-message p { margin: 0 !important; white-space: pre-wrap !important; }
+  .copy-btn {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    opacity: 0; transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px; padding: 6px; color: var(--text-soft, #a1a1aa);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  .chat-message--user .copy-btn { left: -44px; right: auto; }
+  .chat-message--assistant .copy-btn { right: -44px; left: auto; }
+  .chat-message:hover .copy-btn { opacity: 1; }
+  .copy-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(80, 193, 184, 0.25);
+    color: rgba(80, 193, 184, 1);
+  }
+  .chat-context-card:hover { transform: none !important; }
+  @keyframes bulletPulse {
+    0%, 100% { opacity: 0.2; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  .anim-bullet { animation: bulletPulse 1s infinite ease-in-out both; display: inline-block; font-weight: bold; font-size: 1.1rem; }
+  .anim-bullet-1 { animation-delay: 0s; }
+  .anim-bullet-2 { animation-delay: 0.2s; }
+`;

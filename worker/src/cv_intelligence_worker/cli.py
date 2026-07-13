@@ -12,6 +12,7 @@ from .gcs_originals import ManatalOriginalsBackfill
 from .manatal import ManatalSync
 from .pipeline import IngestionPipeline
 from .public_applications import PublicApplicationIngestion
+from .draft_ingestion import DraftIngestion
 from .schema import dataclass_to_dict
 
 
@@ -69,6 +70,15 @@ def build_parser() -> argparse.ArgumentParser:
     public_applications.add_argument("--limit", type=int, default=25, help="Maximum queued applications to ingest")
     public_applications.add_argument("--retry-stale-minutes", type=int, default=30, help="Retry applications left in parsing for at least this many minutes")
     public_applications.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
+
+    process_drafts = subparsers.add_parser(
+        "process-drafts",
+        help="Drain pending_validation candidate registration drafts and ingest them",
+        parents=[common],
+    )
+    process_drafts.add_argument("--limit", type=int, default=25, help="Maximum queued drafts to ingest")
+    process_drafts.add_argument("--retry-stale-minutes", type=int, default=30, help="Retry drafts left in parsing for at least this many minutes")
+    process_drafts.add_argument("--no-progress", action="store_true", help="Disable progress messages on stderr")
 
     return parser
 
@@ -223,6 +233,15 @@ def _run_public_applications(args: argparse.Namespace, config: WorkerConfig) -> 
     print(_json_output(dataclass_to_dict(result), pretty=args.pretty))
     return 0 if not result.failed else 2
 
+def _run_process_drafts(args: argparse.Namespace, config: WorkerConfig) -> int:
+    processed = DraftIngestion(config).run(
+        limit=args.limit,
+        retry_stale_minutes=args.retry_stale_minutes,
+        progress=_progress_printer(args.no_progress),
+    )
+    print(_json_output({"processed": processed}, pretty=args.pretty))
+    return 0
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
@@ -248,6 +267,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "public-applications":
         return _run_public_applications(args, config)
+
+    if args.command == "process-drafts":
+        return _run_process_drafts(args, config)
 
     parser.error(f"unsupported command: {args.command}")
     return 1

@@ -1,11 +1,16 @@
 import os
 import json
+import time
 import tempfile
 import asyncio
 import logging
+import hmac
+from collections import defaultdict, deque
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends, Request
+import uuid
 from fastapi.responses import StreamingResponse
+from fastapi.security import APIKeyHeader
 import httpx
 
 # Configure standard logging
@@ -21,6 +26,51 @@ import copy
 from cv_intelligence_worker.supabase_client import SupabaseSyncClient
 
 app = FastAPI(title="Realtime CV Extraction")
+
+# ---------------------------------------------------------------------------
+# H2: Rate limiting — 10 requests/minute per API key (sliding window)
+#     + global concurrent LLM request cap of 5
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_REQUESTS = int(os.environ.get("RATE_LIMIT_REQUESTS", "10"))
+_RATE_LIMIT_WINDOW_SECS = int(os.environ.get("RATE_LIMIT_WINDOW_SECS", "60"))
+_MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_LLM", "5"))
+
+_request_log: dict[str, deque] = defaultdict(deque)   # api_key → timestamps
+_concurrency_sem = asyncio.Semaphore(_MAX_CONCURRENT)
+
+def _check_rate_limit(api_key: str) -> None:
+    now = time.monotonic()
+    window = _request_log[api_key]
+    # Evict timestamps outside the sliding window
+    while window and now - window[0] > _RATE_LIMIT_WINDOW_SECS:
+        window.popleft()
+    if len(window) >= _RATE_LIMIT_REQUESTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded: max {_RATE_LIMIT_REQUESTS} requests per {_RATE_LIMIT_WINDOW_SECS}s",
+        )
+    window.append(now)
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
+
+
+def _detect_allowed_mime_type(file_bytes: bytes) -> str | None:
+    if file_bytes.startswith(b"%PDF-"):
+        return "application/pdf"
+    if file_bytes.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        return "application/msword"
+    if file_bytes.startswith(b"PK\x03\x04") or file_bytes.startswith(b"PK\x05\x06") or file_bytes.startswith(b"PK\x07\x08"):
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    return None
+
+def verify_api_key(api_key: str = Security(api_key_header)):
+    config = WorkerConfig.from_env()
+    if not config.api_key:
+        logger.error("API Key not configured on server")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API Key")
+    if not hmac.compare_digest(api_key, config.api_key):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API Key")
+    return api_key
 
 def build_extended_system_prompt() -> str:
     base_prompt = _extractor_system_prompt().split("Output schema:\n")[0]
@@ -81,22 +131,30 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
         logger.info("[DB SYNC] No Supabase credentials, skipping sync")
         return
 
+    supabase = SupabaseSyncClient(config.supabase_url, config.supabase_service_key)
+
     try:
         parsed_json = json.loads(raw_json_str)
-        # استخراج نسب الثقة لفصلها
         field_confidence = parsed_json.pop("field_confidence", {})
     except json.JSONDecodeError as e:
         logger.error(f"[DB SYNC] Failed to decode final JSON for Supabase: {e}")
+        try:
+            supabase.upsert_rows("candidate_registration_drafts", [{
+                "user_id": user_id,
+                "parse_status": "failed",
+                "parse_error": f"JSON decode error: {e}",
+            }], on_conflict="user_id")
+        except Exception as db_err:
+            logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
         return
 
-    supabase = SupabaseSyncClient(config.supabase_url, config.supabase_service_key)
+    from datetime import datetime, timezone
     row = {
         "user_id": user_id,
-        "cv_original_filename": file_name,
-        "cv_mime_type": mime_type,
         "parsed_profile_json": parsed_json,
         "field_confidence_json": field_confidence,
         "parse_status": "completed",
+        "parse_completed_at": datetime.now(timezone.utc).isoformat(),
     }
 
     try:
@@ -104,31 +162,77 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
         logger.info(f"[DB SYNC] Successfully synced profile draft for user: {user_id}")
     except Exception as e:
         logger.error(f"[DB SYNC] Failed to sync to Supabase: {e}")
+        try:
+            supabase.upsert_rows("candidate_registration_drafts", [{
+                "user_id": user_id,
+                "parse_status": "failed",
+                "parse_error": f"DB sync error: {e}",
+            }], on_conflict="user_id")
+        except Exception as db_err:
+            logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
+
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 @app.post("/api/v1/parse-cv-fast")
 async def parse_cv_endpoint(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),  # noqa: B008
-    user_id: str = Form(...)       # noqa: B008
+    user_id: str = Form(...),      # noqa: B008
+    api_key: str = Depends(verify_api_key)
 ):
+    if "content-length" in request.headers:
+        try:
+            if int(request.headers["content-length"]) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
+        except ValueError:
+            pass
+
+    try:
+        uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id format. Must be a valid UUID.") from None
+
+    # H2: enforce per-key rate limit and global concurrency cap
+    _check_rate_limit(api_key)
+
+    if _concurrency_sem.locked() and _concurrency_sem._value == 0:  # noqa: SLF001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server busy, please retry shortly",
+        )
+
     # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
 
     # 1. Parse Document (Using existing robust logic)
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    # Read content BEFORE creating temp file to avoid a temp-file leak if the
+    # size validation raises HTTPException (delete=False files are not cleaned up
+    # automatically when an exception is thrown inside the with-block).
+    content = await file.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
 
+    detected_mime_type = _detect_allowed_mime_type(content)
+    if not detected_mime_type:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF and Word documents are allowed.")
+    if file.content_type and file.content_type != detected_mime_type:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF and Word documents are allowed.")
+
+    tmp_path: str | None = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
         source = DocumentSource(
             tenant_id="default",
             source_path=tmp_path,
             source_type="file",
             original_filename=file.filename or "cv",
-            mime_type=file.content_type or "application/pdf",
+            mime_type=detected_mime_type,
             document_id="tmp",
             document_sha256="tmp",
             ingestion_run_id="tmp"
@@ -139,7 +243,7 @@ async def parse_cv_endpoint(
         document_text = await loop.run_in_executor(None, parse_document, source)
 
     finally:
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
     # 2. Build Prompt (Re-using original logic but with extended schema)
@@ -196,7 +300,7 @@ async def parse_cv_endpoint(
                 sync_to_supabase_background,
                 user_id=user_id,
                 file_name=file.filename or "cv",
-                mime_type=file.content_type or "application/pdf",
+                mime_type=detected_mime_type,
                 raw_json_str=full_json,
                 config=config
             )

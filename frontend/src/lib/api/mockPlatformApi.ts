@@ -31,6 +31,8 @@ import {
 import { isBrowserOpenableSource } from "@/features/candidates/apiMappers";
 import { createFallbackSearchFilterOptions, debugFiltersFromSearchFilters } from "@/features/search/apiMappers";
 import { resolveGapRequirements } from "@/lib/insightsGap";
+import { buildMockInsightReport } from "@/features/insights/insightReport.helpers";
+import type { InsightReportInput, InsightReportRunDetail } from "@/lib/contracts";
 import type { PlatformApi } from "@/lib/platformApiTypes";
 import { normalizeSkillList } from "@/lib/searchTaxonomy";
 
@@ -41,6 +43,70 @@ function wait(ms: number) {
 const mockShortlistItems = new Map<string, CandidateShortlistItem>();
 const mockJobPostings = new Map<string, JobPosting>();
 const mockJobApplications = new Map<string, JobApplication>();
+const mockInsightReportRuns = new Map<string, InsightReportRunDetail>();
+
+async function createMockInsightReportRun(
+  input: InsightReportInput,
+  tenantIds?: string[],
+): Promise<InsightReportRunDetail> {
+  const tenantId = tenantIds?.[0] ?? "mock-tenant";
+  const runId = crypto.randomUUID();
+  const createdAt = new Date().toISOString();
+  const runningDetail: InsightReportRunDetail = {
+    run: {
+      id: runId,
+      tenantId,
+      initiatedByUserId: null,
+      status: "running",
+      reportType: input.reportType,
+      inputConfig: {
+        reportType: input.reportType,
+        focus: input.focus ?? input.targetRole ?? null,
+        targetRole: input.focus ?? input.targetRole ?? null,
+        targetSkills: input.targetSkills ?? [],
+      },
+      failureReason: null,
+      llmProvider: null,
+      llmModel: null,
+      startedAt: createdAt,
+      completedAt: null,
+      createdAt,
+    },
+    report: null,
+  };
+  mockInsightReportRuns.set(runId, runningDetail);
+  await wait(120);
+
+  const targetSkills = resolveGapRequirements(
+    { targetRole: input.focus ?? input.targetRole, targetSkills: input.targetSkills },
+    insightsDashboardSnapshot.skillsFrequency.map((item) => item.skill),
+  );
+  const dashboard = {
+    ...insightsDashboardSnapshot,
+    gapAnalysis: {
+      ...insightsDashboardSnapshot.gapAnalysis,
+      targetRole: input.focus ?? input.targetRole ?? insightsDashboardSnapshot.gapAnalysis.targetRole,
+      targetSkills,
+    },
+  };
+  const report = buildMockInsightReport(
+    dashboard,
+    input.reportType,
+    input.focus ?? input.targetRole,
+  );
+  const completedDetail: InsightReportRunDetail = {
+    run: {
+      ...runningDetail.run,
+      status: "completed",
+      llmProvider: "mock",
+      llmModel: "local-demo",
+      completedAt: new Date().toISOString(),
+    },
+    report,
+  };
+  mockInsightReportRuns.set(runId, completedDetail);
+  return completedDetail;
+}
 
 function buildMockCandidatesList(options: CandidateListOptions = {}): CandidateListResponse {
   const pageSize = Math.max(1, Math.min(200, Math.trunc(options.pageSize ?? 50)));
@@ -592,6 +658,26 @@ export function createMockApi(): PlatformApi {
         targetRole: options?.targetRole ?? insightsDashboardSnapshot.gapAnalysis.targetRole,
         targetSkills,
       };
+    },
+    async startInsightReport(input, tenantIds) {
+      return createMockInsightReportRun(input, tenantIds);
+    },
+    async listInsightReportRuns(tenantIds, limit = 20) {
+      await wait(60);
+      const tenantId = tenantIds?.[0] ?? "mock-tenant";
+      return Array.from(mockInsightReportRuns.values())
+        .map((detail) => detail.run)
+        .filter((run) => run.tenantId === tenantId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .slice(0, Math.max(1, Math.min(100, limit)));
+    },
+    async getInsightReportRun(runId) {
+      await wait(60);
+      const detail = mockInsightReportRuns.get(runId);
+      if (!detail) {
+        throw new Error("Insight report run was not found.");
+      }
+      return detail;
     },
     async getSystemHealth() {
       await wait(80);
