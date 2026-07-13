@@ -1,4 +1,5 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import { evaluatePlatformAiInput } from "../_shared/aiGuardrails.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 import { generateStructuredObject } from "../_shared/llm.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
@@ -294,6 +295,17 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const supabase = createAuthedClient(req);
     const query = String(body.q ?? "");
+    const queryGuard = evaluatePlatformAiInput(query, {
+      allowRecruitmentContextBypass: true,
+    });
+    if (!queryGuard.allowed) {
+      return jsonResponse(400, {
+        error: "ai_guardrail",
+        guardrail_code: queryGuard.code ?? null,
+        details: queryGuard.message ?? "Query is outside platform scope.",
+      });
+    }
+
     const tenantIds = asStringArray(body.tenant_ids);
     const requestFilters = normalizeExplicitFilters(
       (body.filters ?? {}) as Record<string, unknown>,
