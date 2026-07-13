@@ -55,7 +55,7 @@ export function ContextDrawer({
         <div className="context-drawer__header">
           <div className="stack">
             <span className="eyebrow">Context</span>
-            <h3 id="chat-context-drawer-title">Candidates in scope</h3>
+            <h3 id="chat-context-drawer-title">Candidates in Scope</h3>
           </div>
           <button
             ref={closeButtonRef}
