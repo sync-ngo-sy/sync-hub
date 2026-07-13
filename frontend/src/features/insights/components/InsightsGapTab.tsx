@@ -1,4 +1,4 @@
-import { ArrowRight, Lightbulb, Search, Target } from "lucide-react";
+import { ArrowRight, Lightbulb, Search, Sparkles, Target } from "lucide-react";
 import { Panel, Tag } from "@/components/ui";
 import { formatNumber, formatPercent, getGapVerdict } from "@/features/insights/insightsDashboard.helpers";
 import type { InsightsGapAnalysis, InsightsGapUseCase } from "@/lib/contracts";
@@ -14,6 +14,7 @@ type InsightsGapTabProps = {
   onApplyGapAnalysis: () => void;
   onExploreMatches: () => void;
   onGapDraftChange: (value: string) => void;
+  onGenerateAiBrief: () => void;
   onRunGapUseCase: (query: string) => void;
 };
 
@@ -28,6 +29,7 @@ export function InsightsGapTab({
   onApplyGapAnalysis,
   onExploreMatches,
   onGapDraftChange,
+  onGenerateAiBrief,
   onRunGapUseCase,
 }: InsightsGapTabProps) {
   const totalGapCandidates = gapAnalysis.fullyMatchingCandidates + gapAnalysis.partiallyMatchingCandidates + gapAnalysis.zeroMatchCandidates;
@@ -100,11 +102,17 @@ export function InsightsGapTab({
             <h4>{gapVerdict.title}</h4>
             <p>{gapVerdict.detail}</p>
           </div>
-          <button className="button button--secondary" type="button" onClick={onExploreMatches} disabled={!canExploreMatches}>
-            <Search size={16} />
-            Explore matches
-            <ArrowRight size={15} />
-          </button>
+          <div className="gap-verdict__actions">
+            <button className="button button--secondary" type="button" onClick={onExploreMatches} disabled={!canExploreMatches}>
+              <Search size={16} />
+              Explore matches
+              <ArrowRight size={15} />
+            </button>
+            <button className="button button--secondary gap-ai-brief" type="button" onClick={onGenerateAiBrief}>
+              <Sparkles size={16} />
+              Generate AI brief
+            </button>
+          </div>
         </div>
         <div className="gap-coverage" aria-label="Candidate requirement coverage">
           <div className="gap-coverage__header">

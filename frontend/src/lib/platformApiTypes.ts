@@ -16,6 +16,9 @@ import type {
   InsightsGapAnalysis,
   InsightsDashboardOptions,
   InsightsDashboardSnapshot,
+  InsightReportInput,
+  InsightReportRun,
+  InsightReportRunDetail,
   IndexingWorkbench,
   JobApplication,
   JobApplicationStatus,
@@ -117,6 +120,9 @@ export type PlatformApi = {
   getAnalytics: () => Promise<AnalyticsSnapshot>;
   getInsightsDashboard: (options?: InsightsDashboardOptions, tenantIds?: string[]) => Promise<InsightsDashboardSnapshot>;
   getInsightsGapAnalysis: (options?: InsightsDashboardOptions, tenantIds?: string[]) => Promise<InsightsGapAnalysis>;
+  startInsightReport: (input: InsightReportInput, tenantIds?: string[]) => Promise<InsightReportRunDetail>;
+  listInsightReportRuns: (tenantIds?: string[], limit?: number) => Promise<InsightReportRun[]>;
+  getInsightReportRun: (runId: string) => Promise<InsightReportRunDetail>;
   getSystemHealth: () => Promise<SystemHealth>;
   getOpsAlerts: (tenantIds?: string[]) => Promise<OpsAlert[]>;
   acknowledgeOpsAlert: (dedupeKey: string) => Promise<OpsAlert | null>;
