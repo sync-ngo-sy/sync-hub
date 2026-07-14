@@ -105,7 +105,7 @@ jobs:
 
       - name: Deploy to cPanel (FTPS)
         if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.skip_upload) }}
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.CPANEL_FTP_SERVER }}
           username: ${{ secrets.CPANEL_FTP_USERNAME }}
