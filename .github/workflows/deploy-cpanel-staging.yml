@@ -2,16 +2,17 @@
 #
 # Trigger: push to `dev` (merge feature PRs into dev before main/prod).
 #
-# Required GitHub repository secrets (STG_ prefix — separate from production):
+# Required GitHub repository secrets:
 #   STG_VITE_SUPABASE_URL
 #   STG_VITE_SUPABASE_ANON_KEY
-#   STG_CPANEL_FTP_SERVER
-#   STG_CPANEL_FTP_USERNAME
-#   STG_CPANEL_FTP_PASSWORD
+# FTP (same cPanel as production — reuses CPANEL_FTP_* when STG_CPANEL_FTP_* unset):
+#   CPANEL_FTP_SERVER
+#   CPANEL_FTP_USERNAME
+#   CPANEL_FTP_PASSWORD
 # Optional:
 #   STG_VITE_API_BASE_URL
-#   STG_VITE_SITE_URL          (default https://dev-jobs.sync.ngo)
-#   STG_CPANEL_FTP_SERVER_DIR  (default ./ — FTP login root for dev-jobs site)
+#   STG_VITE_SITE_URL
+#   STG_CPANEL_FTP_SERVER_DIR  (default ../dev-jobs/ when prod FTP root is public_html/jobs/)
 #
 # See docs/staging-environment.md
 
@@ -60,6 +61,9 @@ jobs:
           STG_CPANEL_FTP_SERVER: ${{ secrets.STG_CPANEL_FTP_SERVER }}
           STG_CPANEL_FTP_USERNAME: ${{ secrets.STG_CPANEL_FTP_USERNAME }}
           STG_CPANEL_FTP_PASSWORD: ${{ secrets.STG_CPANEL_FTP_PASSWORD }}
+          CPANEL_FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER }}
+          CPANEL_FTP_USERNAME: ${{ secrets.CPANEL_FTP_USERNAME }}
+          CPANEL_FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASSWORD }}
         run: |
           set -euo pipefail
           missing=()
@@ -69,17 +73,39 @@ jobs:
             fi
           done
           if [ "${SKIP_UPLOAD}" != "true" ]; then
-            for name in STG_CPANEL_FTP_SERVER STG_CPANEL_FTP_USERNAME STG_CPANEL_FTP_PASSWORD; do
-              if [ -z "${!name:-}" ]; then
-                missing+=("$name")
-              fi
-            done
+            ftp_server="${STG_CPANEL_FTP_SERVER:-${CPANEL_FTP_SERVER:-}}"
+            ftp_user="${STG_CPANEL_FTP_USERNAME:-${CPANEL_FTP_USERNAME:-}}"
+            ftp_pass="${STG_CPANEL_FTP_PASSWORD:-${CPANEL_FTP_PASSWORD:-}}"
+            if [ -z "${ftp_server}" ]; then missing+=("CPANEL_FTP_SERVER"); fi
+            if [ -z "${ftp_user}" ]; then missing+=("CPANEL_FTP_USERNAME"); fi
+            if [ -z "${ftp_pass}" ]; then missing+=("CPANEL_FTP_PASSWORD"); fi
           fi
           if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Missing required GitHub secrets: %s\n' "${missing[*]}"
-            printf 'Add them under Settings → Secrets and variables → Actions.\n'
+            printf 'Staging reuses production CPANEL_FTP_* when STG_CPANEL_FTP_* are unset.\n'
             printf 'See docs/staging-environment.md\n'
             exit 1
+          fi
+
+      - name: Resolve FTP credentials
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.skip_upload) }}
+        env:
+          STG_CPANEL_FTP_SERVER: ${{ secrets.STG_CPANEL_FTP_SERVER }}
+          STG_CPANEL_FTP_USERNAME: ${{ secrets.STG_CPANEL_FTP_USERNAME }}
+          STG_CPANEL_FTP_PASSWORD: ${{ secrets.STG_CPANEL_FTP_PASSWORD }}
+          CPANEL_FTP_SERVER: ${{ secrets.CPANEL_FTP_SERVER }}
+          CPANEL_FTP_USERNAME: ${{ secrets.CPANEL_FTP_USERNAME }}
+          CPANEL_FTP_PASSWORD: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          STG_CPANEL_FTP_SERVER_DIR: ${{ secrets.STG_CPANEL_FTP_SERVER_DIR }}
+        run: |
+          set -euo pipefail
+          echo "FTP_SERVER=${STG_CPANEL_FTP_SERVER:-$CPANEL_FTP_SERVER}" >> "$GITHUB_ENV"
+          echo "FTP_USERNAME=${STG_CPANEL_FTP_USERNAME:-$CPANEL_FTP_USERNAME}" >> "$GITHUB_ENV"
+          echo "FTP_PASSWORD=${STG_CPANEL_FTP_PASSWORD:-$CPANEL_FTP_PASSWORD}" >> "$GITHUB_ENV"
+          if [ -n "${STG_CPANEL_FTP_SERVER_DIR:-}" ]; then
+            echo "FTP_SERVER_DIR=${STG_CPANEL_FTP_SERVER_DIR}" >> "$GITHUB_ENV"
+          else
+            echo "FTP_SERVER_DIR=../dev-jobs/" >> "$GITHUB_ENV"
           fi
 
       - name: Resolve staging VITE_API_BASE_URL
@@ -115,13 +141,13 @@ jobs:
         if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.skip_upload) }}
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
-          server: ${{ secrets.STG_CPANEL_FTP_SERVER }}
-          username: ${{ secrets.STG_CPANEL_FTP_USERNAME }}
-          password: ${{ secrets.STG_CPANEL_FTP_PASSWORD }}
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
           protocol: ftps
           port: 21
           local-dir: ./frontend/dist/
-          server-dir: ${{ secrets.STG_CPANEL_FTP_SERVER_DIR || './' }}
+          server-dir: ${{ env.FTP_SERVER_DIR }}
           dangerous-clean-slate: false
           exclude: |
             **/.ftp-deploy-sync-state.json

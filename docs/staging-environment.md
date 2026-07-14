@@ -31,7 +31,7 @@ Staging lets testers and developers validate changes before production.
 ### 1. cPanel (frontend)
 
 1. Create subdomain **`dev-jobs.sync.ngo`** pointing to e.g. `public_html/dev-jobs/`.
-2. Create an FTP account scoped to that folder (recommended), or reuse the main account with `STG_CPANEL_FTP_SERVER_DIR=public_html/dev-jobs/`.
+2. Reuse production **CPANEL_FTP_*** credentials, or create a dedicated FTP account scoped to `dev-jobs/`. Set `STG_CPANEL_FTP_SERVER_DIR=./` only for a dev-only FTP user.
 3. **Do not** set `server-dir` to `public_html/` when the FTP root is already the dev site folder (same rule as production `jobs/`).
 
 ### 2. Supabase (backend — when ready)
@@ -46,17 +46,22 @@ Staging lets testers and developers validate changes before production.
 
 ### 3. GitHub
 
-**Settings → Secrets and variables → Actions** — add staging secrets:
+**Settings → Secrets and variables → Actions**
+
+**Staging Supabase (required for build):**
 
 | Secret | Example |
 |--------|---------|
 | `STG_VITE_SUPABASE_URL` | `https://xxxx.supabase.co` (staging project) |
 | `STG_VITE_SUPABASE_ANON_KEY` | staging anon key |
-| `STG_VITE_SITE_URL` | `https://dev-jobs.sync.ngo` |
-| `STG_CPANEL_FTP_SERVER` | FTP host from cPanel |
-| `STG_CPANEL_FTP_USERNAME` | FTP user for dev-jobs site |
-| `STG_CPANEL_FTP_PASSWORD` | FTP password |
-| `STG_CPANEL_FTP_SERVER_DIR` | `./` when FTP root is the dev-jobs folder |
+| `STG_VITE_SITE_URL` | `https://dev-jobs.sync.ngo` (optional; defaulted in CI) |
+
+**cPanel FTP (same host as production):** reuse existing `CPANEL_FTP_SERVER`, `CPANEL_FTP_USERNAME`, and `CPANEL_FTP_PASSWORD`. You do **not** need duplicate `STG_CPANEL_FTP_*` secrets unless staging uses a different FTP account.
+
+| Secret | Staging value |
+|--------|----------------|
+| `CPANEL_FTP_*` | Same as production |
+| `STG_CPANEL_FTP_SERVER_DIR` | Optional. Default `../dev-jobs/` when production FTP root is `public_html/jobs/` (sibling folder). Use `./` if you create a dedicated FTP user scoped only to `dev-jobs`. |
 
 Optional: **Settings → Environments → staging** — add protection rules (required reviewers) so only leads can deploy.
 
