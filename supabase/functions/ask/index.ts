@@ -1,4 +1,9 @@
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
+import {
+  buildGuardedSystemPrompt,
+  evaluatePlatformAiInput,
+  platformAiGuardErrorMessage,
+} from "../_shared/aiGuardrails.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 import { generateStructuredObject } from "../_shared/llm.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
@@ -169,8 +174,10 @@ async function synthesizeAnswerWithLlm(
       },
       required: ["answer", "facts", "cited_chunk_ids"],
     },
-    systemPrompt:
+    systemPrompt: buildGuardedSystemPrompt(
       "Answer recruiter questions using only the provided candidate dossier facts and retrieved evidence chunks. Do not introduce unsupported claims. If the evidence is weak, say so plainly. Keep the answer concise and structured.",
+      "Ask",
+    ),
     userPrompt: JSON.stringify({
       question,
       intent,
@@ -211,6 +218,26 @@ Deno.serve(async (req) => {
 
     if (!question) {
       return jsonResponse(400, { error: "question is required" });
+    }
+
+    const guardResult = evaluatePlatformAiInput(question);
+    if (!guardResult.allowed) {
+      return jsonResponse(200, {
+        intent: inferIntent(question),
+        facts: [],
+        citations: [],
+        context_blocks: [],
+        extractive_answer: platformAiGuardErrorMessage(guardResult),
+        meta: {
+          candidate_count: 0,
+          top_k: body.top_k ?? 12,
+          answer_source: "guardrail",
+          guardrail_code: guardResult.code ?? null,
+          embedding_version: null,
+          scope_source: "blocked",
+          resolved_candidate_ids: [],
+        },
+      });
     }
 
     const intent = inferIntent(question);

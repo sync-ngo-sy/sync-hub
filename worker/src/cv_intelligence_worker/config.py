@@ -145,6 +145,7 @@ def _default_supabase_storage_limit_bytes() -> int:
 class WorkerConfig:
     source_dir: str = field(default_factory=lambda: _env_any("CV_SOURCE_DIR", "CVI_SOURCE_DIR", default="./cvs"))
     tenant_id: str = field(default_factory=lambda: _env_any("CV_WORKER_TENANT_ID", "CVI_TENANT_ID"))
+    api_key: str = field(default_factory=lambda: _env_any("WORKER_API_KEY", "API_KEY", default=""))
     uploaded_by: str = field(default_factory=lambda: _env_any("CV_WORKER_UPLOADED_BY", "CVI_UPLOADED_BY"))
     supabase_url: str = field(default_factory=lambda: _env_any("SUPABASE_URL"))
     supabase_anon_key: str = field(default_factory=lambda: _env_any("SUPABASE_ANON_KEY"))

@@ -693,3 +693,41 @@ class SupabaseClient:
             "artifact_version": artifact.artifact_version,
         }
         self.upsert("comparison_artifacts", [row], "artifact_key")
+
+    def queued_candidate_drafts(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
+        query_args = {
+            "select": "id,user_id,parsed_profile_json,user_overrides_json,cv_storage_path,cv_original_filename,cv_mime_type,cv_size_bytes,primary_specialization,parse_status,updated_at",
+            "order": "updated_at.asc",
+            "limit": str(max(1, limit)),
+        }
+        if retry_stale_minutes > 0:
+            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            query_args["or"] = f"(parse_status.eq.pending_validation,and(parse_status.eq.parsing,updated_at.lt.{stale_before}))"
+        else:
+            query_args["parse_status"] = "eq.pending_validation"
+        query = urllib.parse.urlencode(query_args)
+        result = self._request("GET", f"/rest/v1/candidate_registration_drafts?{query}")
+        return result if isinstance(result, list) else []
+
+    def update_candidate_draft(self, user_id: str, payload: dict[str, Any]) -> None:
+        query = urllib.parse.urlencode({"user_id": f"eq.{user_id}"})
+        self._request(
+            "PATCH",
+            f"/rest/v1/candidate_registration_drafts?{query}",
+            data=payload,
+            headers={"Prefer": "return=minimal"},
+        )
+
+    def update_candidate_by_registered_user(self, user_id: str, payload: dict[str, Any]) -> None:
+        """Patch the candidates row whose uploaded_by matches the registering user_id.
+
+        Called after a successful draft publish to stamp registered_user_id,
+        is_published, and published_at onto the row that the pipeline created.
+        """
+        query = urllib.parse.urlencode({"uploaded_by": f"eq.{user_id}"})
+        self._request(
+            "PATCH",
+            f"/rest/v1/candidates?{query}",
+            data=payload,
+            headers={"Prefer": "return=minimal"},
+        )
