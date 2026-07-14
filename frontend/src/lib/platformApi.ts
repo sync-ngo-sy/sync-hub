@@ -1159,7 +1159,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async startInsightReport(input, tenantIds) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.startInsightReport(input, tenantIds);
       }
       try {
@@ -1213,7 +1213,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async listInsightReportRuns(tenantIds, limit = 20) {
-      if (!supabase || !tenantIds?.length) {
+      if (!hasSupabaseConfig || !tenantIds?.length) {
         return mock.listInsightReportRuns(tenantIds, limit);
       }
       try {
@@ -1227,7 +1227,7 @@ function createRemoteApi(): PlatformApi {
       }
     },
     async getInsightReportRun(runId) {
-      if (!supabase) {
+      if (!hasSupabaseConfig) {
         return mock.getInsightReportRun(runId);
       }
       try {
