@@ -5,7 +5,7 @@ Staging lets testers and developers validate changes before production.
 | Plane | Production | Staging |
 |-------|------------|---------|
 | Git branch | `main` | `dev` |
-| Frontend URL | https://jobs.sync.ngo | https://jobs.dev.sync.ngo |
+| Frontend URL | https://jobs.sync.ngo | https://dev-jobs.sync.ngo |
 | cPanel path | `public_html/jobs/` | `public_html/dev-jobs/` (or subdomain docroot) |
 | Supabase | Production project | **Separate** project or branch (you create later) |
 | Edge Functions | Production deploy | Staging project deploy |
@@ -23,14 +23,14 @@ Staging lets testers and developers validate changes before production.
 |-------------|-----|
 | Different database | Staging Supabase project (or Supabase branch) with its own `STG_VITE_*` secrets |
 | Different edge functions | Deploy functions to the staging Supabase project only |
-| Different domain | https://jobs.dev.sync.ngo |
+| Different domain | https://dev-jobs.sync.ngo |
 | Not open to all users | Separate Supabase auth users; optional cPanel directory password; do not link staging from prod |
 
 ## One-time setup
 
 ### 1. cPanel (frontend)
 
-1. Create subdomain **`jobs.dev.sync.ngo`** (or addon domain) pointing to e.g. `public_html/dev-jobs/`.
+1. Create subdomain **`dev-jobs.sync.ngo`** pointing to e.g. `public_html/dev-jobs/`.
 2. Create an FTP account scoped to that folder (recommended), or reuse the main account with `STG_CPANEL_FTP_SERVER_DIR=public_html/dev-jobs/`.
 3. **Do not** set `server-dir` to `public_html/` when the FTP root is already the dev site folder (same rule as production `jobs/`).
 
@@ -40,8 +40,8 @@ Staging lets testers and developers validate changes before production.
 2. Apply migrations from `supabase/migrations/`.
 3. Deploy edge functions to staging only.
 4. In **Auth → URL configuration**:
-   - Site URL: `https://jobs.dev.sync.ngo`
-   - Redirect URLs: `https://jobs.dev.sync.ngo/**`
+   - Site URL: `https://dev-jobs.sync.ngo`
+   - Redirect URLs: `https://dev-jobs.sync.ngo/**`
 5. Create test accounts; do not copy production service-role keys to laptops.
 
 ### 3. GitHub
@@ -52,7 +52,7 @@ Staging lets testers and developers validate changes before production.
 |--------|---------|
 | `STG_VITE_SUPABASE_URL` | `https://xxxx.supabase.co` (staging project) |
 | `STG_VITE_SUPABASE_ANON_KEY` | staging anon key |
-| `STG_VITE_SITE_URL` | `https://jobs.dev.sync.ngo` |
+| `STG_VITE_SITE_URL` | `https://dev-jobs.sync.ngo` |
 | `STG_CPANEL_FTP_SERVER` | FTP host from cPanel |
 | `STG_CPANEL_FTP_USERNAME` | FTP user for dev-jobs site |
 | `STG_CPANEL_FTP_PASSWORD` | FTP password |
@@ -81,7 +81,7 @@ node scripts/build-cpanel-deploy.mjs
 
 ## Smoke test after deploy
 
-1. https://jobs.dev.sync.ngo loads.
+1. https://dev-jobs.sync.ngo loads.
 2. Browser network tab shows **staging** Supabase URL, not production.
 3. Sign-in works with a **staging** test account only.
 4. Production https://jobs.sync.ngo is unchanged.

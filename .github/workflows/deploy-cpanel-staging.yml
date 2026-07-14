@@ -1,4 +1,4 @@
-# Build the frontend and upload to cPanel staging (jobs.dev.sync.ngo).
+# Build the frontend and upload to cPanel staging (dev-jobs.sync.ngo).
 #
 # Trigger: push to `dev` (merge feature PRs into dev before main/prod).
 #
@@ -10,7 +10,7 @@
 #   STG_CPANEL_FTP_PASSWORD
 # Optional:
 #   STG_VITE_API_BASE_URL
-#   STG_VITE_SITE_URL          (default https://jobs.dev.sync.ngo)
+#   STG_VITE_SITE_URL          (default https://dev-jobs.sync.ngo)
 #   STG_CPANEL_FTP_SERVER_DIR  (default ./ — FTP login root for dev-jobs site)
 #
 # See docs/staging-environment.md
@@ -90,7 +90,7 @@ jobs:
 
       - name: Resolve staging VITE_SITE_URL
         if: env.VITE_SITE_URL == ''
-        run: echo "VITE_SITE_URL=https://jobs.dev.sync.ngo" >> "$GITHUB_ENV"
+        run: echo "VITE_SITE_URL=https://dev-jobs.sync.ngo" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v6
         with:

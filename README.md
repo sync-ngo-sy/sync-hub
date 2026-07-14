@@ -95,7 +95,7 @@ For worker configuration, ingestion commands, local AI setup, and tenant adminis
 * [System flows](SYSTEM_FLOWS.md)
 * [Infrastructure](infra/README.md)
 * [Deployment guide](DEPLOYMENT_GUIDE.md)
-* [Staging environment](docs/staging-environment.md) — `dev` branch → jobs.dev.sync.ngo
+* [Staging environment](docs/staging-environment.md) — `dev` branch → dev-jobs.sync.ngo
 * [Release process](docs/release-process.md)
 * [Development workflow](docs/development-workflow.md)
 * [Data retention](docs/data-retention.md)
