@@ -8,6 +8,7 @@ import {
   GitCompareArrows,
   LayoutDashboard,
   LineChart,
+  ListOrdered,
   RefreshCw,
   Search,
   Settings2,
@@ -33,6 +34,8 @@ import { ParsingDetailPage, ParsingLabPage } from "@/features/parsing";
 import { ParsingOverviewPage } from "@/screens/admin/ParsingOverviewPage";
 import { PlatformAdminDashboardPage } from "@/screens/admin/PlatformAdminDashboardPage";
 import { PlatformRuntimeSettingsPage } from "@/screens/admin/PlatformRuntimeSettingsPage";
+import { ProfileRankingPage } from "@/features/ranking/pages/ProfileRankingPage";
+import { RankingFormulaPage } from "@/features/ranking/pages/RankingFormulaPage";
 
 type RegisteredRoute = {
   path: string;
@@ -56,6 +59,8 @@ export const publicRoutes: RegisteredRoute[] = [
 export const protectedRoutes: RegisteredRoute[] = [
   { path: "search", element: <SearchDiscoveryPage />, title: "Search & Discovery", subtitle: "Hybrid retrieval over structured profiles and chunk-level evidence" },
   { path: "candidates", element: <CandidateListingPage />, title: "Candidates", subtitle: "Browse, filter, and group your talent pool without semantic ranking" },
+  { path: "ranking", element: <ProfileRankingPage />, title: "Profile Ranking", subtitle: "Rules-based ranking of profiles against role criteria, with explainable per-criterion scores" },
+  { path: "ranking/formula", element: <RankingFormulaPage />, title: "Ranking formula", subtitle: "Tune the scoring criteria, points, and caps used to rank profiles" },
   { path: "chat", element: <IntelligenceHubPage />, title: "General Agent", subtitle: "Grounded recruiter Q&A over corpus-derived or explicitly scoped candidate sets" },
   { path: "jobs", element: <JobPostingsPage />, title: "Job Postings", subtitle: "Internal roles, AI requirement extraction, persisted candidate matching runs, and named shortlists" },
   { path: "jobs/new", element: <JobPostingCreatePage />, title: "Job Postings", subtitle: "Internal roles, AI requirement extraction, persisted candidate matching runs, and named shortlists" },
@@ -92,6 +97,7 @@ export const protectedRoutes: RegisteredRoute[] = [
 export const workspaceNavigation: NavigationItem[] = [
   { to: "/search", label: "Search & Discovery", icon: Search, match: (path) => path === "/search" },
   { to: "/candidates", label: "Candidates", icon: Users, match: (path) => path === "/candidates" || path.startsWith("/candidates/") },
+  { to: "/ranking", label: "Profile Ranking", icon: ListOrdered, match: (path) => path === "/ranking" || path.startsWith("/ranking/") },
   { to: "/jobs", label: "Job Postings", icon: BriefcaseBusiness, match: (path) => path.startsWith("/jobs") },
   { to: "/insights", label: "Insights", icon: LineChart, match: (path) => path === "/insights" },
   { to: "/chat", label: "General Agent", icon: Bot, match: (path) => path === "/chat" },

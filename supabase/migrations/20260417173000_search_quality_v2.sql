@@ -86,7 +86,11 @@ $$;
 grant execute on function public.search_role_match_v1(text, text, text[], text, text) to authenticated;
 grant execute on function public.search_seniority_match_v1(text, text) to authenticated;
 
-create or replace view public.candidate_search_rows as
+-- CREATE OR REPLACE VIEW cannot reorder/insert columns; this revision inserts
+-- role_tags before skills, so drop and recreate (matches search_quality_fix.sql).
+drop view if exists public.candidate_search_rows;
+
+create view public.candidate_search_rows as
 select
   c.tenant_id,
   c.id as candidate_id,

@@ -18,8 +18,31 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-.form-select option {
-  color: var(--bg);
+/* Native select popups: render dark to match the theme instead of the
+   browser-default white panel. color-scheme makes the popup chrome dark;
+   the option rules keep every row readable. */
+select.form-input,
+select.form-select,
+.form-select {
+  color-scheme: dark;
+}
+
+.form-select option,
+.form-input option {
+  color: var(--text);
+  background-color: #2e2f30;
+  padding: 6px 10px;
+}
+
+.form-select option:checked,
+.form-input option:checked {
+  background-color: rgba(80, 193, 184, 0.3);
+  color: #ffffff;
+}
+
+.form-select option:disabled,
+.form-input option:disabled {
+  color: var(--text-muted);
 }
 
 .form-textarea {
@@ -155,6 +178,15 @@
 
 .picker-dropdown {
   position: relative;
+}
+
+/* Panels create their own stacking contexts (backdrop-filter), so a later
+   panel would paint over an open dropdown menu. Lift whichever panel
+   currently contains an open menu above its siblings. */
+.panel:has(.picker-dropdown__menu),
+.table-card:has(.picker-dropdown__menu) {
+  position: relative;
+  z-index: 60;
 }
 
 .picker-dropdown__trigger {

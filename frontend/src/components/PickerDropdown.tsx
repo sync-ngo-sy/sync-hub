@@ -14,6 +14,8 @@ type PickerDropdownProps = {
   onChange: (value: string) => void;
   placeholder: string;
   emptyLabel?: string;
+  /** When false, the clear/placeholder row is hidden — a value is required. */
+  allowEmpty?: boolean;
 };
 
 export function PickerDropdown({
@@ -22,6 +24,7 @@ export function PickerDropdown({
   onChange,
   placeholder,
   emptyLabel = "No values available",
+  allowEmpty = true,
 }: PickerDropdownProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -75,19 +78,21 @@ export function PickerDropdown({
           role="listbox"
           style={{ maxHeight: menuPlacement.maxHeight }}
         >
-          <button
-            type="button"
-            role="option"
-            aria-selected={!value}
-            className={cn("picker-dropdown__option", !value && "picker-dropdown__option--active")}
-            onClick={() => {
-              onChange("");
-              setOpen(false);
-            }}
-          >
-            <span>{placeholder}</span>
-            {!value ? <Check size={14} /> : null}
-          </button>
+          {allowEmpty ? (
+            <button
+              type="button"
+              role="option"
+              aria-selected={!value}
+              className={cn("picker-dropdown__option", !value && "picker-dropdown__option--active")}
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              <span>{placeholder}</span>
+              {!value ? <Check size={14} /> : null}
+            </button>
+          ) : null}
 
           {options.length ? (
             options.map((option) => {

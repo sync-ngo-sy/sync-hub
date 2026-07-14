@@ -1,0 +1,342 @@
+/* SCRUM-20 Profiles Ranking */
+
+.ranking-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.ranking-controls__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.ranking-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.ranking-control__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ranking-control--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding-bottom: 0.5rem;
+}
+
+.ranking-control--check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.ranking-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ranking-segmented button {
+  border: none;
+  background: transparent;
+  padding: 0.92rem 1.1rem;
+  font-size: 0.92rem;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ranking-segmented button.is-active {
+  background: var(--primary);
+  color: #08312e;
+  font-weight: 600;
+}
+
+.ranking-controls__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ranking-results {
+  padding: 0;
+}
+
+.ranking-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ranking-item {
+  border-bottom: 1px solid var(--border, #eef2f7);
+  padding: 14px 18px;
+}
+
+.ranking-item:last-child {
+  border-bottom: none;
+}
+
+.ranking-item__main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ranking-item__rank {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-muted, #6b7280);
+  min-width: 38px;
+}
+
+.ranking-item__identity {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ranking-item__name {
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  color: var(--text, #111827);
+}
+
+.ranking-item__name:hover {
+  text-decoration: underline;
+}
+
+.ranking-item__sub {
+  font-size: 13px;
+  color: var(--text-muted, #6b7280);
+}
+
+.ranking-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.ranking-item__score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ranking-item__score .score-pill {
+  align-items: center;
+}
+
+.ranking-item__score .score-pill span {
+  white-space: nowrap;
+  letter-spacing: 0.08em;
+}
+
+.ranking-item__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-muted, #6b7280);
+}
+
+.ranking-item__toggle--icon {
+  padding: 6px;
+  border-radius: 50%;
+}
+
+.ranking-item__toggle--icon:hover {
+  color: var(--primary, #50c1b8);
+  border-color: var(--primary, #50c1b8);
+}
+
+.ranking-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* Breakdown */
+.ranking-breakdown {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+}
+
+.ranking-breakdown__criterion {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.ranking-breakdown__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.ranking-breakdown__label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.ranking-breakdown__score {
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+
+.ranking-breakdown__rules {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ranking-rule {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  font-size: 12px;
+}
+
+.ranking-rule--muted {
+  opacity: 0.55;
+}
+
+.ranking-rule__value {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-muted, #6b7280);
+}
+
+.ranking-rule__evidence {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* Formula editor */
+.ranking-formula__totals {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ranking-formula__criterion {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.ranking-formula__criterion-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ranking-formula__criterion-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.ranking-formula__caps {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ranking-formula__caps label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  width: 110px;
+}
+
+.ranking-formula__rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ranking-formula__rule {
+  display: grid;
+  grid-template-columns: 1.4fr 1.6fr 1fr 80px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.button--icon {
+  padding: 8px;
+}
+
+.ranking-formula__actions {
+  display: flex;
+  gap: 12px;
+}
+
+.ranking-formula__syrian {
+  width: 100%;
+  font-family: inherit;
+  resize: vertical;
+}
+
+@media (max-width: 720px) {
+  .ranking-formula__rule {
+    grid-template-columns: 1fr;
+  }
+  .ranking-item__main {
+    flex-wrap: wrap;
+  }
+}
+
+.ranking-recompute-note {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.1rem;
+}

@@ -54,3 +54,4 @@ temp/
 
 tenants.csv
 tenants-ic.csv
+.env.remote

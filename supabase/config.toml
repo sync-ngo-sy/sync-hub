@@ -12,6 +12,11 @@ major_version = 17
 [auth]
 enabled = true
 
+# Analytics (Logflare) needs the Docker daemon exposed on tcp://localhost:2375 on
+# Windows, which is off by default. The app does not need analytics locally.
+[analytics]
+enabled = false
+
 [functions.search]
 verify_jwt = true
 
@@ -25,6 +30,9 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.compare]
+verify_jwt = true
+
+[functions.rank]
 verify_jwt = true
 
 [functions.ask]
