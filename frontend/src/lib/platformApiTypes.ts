@@ -27,6 +27,8 @@ import type {
   JobMatchingRunDetail,
   JobPosting,
   JobPostingInput,
+  JobPostingPerformance,
+  JobPostingPerformanceOptions,
   JobShortlist,
   JobShortlistDetail,
   JobShortlistInput,
@@ -109,8 +111,10 @@ export type PlatformApi = {
   saveJobShortlist: (input: JobShortlistInput) => Promise<JobShortlistDetail>;
   listJobApplications: (jobId: string) => Promise<JobApplication[]>;
   updateJobApplicationStatus: (applicationId: string, status: JobApplicationStatus) => Promise<JobApplication>;
+  getJobPostingPerformance: (options: JobPostingPerformanceOptions) => Promise<JobPostingPerformance>;
   listPublicJobPostings: () => Promise<PublicJobPosting[]>;
   getPublicJobPosting: (slug: string) => Promise<PublicJobPosting>;
+  recordPublicJobView: (slug: string, options?: { refToken?: string }) => Promise<{ recorded: boolean; deduplicated: boolean }>;
   submitPublicJobApplication: (slug: string, application: PublicJobApplicationInput) => Promise<PublicJobApplicationReceipt>;
   getParsingOverview: (tenantIds?: string[], options?: ParsingOverviewOptions) => Promise<ParsingOverview>;
   getParsingDocument: (documentId: string, tenantIds?: string[]) => Promise<ParsingDocumentDetail>;

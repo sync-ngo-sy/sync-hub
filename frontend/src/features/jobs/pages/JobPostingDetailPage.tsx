@@ -8,6 +8,7 @@ import { EmptyState, Panel, Tag } from "@/components/ui";
 import type { JobApplicationStatus, JobPosting } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { applicationStatusOptions } from "@/features/jobs/jobForm";
+import { JobPostingPerformancePanel } from "@/features/jobs/components/JobPostingPerformancePanel";
 import { formatDate, ingestionTone, locationLabel, publicJobHref, statusTone } from "@/features/jobs/jobPresentation";
 import { mockJobPosting } from "@/features/jobs/jobMocks";
 import bookmarkIcon from "@/assets/save.svg";
@@ -15,7 +16,7 @@ import openLinkIcon from "@/assets/open_link.svg";
 import findMatchesIcon from "@/assets/find_matches.svg";
 import editNoteIcon from "@/assets/edit_note.svg";
 
-type DetailTab = "runs" | "applicants" | "shortlists";
+type DetailTab = "runs" | "applicants" | "performance" | "shortlists";
 
 export function JobPostingDetailPage() {
   const { jobId } = useParams();
@@ -168,8 +169,14 @@ export function JobPostingDetailPage() {
 
         {/* Full Width Tab Navigation */}
         <div className="flex items-center gap-2 w-full">
-          {(["runs", "applicants", "shortlists"] as DetailTab[]).map((tab) => {
-            const label = tab === "runs" ? "Matching Runs" : tab === "applicants" ? "Applicants" : "Shortlists";
+          {(["runs", "applicants", "performance", "shortlists"] as DetailTab[]).map((tab) => {
+            const label = tab === "runs"
+              ? "Matching Runs"
+              : tab === "applicants"
+              ? "Applicants"
+              : tab === "performance"
+              ? "Performance"
+              : "Shortlists";
             return (
               <div
                 key={tab}
@@ -261,6 +268,8 @@ export function JobPostingDetailPage() {
             </div>
           </Panel>
         )}
+
+        {activeTab === "performance" && <JobPostingPerformancePanel job={job} />}
 
         {activeTab === "shortlists" && (
           <Panel className="!border-none relative overflow-hidden rounded-[var(--radius,22px)]">

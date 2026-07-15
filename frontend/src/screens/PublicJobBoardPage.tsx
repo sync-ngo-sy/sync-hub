@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, BriefcaseBusiness, CheckCircle2, Send } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, Panel, Tag } from "@/components/ui";
 import type { PublicJobApplicationInput, PublicJobPosting } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
@@ -102,6 +102,7 @@ export function PublicJobBoardPage() {
 
 export function PublicJobDetailPage() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const [jobState, setJobState] = useState<{ isLoading: boolean; job: PublicJobPosting | null; error: string | null }>({
     isLoading: true,
     job: null,
@@ -144,6 +145,8 @@ export function PublicJobDetailPage() {
       .then((job) => {
         if (active) {
           setJobState({ isLoading: false, job, error: null });
+          const refToken = searchParams.get("ref")?.trim() || undefined;
+          void platformApi.recordPublicJobView(slug, { refToken });
         }
       })
       .catch((error: unknown) => {
@@ -154,7 +157,7 @@ export function PublicJobDetailPage() {
     return () => {
       active = false;
     };
-  }, [slug]);
+  }, [searchParams, slug]);
 
   function update<K extends keyof PublicJobApplicationInput>(key: K, value: PublicJobApplicationInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));

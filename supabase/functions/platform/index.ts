@@ -4626,6 +4626,128 @@ async function updateJobApplicationStatus(
   return data;
 }
 
+function applicationSourceLabel(source: unknown, metadata: JsonRecord) {
+  const attribution = asRecord(metadata.sourceAttribution);
+  const categoryName = asString(attribution.categoryName);
+  const sourceDetail = asString(attribution.sourceDetail);
+  if (categoryName && sourceDetail) {
+    return `${categoryName} · ${sourceDetail}`;
+  }
+  if (categoryName) {
+    return categoryName;
+  }
+  const normalizedSource = asString(source);
+  if (normalizedSource && normalizedSource !== "public_job_board") {
+    return normalizedSource;
+  }
+  return "Direct / untracked";
+}
+
+function parsePerformanceDate(value: unknown, endOfDay = false) {
+  const text = asString(value);
+  if (!text) {
+    return null;
+  }
+  if (text.includes("T")) {
+    return text;
+  }
+  return endOfDay ? `${text}T23:59:59.999Z` : `${text}T00:00:00.000Z`;
+}
+
+function conversionRate(applications: number, views: number) {
+  if (views <= 0) {
+    return 0;
+  }
+  return Math.round((applications / views) * 10000) / 10000;
+}
+
+async function getJobPostingPerformance(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const jobId = asString(body.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const startDate = parsePerformanceDate(
+    body.start_date ?? body.startDate,
+    false,
+  );
+  const endDate = parsePerformanceDate(body.end_date ?? body.endDate, true);
+
+  let viewsQuery = supabase
+    .from("job_posting_detail_views")
+    .select("source_label")
+    .eq("job_posting_id", jobId);
+  let appsQuery = supabase
+    .from("job_applications")
+    .select("source, metadata_json")
+    .eq("job_posting_id", jobId)
+    .neq("status", "withdrawn");
+
+  if (startDate) {
+    viewsQuery = viewsQuery.gte("viewed_at", startDate);
+    appsQuery = appsQuery.gte("submitted_at", startDate);
+  }
+  if (endDate) {
+    viewsQuery = viewsQuery.lte("viewed_at", endDate);
+    appsQuery = appsQuery.lte("submitted_at", endDate);
+  }
+
+  const [viewsResult, appsResult] = await Promise.all([viewsQuery, appsQuery]);
+  if (viewsResult.error) {
+    throw viewsResult.error;
+  }
+  if (appsResult.error) {
+    throw appsResult.error;
+  }
+
+  const viewsBySource = new Map<string, number>();
+  for (const row of viewsResult.data ?? []) {
+    const label = asString(asRecord(row).source_label) ?? "Direct / untracked";
+    viewsBySource.set(label, (viewsBySource.get(label) ?? 0) + 1);
+  }
+
+  const appsBySource = new Map<string, number>();
+  for (const row of appsResult.data ?? []) {
+    const record = asRecord(row);
+    const label = applicationSourceLabel(
+      record.source,
+      asRecord(record.metadata_json),
+    );
+    appsBySource.set(label, (appsBySource.get(label) ?? 0) + 1);
+  }
+
+  const sourceLabels = new Set([
+    ...viewsBySource.keys(),
+    ...appsBySource.keys(),
+  ]);
+  const bySource = [...sourceLabels].sort((left, right) =>
+    left.localeCompare(right)
+  ).map((sourceLabel) => {
+    const views = viewsBySource.get(sourceLabel) ?? 0;
+    const applications = appsBySource.get(sourceLabel) ?? 0;
+    return {
+      source_label: sourceLabel,
+      views,
+      applications,
+      conversion_rate: conversionRate(applications, views),
+    };
+  });
+
+  const totalViews = (viewsResult.data ?? []).length;
+  const totalApplications = (appsResult.data ?? []).length;
+
+  return {
+    views: totalViews,
+    applications: totalApplications,
+    conversion_rate: conversionRate(totalApplications, totalViews),
+    by_source: bySource,
+    start_date: startDate,
+    end_date: endDate,
+  };
+}
+
 async function listJobShortlists(
   supabase: ReturnType<typeof createAuthedClient>,
   body: JsonRecord,
@@ -4941,6 +5063,8 @@ Deno.serve(async (req) => {
           200,
           await updateJobApplicationStatus(supabase, body),
         );
+      case "job_posting_performance":
+        return jsonResponse(200, await getJobPostingPerformance(supabase, body));
       case "job_shortlists":
         return jsonResponse(200, await listJobShortlists(supabase, body));
       case "job_shortlist":

@@ -34,3 +34,7 @@ export function publicJobHref(job: JobPosting) {
 export function locationLabel(job: JobPosting) {
   return [job.locationInfo.city, job.locationInfo.country || job.employerCountry].filter(Boolean).join(", ") || "Location not set";
 }
+
+export function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}

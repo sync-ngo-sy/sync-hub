@@ -10,6 +10,7 @@ const ALLOWED_RESUME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ]);
+const VIEW_DEDUP_HOURS = 24;
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body, null, 2), {
@@ -167,6 +168,89 @@ function safeFileName(value: string) {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "");
   return (normalized || "candidate-cv.pdf").slice(0, 160);
+}
+
+type ResolvedViewSource = {
+  sourceLabel: string;
+  applicationLinkId: string | null;
+};
+
+async function resolveViewSourceLabel(
+  supabase: ReturnType<typeof createServiceClient>,
+  refToken: string | null,
+  jobPostingId: string,
+): Promise<ResolvedViewSource> {
+  if (!refToken) {
+    return { sourceLabel: "Direct / untracked", applicationLinkId: null };
+  }
+  const { data, error } = await supabase
+    .from("job_application_links")
+    .select(
+      "id, source_detail, label, is_active, source_category:job_application_source_categories(name, is_active)",
+    )
+    .eq("token", refToken)
+    .eq("job_posting_id", jobPostingId)
+    .maybeSingle();
+  if (error || !data || data.is_active === false) {
+    return { sourceLabel: "Direct / untracked", applicationLinkId: null };
+  }
+  const category = asRecord(data.source_category);
+  if (category.is_active === false) {
+    return { sourceLabel: "Direct / untracked", applicationLinkId: null };
+  }
+  const categoryName = asString(category.name) ?? "Untracked";
+  const sourceDetail = asString(data.source_detail) ?? asString(data.label) ?? "";
+  return {
+    sourceLabel: sourceDetail ? `${categoryName} · ${sourceDetail}` : categoryName,
+    applicationLinkId: String(data.id),
+  };
+}
+
+async function recordJobDetailView(
+  supabase: ReturnType<typeof createServiceClient>,
+  jobRecord: JsonRecord,
+  req: Request,
+  refToken: string | null,
+) {
+  const viewerFingerprint = await sha256Hex(
+    `${req.headers.get("x-forwarded-for") ?? req.headers.get("cf-connecting-ip") ?? ""}|${
+      req.headers.get("user-agent") ?? ""
+    }`,
+  );
+  const dedupSince = new Date(Date.now() - VIEW_DEDUP_HOURS * 60 * 60 * 1000)
+    .toISOString();
+  const { data: recentView, error: recentError } = await supabase
+    .from("job_posting_detail_views")
+    .select("id")
+    .eq("job_posting_id", jobRecord.id)
+    .eq("viewer_fingerprint", viewerFingerprint)
+    .gte("viewed_at", dedupSince)
+    .limit(1)
+    .maybeSingle();
+  if (recentError) {
+    throw recentError;
+  }
+  if (recentView) {
+    return { recorded: false, deduplicated: true };
+  }
+  const source = await resolveViewSourceLabel(
+    supabase,
+    refToken,
+    String(jobRecord.id),
+  );
+  const { error: insertError } = await supabase
+    .from("job_posting_detail_views")
+    .insert({
+      tenant_id: jobRecord.tenant_id,
+      job_posting_id: jobRecord.id,
+      source_label: source.sourceLabel,
+      application_link_id: source.applicationLinkId,
+      viewer_fingerprint: viewerFingerprint,
+    });
+  if (insertError) {
+    throw insertError;
+  }
+  return { recorded: true, deduplicated: false };
 }
 
 function contentTypeForFile(fileName: string, contentType: string | null) {
@@ -474,6 +558,16 @@ Deno.serve(async (req) => {
 
     if (action === "detail") {
       return jsonResponse(200, { job: publicJob(asRecord(job)) });
+    }
+
+    if (action === "record_view") {
+      const viewResult = await recordJobDetailView(
+        supabase,
+        asRecord(job),
+        req,
+        asString(body.ref_token ?? body.refToken),
+      );
+      return jsonResponse(200, { view: viewResult });
     }
 
     if (action === "apply") {

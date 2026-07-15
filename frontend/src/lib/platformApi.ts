@@ -70,6 +70,7 @@ import {
   mapRemoteJobMatchingRun,
   mapRemoteJobMatchingRunDetail,
   mapRemoteJobPosting,
+  mapRemoteJobPostingPerformance,
   mapRemoteJobShortlist,
   mapRemoteJobShortlistDetail,
   mapRemotePublicJob,
@@ -990,6 +991,17 @@ function createRemoteApi(): PlatformApi {
       );
       return mapRemoteJobApplication(row);
     },
+    async getJobPostingPerformance(options) {
+      if (!hasSupabaseConfig) {
+        return mock.getJobPostingPerformance(options);
+      }
+      const payload = await invokePlatform<unknown>("job_posting_performance", {
+        job_id: options.jobId,
+        start_date: options.startDate ?? null,
+        end_date: options.endDate ?? null,
+      });
+      return mapRemoteJobPostingPerformance(payload);
+    },
     async listPublicJobPostings() {
       if (!hasSupabaseConfig) {
         return mock.listPublicJobPostings();
@@ -1016,6 +1028,25 @@ function createRemoteApi(): PlatformApi {
         { requireSession: false },
       );
       return mapRemotePublicJob(asRecord(payload.job));
+    },
+    async recordPublicJobView(slug, options) {
+      if (!hasSupabaseConfig) {
+        return mock.recordPublicJobView(slug, options);
+      }
+      const payload = await invokeFunction<JsonRecord>(
+        "public-jobs",
+        {
+          action: "record_view",
+          slug,
+          ref_token: options?.refToken ?? null,
+        },
+        { requireSession: false },
+      );
+      const view = asRecord(payload.view);
+      return {
+        recorded: view.recorded === true,
+        deduplicated: view.deduplicated === true,
+      };
     },
     async submitPublicJobApplication(slug, application) {
       if (!hasSupabaseConfig) {

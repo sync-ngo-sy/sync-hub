@@ -8,6 +8,8 @@ import type {
   JobMatchingRunDetail,
   JobPosting,
   JobPostingInput,
+  JobPostingPerformance,
+  JobPostingPerformanceOptions,
   JobPostingStatus,
   JobShortlist,
   JobShortlistCandidate,
@@ -339,5 +341,25 @@ export function mapPublicReceipt(payload: unknown): PublicJobApplicationReceipt 
     duplicate: Boolean(receipt.duplicate),
     applicationId: nullableString(receipt.applicationId ?? receipt.application_id) ?? undefined,
     submittedAt: nullableString(receipt.submittedAt ?? receipt.submitted_at) ?? undefined,
+  };
+}
+
+export function mapRemoteJobPostingPerformance(payload: unknown): JobPostingPerformance {
+  const record = asRecord(payload);
+  return {
+    views: toNumber(record.views, 0),
+    applications: toNumber(record.applications, 0),
+    conversionRate: toNumber(record.conversion_rate ?? record.conversionRate, 0),
+    bySource: asArray(record.by_source ?? record.bySource).map((row) => {
+      const source = asRecord(row);
+      return {
+        sourceLabel: String(source.source_label ?? source.sourceLabel ?? "Direct / untracked"),
+        views: toNumber(source.views, 0),
+        applications: toNumber(source.applications, 0),
+        conversionRate: toNumber(source.conversion_rate ?? source.conversionRate, 0),
+      };
+    }),
+    startDate: nullableString(record.start_date ?? record.startDate),
+    endDate: nullableString(record.end_date ?? record.endDate),
   };
 }

@@ -7,6 +7,7 @@ import type {
   CandidateShortlistItem,
   JobApplication,
   JobPosting,
+  JobPostingPerformanceOptions,
 } from "@/lib/contracts";
 import {
   accessRoster,
@@ -44,6 +45,60 @@ const mockShortlistItems = new Map<string, CandidateShortlistItem>();
 const mockJobPostings = new Map<string, JobPosting>();
 const mockJobApplications = new Map<string, JobApplication>();
 const mockInsightReportRuns = new Map<string, InsightReportRunDetail>();
+
+type MockJobDetailView = {
+  jobPostingId: string;
+  sourceLabel: string;
+  viewedAt: string;
+  viewerFingerprint: string;
+};
+
+const mockJobDetailViews: MockJobDetailView[] = [];
+const MOCK_VIEW_DEDUP_MS = 24 * 60 * 60 * 1000;
+let lastMockViewKey: string | null = null;
+let lastMockViewAt = 0;
+
+function mockApplicationSourceLabel(source: string, metadata: Record<string, unknown>) {
+  const attribution = metadata.sourceAttribution;
+  if (attribution && typeof attribution === "object" && !Array.isArray(attribution)) {
+    const record = attribution as Record<string, unknown>;
+    const categoryName = typeof record.categoryName === "string" ? record.categoryName : "";
+    const sourceDetail = typeof record.sourceDetail === "string" ? record.sourceDetail : "";
+    if (categoryName && sourceDetail) {
+      return `${categoryName} · ${sourceDetail}`;
+    }
+    if (categoryName) {
+      return categoryName;
+    }
+  }
+  if (source && source !== "public_job_board") {
+    return source;
+  }
+  return "Direct / untracked";
+}
+
+function mockConversionRate(applications: number, views: number) {
+  if (views <= 0) {
+    return 0;
+  }
+  return Math.round((applications / views) * 10000) / 10000;
+}
+
+function mockInDateRange(iso: string, startDate?: string, endDate?: string) {
+  const timestamp = new Date(iso).getTime();
+  if (startDate && timestamp < new Date(`${startDate}T00:00:00.000Z`).getTime()) {
+    return false;
+  }
+  if (endDate && timestamp > new Date(`${endDate}T23:59:59.999Z`).getTime()) {
+    return false;
+  }
+  return true;
+}
+
+function resolveMockJobPostingId(slug: string) {
+  const posting = Array.from(mockJobPostings.values()).find((job) => job.publicSlug === slug);
+  return posting?.id ?? slug;
+}
 
 async function createMockInsightReportRun(
   input: InsightReportInput,
@@ -547,6 +602,49 @@ export function createMockApi(): PlatformApi {
       mockJobApplications.set(applicationId, updated);
       return updated;
     },
+    async getJobPostingPerformance(options: JobPostingPerformanceOptions) {
+      const views = mockJobDetailViews.filter((view) =>
+        view.jobPostingId === options.jobId
+        && mockInDateRange(view.viewedAt, options.startDate, options.endDate),
+      );
+      const applications = Array.from(mockJobApplications.values()).filter((application) =>
+        application.jobPostingId === options.jobId
+        && application.status !== "withdrawn"
+        && mockInDateRange(application.submittedAt, options.startDate, options.endDate),
+      );
+
+      const viewsBySource = new Map<string, number>();
+      for (const view of views) {
+        viewsBySource.set(view.sourceLabel, (viewsBySource.get(view.sourceLabel) ?? 0) + 1);
+      }
+
+      const appsBySource = new Map<string, number>();
+      for (const application of applications) {
+        const label = mockApplicationSourceLabel(application.source, application.metadata);
+        appsBySource.set(label, (appsBySource.get(label) ?? 0) + 1);
+      }
+
+      const sourceLabels = new Set([...viewsBySource.keys(), ...appsBySource.keys()]);
+      const bySource = [...sourceLabels].sort((left, right) => left.localeCompare(right)).map((sourceLabel) => {
+        const sourceViews = viewsBySource.get(sourceLabel) ?? 0;
+        const sourceApplications = appsBySource.get(sourceLabel) ?? 0;
+        return {
+          sourceLabel,
+          views: sourceViews,
+          applications: sourceApplications,
+          conversionRate: mockConversionRate(sourceApplications, sourceViews),
+        };
+      });
+
+      return {
+        views: views.length,
+        applications: applications.length,
+        conversionRate: mockConversionRate(applications.length, views.length),
+        bySource,
+        startDate: options.startDate ?? null,
+        endDate: options.endDate ?? null,
+      };
+    },
     async listPublicJobPostings() {
       return Array.from(mockJobPostings.values()).filter((job) => job.status === "active" && job.isPublic).map((job) => ({
         id: job.publicSlug ?? job.id,
@@ -572,6 +670,24 @@ export function createMockApi(): PlatformApi {
         throw new Error("Public job was not found.");
       }
       return job;
+    },
+    async recordPublicJobView(slug, options) {
+      await this.getPublicJobPosting(slug);
+      const jobPostingId = resolveMockJobPostingId(slug);
+      const dedupeKey = `${jobPostingId}:${options?.refToken ?? "direct"}`;
+      const now = Date.now();
+      if (lastMockViewKey === dedupeKey && now - lastMockViewAt < MOCK_VIEW_DEDUP_MS) {
+        return { recorded: false, deduplicated: true };
+      }
+      mockJobDetailViews.push({
+        jobPostingId,
+        sourceLabel: "Direct / untracked",
+        viewedAt: new Date().toISOString(),
+        viewerFingerprint: "mock-viewer",
+      });
+      lastMockViewKey = dedupeKey;
+      lastMockViewAt = now;
+      return { recorded: true, deduplicated: false };
     },
     async submitPublicJobApplication(slug, application) {
       const publicJob = await this.getPublicJobPosting(slug);

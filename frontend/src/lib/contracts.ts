@@ -481,6 +481,28 @@ export type PublicJobApplicationReceipt = {
   submittedAt?: string;
 };
 
+export type JobPostingPerformanceSourceMetric = {
+  sourceLabel: string;
+  views: number;
+  applications: number;
+  conversionRate: number;
+};
+
+export type JobPostingPerformance = {
+  views: number;
+  applications: number;
+  conversionRate: number;
+  bySource: JobPostingPerformanceSourceMetric[];
+  startDate: string | null;
+  endDate: string | null;
+};
+
+export type JobPostingPerformanceOptions = {
+  jobId: string;
+  startDate?: string;
+  endDate?: string;
+};
+
 export type JobShortlistInput = {
   jobId: string;
   runId?: string | null;
