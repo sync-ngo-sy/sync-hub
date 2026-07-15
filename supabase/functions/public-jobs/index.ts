@@ -566,7 +566,8 @@ Deno.serve(async (req) => {
       const sourceAttribution = resolvedLink
         ? buildSourceAttribution(resolvedLink)
         : null;
-      const applicationSource = resolvedLink?.categoryName ?? "public_job_board";
+      const applicationSource = resolvedLink?.categoryName ??
+        "public_job_board";
       const { data: existingApplication, error: existingError } = await supabase
         .from("job_applications")
         .select("id, submitted_at")
@@ -738,9 +739,7 @@ Deno.serve(async (req) => {
           consent_given: true,
           source: applicationSource,
           application_link_id: resolvedLink?.id ?? null,
-          metadata_json: sourceAttribution
-            ? { sourceAttribution }
-            : {},
+          metadata_json: sourceAttribution ? { sourceAttribution } : {},
           idempotency_key: application.idempotencyKey,
           ip_hash: ipHash,
           user_agent_hash: userAgentHash,
