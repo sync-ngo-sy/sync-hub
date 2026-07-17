@@ -313,6 +313,7 @@ Deno.serve(async (req) => {
               });
             }
           } catch {
+            // Ignore JSON parse errors and fall back to throwing the original error
           }
           throw error;
         }

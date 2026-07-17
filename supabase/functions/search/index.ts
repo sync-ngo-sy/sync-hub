@@ -2,20 +2,18 @@ import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { evaluatePlatformAiInput } from "../_shared/aiGuardrails.ts";
 import { createAuthedClient } from "../_shared/client.ts";
 import { buildQueryEmbedding } from "../_shared/queryEmbedding.ts";
-import { createTraceId, withTraceHeader } from "../_shared/ops";
+import { createTraceId, withTraceHeader } from "../_shared/ops.ts";
 import {
   excludeCompanyMatches,
   hasExcludedCompanyMatch,
   resolveSearchFilters,
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
-} from "../_shared/searchIntent";
+} from "../_shared/searchIntent.ts";
 import {
-  asString,
   asStringArray,
   describeError,
-  type JsonRecord,
-} from "../_shared/utils";
+} from "../_shared/utils.ts";
 import {
   attachMatchRates,
   extractIntentWithLlm,
@@ -23,7 +21,7 @@ import {
   fetchSearchIntentFacets,
   normalizeExplicitFilters,
   runFastProfileSearch,
-} from "../_shared/searchScoring";
+} from "../_shared/searchScoring.ts";
 import { createResponder } from "./telemetry.ts";
 import { buildRpcPayload } from "./helpers.ts";
 
@@ -97,14 +95,14 @@ Deno.serve(async (req) => {
         provider: "disabled",
       })
       : Array.isArray(body.query_embedding)
-      ? Promise.resolve({
-        embedding: body.query_embedding,
-        embeddingVersion: typeof body.embedding_version === "string"
-          ? body.embedding_version
-          : null,
-        provider: "client",
-      })
-      : buildQueryEmbedding(query);
+        ? Promise.resolve({
+          embedding: body.query_embedding,
+          embeddingVersion: typeof body.embedding_version === "string"
+            ? body.embedding_version
+            : null,
+          provider: "client",
+        })
+        : buildQueryEmbedding(query);
 
     let llmIntent: SearchIntentPayload | null = null;
     let intentFacets: SearchIntentFacetOptions;
