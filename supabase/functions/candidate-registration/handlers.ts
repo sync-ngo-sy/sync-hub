@@ -1,6 +1,6 @@
 import { corsHeaders, fastApiProxyTimeoutMs } from "./constants.ts";
 import { detectAllowedMimeType } from "./helpers.ts";
-import type { User, SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 export async function handleUploadCv(
   req: Request,
