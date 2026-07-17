@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+
 from .config import WorkerConfig
 from .gcs_storage import GcsJsonClient
 from .manatal import ManatalCandidate, ManatalClient
 from .supabase import SupabaseClient
+from .utils import format_error_message
 
 
 @dataclass(frozen=True)
@@ -177,7 +179,7 @@ class ManatalOriginalsBackfill:
                         uploaded += 1
                 except Exception as exc:  # noqa: BLE001
                     failed += 1
-                    failures.append({"source_document_id": source_id, "manatal_candidate_id": manatal_id, "error": str(exc)})
+                    failures.append({"source_document_id": source_id, "manatal_candidate_id": manatal_id, "error": format_error_message(exc)})
                     emit(f"error source={source_id} manatal={manatal_id}: {exc}")
 
             if limit and processed >= limit:

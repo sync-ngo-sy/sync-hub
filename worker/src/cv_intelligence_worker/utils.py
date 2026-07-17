@@ -114,3 +114,8 @@ def dedupe_keep_order(values: Iterable[object]) -> list[str]:
         seen.add(lowered)
         items.append(value)
     return items
+
+
+def format_error_message(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+

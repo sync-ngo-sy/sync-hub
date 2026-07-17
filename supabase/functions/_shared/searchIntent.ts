@@ -282,14 +282,12 @@ export function buildSearchIntentConfig(
         skills: {
           type: "array",
           items: { type: "string" },
-          uniqueItems: true,
           description:
             "Explicitly requested skills only. Normalize aliases and dedupe.",
         },
         companies: {
           type: "array",
           items: { type: "string" },
-          uniqueItems: true,
           description:
             "Explicitly requested past/current employer, client, or company filters only. Preserve canonical company spelling when possible.",
         },

@@ -33,6 +33,9 @@ def slugify(value: str) -> str:
 def compact_json(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True)
 
+def format_error_message(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
 
 class SupabaseAdminError(RuntimeError):
     pass
@@ -829,7 +832,7 @@ def bulk_create_from_csv_with_paths(
                     "row": index,
                     "email": row.get("email", ""),
                     "tenant_name": row.get("tenant_name", ""),
-                    "error": str(exc),
+                    "error": format_error_message(exc),
                 }
             )
 
@@ -877,7 +880,7 @@ def bulk_add_users_to_tenant_from_csv(
                 {
                     "row": index,
                     "email": row.get("email", ""),
-                    "error": str(exc),
+                    "error": format_error_message(exc),
                 }
             )
 
@@ -1175,5 +1178,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except SupabaseAdminError as exc:
-        print(str(exc), file=sys.stderr)
+        print(format_error_message(exc), file=sys.stderr)
         raise SystemExit(2) from exc

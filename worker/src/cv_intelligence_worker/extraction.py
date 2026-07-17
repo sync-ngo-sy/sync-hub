@@ -32,7 +32,7 @@ from .extraction_constants import (
 from .normalization import normalize_location, normalize_profile
 from .normalization_constants import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
 from .schema import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
-from .utils import compact_whitespace, dedupe_keep_order, normalize_email, stable_uuid, urlopen
+from .utils import compact_whitespace, dedupe_keep_order, format_error_message, normalize_email, stable_uuid, urlopen
 
 
 def _split_lines(text: str) -> list[str]:
@@ -992,7 +992,7 @@ def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig
                 "job_family_rules_baseline": profile.metadata.get("job_family"),
                 "job_family_rules_confidence": profile.metadata.get("job_family_confidence"),
                 "job_family_llm_status": "failed",
-                "job_family_llm_error": str(exc)[:300],
+                "job_family_llm_error": format_error_message(exc)[:300],
             },
         )
 
