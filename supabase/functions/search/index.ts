@@ -10,10 +10,7 @@ import {
   type SearchIntentFacetOptions,
   type SearchIntentPayload,
 } from "../_shared/searchIntent.ts";
-import {
-  asStringArray,
-  describeError,
-} from "../_shared/utils.ts";
+import { asStringArray, describeError } from "../_shared/utils.ts";
 import {
   attachMatchRates,
   extractIntentWithLlm,
