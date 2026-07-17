@@ -112,7 +112,9 @@ export async function fetchTenantCompanyExclusionTerms(
     .in("id", tenantIds);
   if (error) throw error;
   return buildCompanyExclusionTerms(
-    (data ?? []).flatMap((tenant: { slug: string; name: string }) => [tenant.slug, tenant.name])
+    (data ?? []).flatMap((
+      tenant: { slug: string; name: string },
+    ) => [tenant.slug, tenant.name]),
   );
 }
 

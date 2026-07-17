@@ -116,7 +116,9 @@ export async function getSearchFilterOptions(
     throw tenantResult.error;
   }
   const excludedCompanyTerms = buildCompanyExclusionTerms(
-    (tenantResult.data ?? []).flatMap((tenant: { slug?: string; name?: string }) => [
+    (tenantResult.data ?? []).flatMap((
+      tenant: { slug?: string; name?: string },
+    ) => [
       String(tenant.slug ?? ""),
       String(tenant.name ?? ""),
     ]),
@@ -134,17 +136,23 @@ export async function getSearchFilterOptions(
         .filter((value: string) => value && value !== "unclassified"),
     ),
     skills: dedupeSorted(
-      normalizeSkillList(rows.flatMap((row: { skills?: string[] | null }) => row.skills ?? [])),
+      normalizeSkillList(
+        rows.flatMap((row: { skills?: string[] | null }) => row.skills ?? []),
+      ),
     ),
     companies: dedupeSorted(
       excludeCompanyMatches(
-        rows.flatMap((row: { companies?: string[] | null }) => row.companies ?? []),
+        rows.flatMap((row: { companies?: string[] | null }) =>
+          row.companies ?? []
+        ),
         excludedCompanyTerms,
       ),
     ),
     locations: dedupeSorted(
       rows
-        .map((row: { location?: string | null }) => normalizeLocationValue(row.location))
+        .map((row: { location?: string | null }) =>
+          normalizeLocationValue(row.location)
+        )
         .filter((value: string | undefined): value is string => Boolean(value)),
     ),
   };
