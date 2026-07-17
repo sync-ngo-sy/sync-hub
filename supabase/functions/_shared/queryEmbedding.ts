@@ -1,27 +1,9 @@
 import {
   buildDeterministicQueryEmbedding,
   DETERMINISTIC_EMBEDDING_VERSION,
-} from "./deterministicEmbedding.ts";
+} from "./deterministicEmbedding";
 import { getRuntimeSetting } from "./platformRuntimeSettings.ts";
-
-function envText(name: string) {
-  const value = Deno.env.get(name)?.trim();
-  return value && value.length > 0 ? value : null;
-}
-
-function isLocalRuntime() {
-  const supabaseUrl = envText("SUPABASE_URL") ?? "";
-  return supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
-}
-
-function envNumber(name: string, fallback: number) {
-  const value = envText(name);
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+import { envNumber, envText, isLocalRuntime } from "./utils.ts";
 
 function normalizeGeminiModelName(model: string) {
   return model.startsWith("models/") ? model : `models/${model}`;
