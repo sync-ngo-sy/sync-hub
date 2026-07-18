@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -11,6 +11,14 @@ from .normalization_constants import JOB_FAMILY_LABELS
 
 class LLMOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+EmbeddingValue = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+
+
+class EmbeddingVector(LLMOutput):
+    index: Annotated[int, Field(ge=0)] | None
+    embedding: list[EmbeddingValue] = Field(min_length=1)
 
 
 class ExtractedExperience(LLMOutput):

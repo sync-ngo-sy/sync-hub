@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.llm import LLMClient, LLMResponseError
-from cv_intelligence_worker.llm_models import CandidateExtraction, DraftValidationExtraction
+from cv_intelligence_worker.llm_models import CandidateExtraction, DraftValidationExtraction, EmbeddingVector
 
 
 def candidate_extraction(**overrides: object) -> CandidateExtraction:
@@ -46,6 +46,13 @@ def test_draft_validation_rejects_coerced_and_malformed_fields() -> None:
 def test_draft_validation_requires_rejection_reason() -> None:
     with pytest.raises(ValidationError, match="requires a reason"):
         DraftValidationExtraction(is_valid=False, reason="  ")
+
+
+def test_embedding_vector_rejects_coerced_and_non_finite_values() -> None:
+    with pytest.raises(ValidationError):
+        EmbeddingVector.model_validate({"index": 0, "embedding": ["0.5"]})
+    with pytest.raises(ValidationError):
+        EmbeddingVector.model_validate({"index": 0, "embedding": [float("nan")]})
 
 
 def test_client_configures_sdk_retries_timeout_and_provider_url() -> None:
@@ -140,3 +147,109 @@ def test_client_rejects_empty_completion() -> None:
             prompt={"cv": "Jane Doe"},
             response_model=CandidateExtraction,
         )
+
+
+def test_client_validates_and_orders_embeddings() -> None:
+    sdk_client = MagicMock()
+    sdk_client.embeddings.create.return_value = SimpleNamespace(
+        data=[
+            SimpleNamespace(index=1, embedding=[0.3, 0.4]),
+            SimpleNamespace(index=0, embedding=[0.1, 0.2]),
+        ]
+    )
+
+    result = LLMClient(WorkerConfig(), client=sdk_client).embed(
+        model="embedding-model",
+        inputs=["first", "second"],
+        dimensions=2,
+        expected_dimension=2,
+    )
+
+    assert result == [[0.1, 0.2], [0.3, 0.4]]
+    sdk_client.embeddings.create.assert_called_once_with(
+        model="embedding-model",
+        input=["first", "second"],
+        dimensions=2,
+    )
+
+
+def test_client_accepts_fully_indexless_compatible_embeddings() -> None:
+    sdk_client = MagicMock()
+    sdk_client.embeddings.create.return_value = SimpleNamespace(
+        data=[
+            SimpleNamespace(index=None, embedding=[0.1, 0.2]),
+            SimpleNamespace(index=None, embedding=[0.3, 0.4]),
+        ]
+    )
+
+    result = LLMClient(WorkerConfig(), client=sdk_client).embed(
+        model="embedding-model",
+        inputs=["first", "second"],
+        expected_dimension=2,
+    )
+
+    assert result == [[0.1, 0.2], [0.3, 0.4]]
+
+
+def test_client_does_not_expose_invalid_embedding_output() -> None:
+    sdk_client = MagicMock()
+    with pytest.raises(ValidationError) as validation:
+        EmbeddingVector.model_validate({"index": 0, "embedding": ["private CV content"]})
+    sdk_client.embeddings.create.side_effect = validation.value
+
+    with pytest.raises(LLMResponseError) as error:
+        LLMClient(WorkerConfig(), client=sdk_client).embed(
+            model="embedding-model",
+            inputs=["private CV content"],
+        )
+
+    assert str(error.value) == "embedding response failed validation"
+    assert error.value.__cause__ is validation.value
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ([SimpleNamespace(index=0, embedding=[0.1, 0.2])], "count mismatch"),
+        (
+            [
+                SimpleNamespace(index=0, embedding=[0.1, 0.2]),
+                SimpleNamespace(index=0, embedding=[0.3, 0.4]),
+            ],
+            "indices are invalid",
+        ),
+        (
+            [
+                SimpleNamespace(index=None, embedding=[0.1, 0.2]),
+                SimpleNamespace(index=1, embedding=[0.3, 0.4]),
+            ],
+            "indices are invalid",
+        ),
+        (
+            [
+                SimpleNamespace(index=0, embedding=[0.1]),
+                SimpleNamespace(index=1, embedding=[0.3, 0.4]),
+            ],
+            "dimension mismatch",
+        ),
+        (
+            [
+                SimpleNamespace(index=0, embedding=["private CV content", 0.2]),
+                SimpleNamespace(index=1, embedding=[0.3, 0.4]),
+            ],
+            "failed validation",
+        ),
+    ],
+)
+def test_client_rejects_invalid_embedding_responses(data: list[object], message: str) -> None:
+    sdk_client = MagicMock()
+    sdk_client.embeddings.create.return_value = SimpleNamespace(data=data)
+
+    with pytest.raises(LLMResponseError, match=message) as error:
+        LLMClient(WorkerConfig(), client=sdk_client).embed(
+            model="embedding-model",
+            inputs=["first", "second"],
+            expected_dimension=2,
+        )
+
+    assert "private CV content" not in str(error.value)
