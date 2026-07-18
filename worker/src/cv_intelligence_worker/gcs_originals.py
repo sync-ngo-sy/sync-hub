@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from .config import WorkerConfig
 from .gcs_storage import GcsJsonClient
-from .manatal import ManatalCandidate, ManatalClient
+from .integrations.manatal import ManatalCandidate, ManatalClient
 from .supabase import SupabaseClient
 from .utils import format_error_message
 

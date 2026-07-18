@@ -2,7 +2,8 @@ import httpx
 import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.manatal import ManatalClient, _extract_url_from_payload, _redact_url_for_error
+from cv_intelligence_worker.integrations.manatal import ManatalClient
+from cv_intelligence_worker.integrations.manatal.client import _extract_url_from_payload, _redact_url_for_error
 
 
 def _config() -> WorkerConfig:
