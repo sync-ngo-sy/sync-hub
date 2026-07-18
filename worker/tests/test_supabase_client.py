@@ -61,6 +61,28 @@ class RequestRecordingSupabaseClient(SupabaseClient):
 
 
 class SupabaseClientTests(unittest.TestCase):
+    def test_service_role_jwt_is_used_for_api_key_and_bearer_auth(self) -> None:
+        config = WorkerConfig(
+            supabase_url="https://example.supabase.co",
+            supabase_service_key="header.payload.signature",
+        )
+
+        headers = SupabaseClient(config)._headers()
+
+        self.assertEqual("header.payload.signature", headers["apikey"])
+        self.assertEqual("Bearer header.payload.signature", headers["Authorization"])
+
+    def test_non_jwt_secret_key_is_not_used_as_bearer_auth(self) -> None:
+        config = WorkerConfig(
+            supabase_url="https://example.supabase.co",
+            supabase_service_key="sb_secret_example",
+        )
+
+        headers = SupabaseClient(config)._headers()
+
+        self.assertEqual("sb_secret_example", headers["apikey"])
+        self.assertNotIn("Authorization", headers)
+
     def test_stable_document_id_depends_on_tenant_path_and_content_hash(self) -> None:
         first = stable_document_id("tenant-1", "/tmp/first.pdf", "sha-1")
         second = stable_document_id("tenant-1", "/tmp/second.pdf", "sha-1")

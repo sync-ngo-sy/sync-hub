@@ -49,7 +49,7 @@ def test_detect_allowed_mime_type_matches_magic_bytes():
     assert _detect_allowed_mime_type(b"not a document") is None
 
 
-@patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+@patch("cv_intelligence_worker.realtime_extractor.SupabaseClient")
 def test_sync_to_supabase_background_success(mock_supabase_client_class):
     """Test successful DB sync, extracting field_confidence and setting completed status."""
     mock_instance = MagicMock()
@@ -66,11 +66,12 @@ def test_sync_to_supabase_background_success(mock_supabase_client_class):
     )
 
     # Check if client was instantiated with correct credentials
-    mock_supabase_client_class.assert_called_once_with("http://mock.supabase.co", "mock_key")
+    mock_supabase_client_class.assert_called_once_with(config)
 
     # Verify the upsert call payload
-    mock_instance.upsert_rows.assert_called_once()
-    table_name, rows = mock_instance.upsert_rows.call_args[0]
+    mock_instance.upsert.assert_called_once()
+    table_name, rows = mock_instance.upsert.call_args[0]
+    assert mock_instance.upsert.call_args.kwargs == {"on_conflict": "user_id"}
 
     assert table_name == "candidate_registration_drafts"
     assert len(rows) == 1
@@ -102,7 +103,7 @@ def test_sync_to_supabase_background_missing_config(mock_logger):
     mock_logger.info.assert_called_with("[DB SYNC] No Supabase credentials, skipping sync")
 
 
-@patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+@patch("cv_intelligence_worker.realtime_extractor.SupabaseClient")
 @patch("cv_intelligence_worker.realtime_extractor.logger")
 def test_mark_extraction_failed_uses_safe_error(mock_logger, mock_supabase_client_class):
     mock_instance = MagicMock()
@@ -113,7 +114,7 @@ def test_mark_extraction_failed_uses_safe_error(mock_logger, mock_supabase_clien
     mark_extraction_failed("user_123", "structured model response failed validation", config)
 
     mock_logger.error.assert_not_called()
-    fail_row = mock_instance.upsert_rows.call_args[0][1][0]
+    fail_row = mock_instance.upsert.call_args[0][1][0]
     assert fail_row["parse_status"] == "failed"
     assert fail_row["parse_error"] == "structured model response failed validation"
 

@@ -49,45 +49,45 @@ def _make_config(**overrides: Any) -> WorkerConfig:
 class TestSyncToSupabaseBackground:
     """Persist validated realtime extraction output to Supabase."""
 
-    @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+    @patch("cv_intelligence_worker.realtime_extractor.SupabaseClient")
     def test_validated_extraction_sets_completed(self, mock_cls):
         from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
         config = _make_config()
         extraction = realtime_extraction(name="Ahmed", field_confidence={"name": 95})
         mock_client = mock_cls.return_value
-        mock_client.upsert_rows.return_value = {"status": 200}
+        mock_client.upsert.return_value = {"status": 200}
 
         sync_to_supabase_background("user-1", extraction, config)
 
-        mock_client.upsert_rows.assert_called_once()
-        call_args = mock_client.upsert_rows.call_args
+        mock_client.upsert.assert_called_once()
+        call_args = mock_client.upsert.call_args
         row = call_args[0][1][0]
         assert row["user_id"] == "user-1"
         assert row["parse_status"] == "completed"
         assert row["parsed_profile_json"]["name"] == "Ahmed"
         assert row["field_confidence_json"]["name"] == 95
 
-    @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+    @patch("cv_intelligence_worker.realtime_extractor.SupabaseClient")
     def test_extraction_failure_sets_failed(self, mock_cls):
         from cv_intelligence_worker.realtime_extractor import mark_extraction_failed
         config = _make_config()
         mock_client = mock_cls.return_value
-        mock_client.upsert_rows.return_value = {"status": 200}
+        mock_client.upsert.return_value = {"status": 200}
 
         mark_extraction_failed("user-2", "structured model response failed validation", config)
 
-        mock_client.upsert_rows.assert_called_once()
-        row = mock_client.upsert_rows.call_args[0][1][0]
+        mock_client.upsert.assert_called_once()
+        row = mock_client.upsert.call_args[0][1][0]
         assert row["parse_status"] == "failed"
         assert row["parse_error"] == "structured model response failed validation"
 
-    @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+    @patch("cv_intelligence_worker.realtime_extractor.SupabaseClient")
     def test_validated_extraction_db_error_falls_back_to_failed(self, mock_cls):
         from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
         config = _make_config()
         extraction = realtime_extraction(name="Ahmed")
         mock_client = mock_cls.return_value
-        mock_client.upsert_rows.side_effect = [
+        mock_client.upsert.side_effect = [
             Exception("DB write failed"),  # first call (completed) fails
             {"status": 200},  # fallback call (failed) succeeds
         ]
@@ -95,8 +95,8 @@ class TestSyncToSupabaseBackground:
         # Should NOT raise — fallback handles it
         sync_to_supabase_background("user-3", extraction, config)
 
-        assert mock_client.upsert_rows.call_count == 2
-        fallback_row = mock_client.upsert_rows.call_args_list[1][0][1][0]
+        assert mock_client.upsert.call_count == 2
+        fallback_row = mock_client.upsert.call_args_list[1][0][1][0]
         assert fallback_row["parse_status"] == "failed"
         assert "DB sync error" in fallback_row["parse_error"]
 

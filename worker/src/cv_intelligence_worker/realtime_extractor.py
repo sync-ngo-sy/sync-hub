@@ -7,6 +7,7 @@ import asyncio
 import logging
 import hmac
 from collections import defaultdict, deque
+from datetime import UTC, datetime
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends, Request
 import uuid
@@ -23,7 +24,7 @@ from cv_intelligence_worker.llm import LLMClient, LLMResponseError
 from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
 from cv_intelligence_worker.parsing import parse_document
 from cv_intelligence_worker.schema import DocumentSource
-from cv_intelligence_worker.supabase_client import SupabaseSyncClient
+from cv_intelligence_worker.supabase import SupabaseClient
 
 app = FastAPI(title="Realtime CV Extraction")
 
@@ -85,27 +86,26 @@ def sync_to_supabase_background(user_id: str, extraction: RealtimeCandidateExtra
         logger.info("[DB SYNC] No Supabase credentials, skipping sync")
         return
 
-    supabase = SupabaseSyncClient(config.supabase_url, config.supabase_service_key)
+    supabase = SupabaseClient(config)
 
     parsed_json = extraction.model_dump(mode="json")
     field_confidence = parsed_json.pop("field_confidence")
 
-    from datetime import datetime, timezone
     row = {
         "user_id": user_id,
         "parsed_profile_json": parsed_json,
         "field_confidence_json": field_confidence,
         "parse_status": "completed",
-        "parse_completed_at": datetime.now(timezone.utc).isoformat(),
+        "parse_completed_at": datetime.now(UTC).isoformat(),
     }
 
     try:
-        supabase.upsert_rows("candidate_registration_drafts", [row], on_conflict="user_id")
+        supabase.upsert("candidate_registration_drafts", [row], on_conflict="user_id")
         logger.info(f"[DB SYNC] Successfully synced profile draft for user: {user_id}")
     except Exception as e:
         logger.error(f"[DB SYNC] Failed to sync to Supabase: {e}")
         try:
-            supabase.upsert_rows("candidate_registration_drafts", [{
+            supabase.upsert("candidate_registration_drafts", [{
                 "user_id": user_id,
                 "parse_status": "failed",
                 "parse_error": f"DB sync error: {e}",
@@ -118,7 +118,7 @@ def mark_extraction_failed(user_id: str, error: str, config: WorkerConfig) -> No
     if not config.supabase_url or not config.supabase_service_key:
         return
     try:
-        SupabaseSyncClient(config.supabase_url, config.supabase_service_key).upsert_rows(
+        SupabaseClient(config).upsert(
             "candidate_registration_drafts",
             [{"user_id": user_id, "parse_status": "failed", "parse_error": error}],
             on_conflict="user_id",
