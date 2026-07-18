@@ -4,7 +4,7 @@ import re
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .normalization_constants import JOB_FAMILY_LABELS
 
@@ -93,4 +93,39 @@ class DraftValidationExtraction(LLMOutput):
     def require_rejection_reason(self) -> "DraftValidationExtraction":
         if not self.is_valid and not self.reason.strip():
             raise ValueError("rejected draft validation requires a reason")
+        return self
+
+
+class SkillClassificationItem(LLMOutput):
+    id: int = Field(ge=0)
+    action: Literal["keep", "drop"]
+    canonical: str | None
+
+    @field_validator("canonical")
+    @classmethod
+    def normalize_canonical(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("canonical skill cannot be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_canonical_for_kept_skills(self) -> "SkillClassificationItem":
+        if self.action == "keep" and self.canonical is None:
+            raise ValueError("kept skill requires a canonical value")
+        if self.action == "drop" and self.canonical is not None:
+            raise ValueError("dropped skill requires a null canonical value")
+        return self
+
+
+class SkillClassificationBatch(LLMOutput):
+    items: list[SkillClassificationItem] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_unique_ids(self) -> "SkillClassificationBatch":
+        ids = [item.id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("skill classification IDs must be unique")
         return self
