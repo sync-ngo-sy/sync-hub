@@ -4,14 +4,14 @@ import json
 import mimetypes
 import re
 import tempfile
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from uuid import uuid4
+
+import httpx
 
 from .config import WorkerConfig
 from .discovery import compute_sha256, guess_mime_type, stable_document_id
@@ -19,7 +19,7 @@ from .gcs_storage import GcsJsonClient
 from .pipeline import IngestionPipeline, IngestionResult
 from .schema import DocumentSource
 from .supabase import SupabaseClient
-from .utils import format_error_message, urlopen
+from .utils import format_error_message
 
 
 SUPPORTED_RESUME_SUFFIXES = {".pdf", ".docx", ".txt"}
@@ -106,18 +106,13 @@ def _redact_url_for_error(value: str) -> str:
     return value
 
 
-def _redact_error_content(value: str) -> str:
-    redacted = re.sub(r"Token\s+[A-Za-z0-9._-]+", "Token [redacted]", value)
-    redacted = re.sub(r"([?&](?:Signature|X-Amz-Signature|Expires|X-Amz-Credential|X-Amz-Security-Token)=)[^&<\s]+", r"\1[redacted]", redacted)
-    return redacted
-
-
 class ManatalClient:
-    def __init__(self, config: WorkerConfig) -> None:
+    def __init__(self, config: WorkerConfig, *, transport: httpx.BaseTransport | None = None) -> None:
         self.config = config
         self.base_url = config.manatal_api_base_url.rstrip("/")
         if not config.manatal_api_token:
             raise ValueError("MANATAL_API_TOKEN is required for Manatal sync")
+        self.transport = transport
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
@@ -130,21 +125,30 @@ class ManatalClient:
         return headers
 
     def _is_manatal_api_url(self, url: str) -> bool:
-        return urllib.parse.urlsplit(url).netloc == urllib.parse.urlsplit(self.base_url).netloc
+        target = urllib.parse.urlsplit(url)
+        base = urllib.parse.urlsplit(self.base_url)
+        return target.scheme == base.scheme and target.netloc == base.netloc
 
     def _request(self, path_or_url: str, query: dict[str, str] | None = None) -> tuple[bytes, dict[str, str]]:
         url = path_or_url if path_or_url.startswith(("http://", "https://")) else f"{self.base_url}{path_or_url}"
         if query:
             url = f"{url}?{urllib.parse.urlencode(query)}"
         headers = self._headers() if self._is_manatal_api_url(url) else {"User-Agent": self.config.user_agent}
-        request = urllib.request.Request(url, headers=headers, method="GET")
         try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-                return response.read(), dict(response.headers.items())
-        except urllib.error.HTTPError as exc:
-            content = _redact_error_content(exc.read().decode("utf-8", errors="replace"))
-            safe_url = _redact_url_for_error(url)
-            raise RuntimeError(f"Manatal GET {safe_url} failed ({exc.code}): {content or exc.reason}") from exc
+            with httpx.Client(
+                follow_redirects=True,
+                timeout=self.config.request_timeout_seconds,
+                transport=self.transport,
+            ) as http_client:
+                response = http_client.get(url, headers=headers)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            safe_url = _redact_url_for_error(str(exc.request.url))
+            raise RuntimeError(f"Manatal GET {safe_url} failed ({exc.response.status_code})") from exc
+        except httpx.RequestError as exc:
+            safe_url = _redact_url_for_error(str(exc.request.url))
+            raise RuntimeError(f"Manatal GET {safe_url} failed ({type(exc).__name__})") from exc
+        return response.content, dict(response.headers.items())
 
     def _json(self, path: str, query: dict[str, str] | None = None) -> Any:
         body, _headers = self._request(path, query)
