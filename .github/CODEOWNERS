@@ -1,5 +1,5 @@
 # Default owners for the whole repo
-* @abdulqdaer-q @abdalhadihaidar
+* @abdulqdaer-q @abdalhadihaidar @SuperMo0
 
 # Protect CODEOWNERS itself
 /.github/CODEOWNERS @abdulqdaer-q

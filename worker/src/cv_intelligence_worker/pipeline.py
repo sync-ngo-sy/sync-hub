@@ -16,7 +16,7 @@ from .parsing import parse_document
 from .schema import ArtifactBundle, CandidateProfile, DocumentSource, ProcessingRun, candidate_profile_from_dict
 from .store import LocalArtifactStore
 from .supabase import SupabaseClient
-from .utils import sha256_text
+from .utils import format_error_message, sha256_text
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ class _SyncBatcher:
 
     def _record_sync_failure(self, sync_batch: list[tuple[ArtifactBundle, Path]], exc: Exception) -> None:
         for bundle, _bundle_path in sync_batch:
-            self.failures.append({"source_path": bundle.source.source_path, "error": str(exc)})
+            self.failures.append({"source_path": bundle.source.source_path, "error": format_error_message(exc)})
 
 
 class IngestionPipeline:
@@ -250,7 +250,7 @@ class IngestionPipeline:
                 try:
                     bundle, bundle_path = future.result()
                 except Exception as exc:  # noqa: BLE001
-                    failures.append({"source_path": source.source_path, "error": str(exc)})
+                    failures.append({"source_path": source.source_path, "error": format_error_message(exc)})
                 else:
                     bundles.append(bundle)
                     sync_batcher.add(bundle, bundle_path)
@@ -262,7 +262,7 @@ class IngestionPipeline:
             try:
                 sync_stats["candidate_search_cache_rows"] = self.supabase.refresh_candidate_search_cache()
             except Exception as exc:  # noqa: BLE001
-                add_warning(f"Candidate search cache refresh failed after sync: {exc}")
+                add_warning(f"Candidate search cache refresh failed after sync: {format_error_message(exc)}")
         return IngestionResult(
             ingestion_run_id=ingestion_run_id,
             total_discovered=total_discovered,

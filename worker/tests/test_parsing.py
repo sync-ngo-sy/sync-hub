@@ -83,7 +83,7 @@ class ParsingTests(unittest.TestCase):
                 document = parse_document(source)
 
             self.assertEqual(document.raw_text, "")
-            self.assertIn("OCR unavailable", document.warnings)
+            self.assertTrue(any("OCR unavailable" in warning for warning in document.warnings))
             self.assertIn("Embedded PDF parser produced non-text bytes and was discarded", document.warnings)
             self.assertIn("No extractable text found in PDF", document.warnings)
 
