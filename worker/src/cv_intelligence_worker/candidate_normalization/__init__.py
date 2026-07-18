@@ -5,6 +5,7 @@ from .experience import (
     has_dated_education_entries,
     infer_years_experience,
 )
+from .locations import normalize_location
 from .titles import count_work_like_experience_entries, is_title_like
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "has_dated_education_entries",
     "infer_years_experience",
     "is_title_like",
+    "normalize_location",
 ]
