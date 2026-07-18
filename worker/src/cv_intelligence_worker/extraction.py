@@ -9,10 +9,16 @@ from .candidate_extraction import (
     build_candidate_system_prompt,
     build_job_family_prompt,
     build_job_family_system_prompt,
+    calculate_profile_confidence,
+    candidate_id_for_profile,
     extract_sections,
     is_date_line,
     match_section_headers,
+    missing_profile_fields,
+    number_value,
+    profile_from_extraction,
     split_lines,
+    string_value,
 )
 from .config import WorkerConfig
 from .extraction_constants import (
@@ -35,7 +41,7 @@ from .llm_models import CandidateExtraction, JobFamilyExtraction
 from .normalization import normalize_location, normalize_profile
 from .normalization_constants import JOB_FAMILY_TAXONOMY_VERSION
 from .schema import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
-from .utils import compact_whitespace, dedupe_keep_order, format_error_message, normalize_email, stable_uuid
+from .utils import compact_whitespace, dedupe_keep_order, format_error_message, normalize_email
 
 
 def _extract_name(lines: list[str], source: DocumentSource) -> str:
@@ -448,172 +454,6 @@ def _extract_languages(lines: list[str]) -> list[str]:
     return dedupe_keep_order(languages)
 
 
-def _profile_missing_fields(profile: CandidateProfile) -> list[str]:
-    missing_fields: list[str] = []
-    if not profile.name:
-        missing_fields.append("name")
-    if not profile.current_title:
-        missing_fields.append("current_title")
-    if not (profile.email or profile.phone or profile.links):
-        missing_fields.append("contact")
-    if not profile.skills:
-        missing_fields.append("skills")
-    if not _has_professional_activity(profile):
-        missing_fields.append("experience")
-    return missing_fields
-
-
-def _has_professional_activity(profile: CandidateProfile) -> bool:
-    if profile.experience or profile.projects or profile.years_experience > 0:
-        return True
-    if profile.education and "student" in profile.current_title.lower():
-        return True
-    return False
-
-
-def _fraction_at_least(count: int, target: int) -> float:
-    if target <= 0:
-        return 1.0
-    return min(1.0, count / target)
-
-
-def _calculate_profile_confidence(profile: CandidateProfile, document_text: DocumentText) -> float:
-    raw_text_length = len(document_text.raw_text.strip())
-    identity_score = 1.0 if profile.name and profile.current_title else 0.55 if profile.name or profile.current_title else 0.0
-    contact_score = (0.65 if profile.email else 0.0) + (0.35 if profile.phone else 0.0)
-    skills_score = _fraction_at_least(len(profile.skills), 6)
-    employment_score = 1.0 if len(profile.experience) >= 2 else 0.65 if profile.experience else 0.0
-    project_score = 1.0 if len(profile.projects) >= 3 else 0.75 if profile.projects else 0.0
-    stated_experience_score = 0.65 if profile.years_experience > 0 else 0.0
-    education_activity_score = 0.65 if profile.education and "student" in profile.current_title.lower() else 0.0
-    experience_score = max(employment_score, project_score, stated_experience_score, education_activity_score)
-    education_score = 1.0 if profile.education else 0.0
-    raw_text_score = 1.0 if raw_text_length >= 1200 else 0.55 if raw_text_length >= 300 else 0.0
-    facets_score = 1.0 if profile.years_experience > 0 and profile.seniority and profile.role_tags else 0.55 if profile.years_experience > 0 or profile.role_tags else 0.0
-    summary_score = 1.0 if len(profile.summary) >= 120 else 0.65 if profile.summary else 0.0
-    supplemental_score = min(1.0, (len(profile.links) * 0.35) + (len(profile.projects) * 0.25) + (len(profile.certifications) * 0.2) + (len(profile.languages) * 0.1))
-    weighted_scores = [
-        (raw_text_score, 10),
-        (identity_score, 16),
-        (contact_score, 12),
-        (skills_score, 16),
-        (experience_score, 18),
-        (education_score, 8),
-        (1.0 if profile.location else 0.0, 5),
-        (summary_score, 5),
-        (facets_score, 8),
-        (supplemental_score, 2),
-    ]
-    total_weight = sum(weight for _score, weight in weighted_scores)
-    confidence = sum(score * weight for score, weight in weighted_scores) / total_weight
-    warning_penalty = min(0.12, len(document_text.warnings) * 0.03)
-    if raw_text_length < 300:
-        confidence = min(confidence, 0.45)
-    return round(max(0.0, min(0.99, confidence - warning_penalty)), 2)
-
-
-def _string_value(value: Any) -> str:
-    return compact_whitespace(value) if isinstance(value, str) else ""
-
-
-def _string_list(values: Any) -> list[str]:
-    if not isinstance(values, list):
-        return []
-    return dedupe_keep_order(_string_value(item) for item in values)
-
-
-def _number_value(value: Any) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        normalized = compact_whitespace(value)
-        if not normalized:
-            return 0.0
-        match = re.search(r"\d+(?:\.\d+)?", normalized)
-        if match:
-            return float(match.group(0))
-    return 0.0
-
-
-def _candidate_id_for_profile(source: DocumentSource, *, email: str, phone: str = "", links: list[str] | None = None) -> str:
-    normalized_email = normalize_email(email)
-    if normalized_email:
-        return stable_uuid(source.tenant_id, normalized_email)
-    links = links or []
-    return stable_uuid(source.tenant_id, phone or (links[0] if links else source.document_id))
-
-
-def _experience_entries(values: Any) -> list[ExperienceEntry]:
-    entries: list[ExperienceEntry] = []
-    for item in values or []:
-        if not isinstance(item, dict):
-            continue
-        company = _string_value(item.get("company"))
-        title = _string_value(item.get("title"))
-        description = _string_value(item.get("description"))
-        if not (company or title or description):
-            continue
-        entries.append(
-            ExperienceEntry(
-                company=company,
-                title=title,
-                start_date=_string_value(item.get("start_date")) or None,
-                end_date=_string_value(item.get("end_date")) or None,
-                description=description,
-                location=normalize_location(_string_value(item.get("location"))) or None,
-            )
-        )
-    return entries
-
-
-def _education_entries(values: Any) -> list[EducationEntry]:
-    entries: list[EducationEntry] = []
-    for item in values or []:
-        if not isinstance(item, dict):
-            continue
-        institution = _string_value(item.get("institution"))
-        degree = _string_value(item.get("degree"))
-        field = _string_value(item.get("field"))
-        description = _string_value(item.get("description"))
-        if not (institution or degree or field or description):
-            continue
-        entries.append(
-            EducationEntry(
-                institution=institution,
-                degree=degree,
-                field=field,
-                start_date=_string_value(item.get("start_date")) or None,
-                end_date=_string_value(item.get("end_date")) or None,
-                description=description,
-            )
-        )
-    return entries
-
-
-def _project_entries(values: Any) -> list[ProjectEntry]:
-    entries: list[ProjectEntry] = []
-    for item in values or []:
-        if not isinstance(item, dict):
-            continue
-        name = _string_value(item.get("name"))
-        description = _string_value(item.get("description"))
-        technologies = _string_list(item.get("technologies"))
-        if not (name or description or technologies):
-            continue
-        entries.append(ProjectEntry(name=name, description=description, technologies=technologies))
-    return entries
-
-
-def _validate_llm_profile(profile: CandidateProfile) -> None:
-    missing_core = []
-    if not profile.name:
-        missing_core.append("name")
-    if not (profile.current_title or profile.experience or profile.skills):
-        missing_core.append("professional_profile")
-    if missing_core:
-        raise ValueError(f"structured extractor returned incomplete profile: {', '.join(missing_core)}")
-
-
 def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateProfile, config: WorkerConfig) -> dict[str, Any] | None:
     family = value.job_family.value
     confidence = value.confidence
@@ -623,8 +463,8 @@ def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateP
     matched_skills = dedupe_keep_order(value.matched_skills)
     if not set(matched_role_tags).issubset(profile.role_tags) or not set(matched_skills).issubset(profile.skills):
         return None
-    deterministic_family = _string_value(profile.metadata.get("job_family")) or "Unclassified"
-    deterministic_confidence = _number_value(profile.metadata.get("job_family_confidence"))
+    deterministic_family = string_value(profile.metadata.get("job_family")) or "Unclassified"
+    deterministic_confidence = number_value(profile.metadata.get("job_family_confidence"))
     auto_accept_confidence = max(config.job_family_min_confidence, min(1.0, config.job_family_auto_accept_confidence))
     review_reasons: list[str] = []
     if confidence < auto_accept_confidence:
@@ -702,46 +542,6 @@ def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig
         )
 
 
-def _merge_extracted_profile(source: DocumentSource, document_text: DocumentText, extracted: dict[str, Any]) -> CandidateProfile:
-    email = normalize_email(_string_value(extracted.get("email")))
-    links = _string_list(extracted.get("links"))
-    phone = _string_value(extracted.get("phone"))
-    profile = normalize_profile(
-        CandidateProfile(
-            tenant_id=source.tenant_id,
-            candidate_id=_candidate_id_for_profile(source, email=email, phone=phone, links=links),
-            source_document_id=source.document_id,
-            source_sha256=source.document_sha256,
-            name=_string_value(extracted.get("name")),
-            current_title=_string_value(extracted.get("current_title")),
-            headline=_string_value(extracted.get("headline")),
-            location=normalize_location(_string_value(extracted.get("location"))),
-            email=email,
-            phone=phone,
-            links=links,
-            years_experience=_number_value(extracted.get("years_experience")),
-            seniority=_string_value(extracted.get("seniority")) or "unclassified",
-            role_tags=_string_list(extracted.get("role_tags")),
-            skills=_string_list(extracted.get("skills")),
-            skill_aliases={},
-            experience=_experience_entries(extracted.get("experience")),
-            education=_education_entries(extracted.get("education")),
-            projects=_project_entries(extracted.get("projects")),
-            languages=_string_list(extracted.get("languages")),
-            certifications=_string_list(extracted.get("certifications")),
-            summary=_string_value(extracted.get("summary")),
-            raw_text=document_text.raw_text,
-            metadata={"extraction_source": "llm"},
-            confidence=0.0,
-            missing_fields=[],
-            parse_warnings=list(document_text.warnings),
-        )
-    )
-    profile = replace(profile, missing_fields=_profile_missing_fields(profile), confidence=_calculate_profile_confidence(profile, document_text))
-    _validate_llm_profile(profile)
-    return profile
-
-
 def _merge_draft_profile_json(original: Any, overrides: Any) -> Any:
     if isinstance(original, dict) and isinstance(overrides, dict):
         merged = dict(original)
@@ -768,7 +568,7 @@ class LLMProfileExtractor:
             prompt=build_candidate_prompt(document_text),
             response_model=CandidateExtraction,
         )
-        return _merge_extracted_profile(source, document_text, extracted.model_dump(mode="json"))
+        return profile_from_extraction(source, document_text, extracted)
 
 
 def heuristic_extract_profile(source: DocumentSource, document_text: DocumentText) -> CandidateProfile:
@@ -791,7 +591,7 @@ def heuristic_extract_profile(source: DocumentSource, document_text: DocumentTex
     education = _extract_education(sections.get("education", []))
     projects = _extract_projects(sections.get("projects", []))
     languages = _extract_languages(sections.get("languages", []))
-    candidate_id = _candidate_id_for_profile(source, email=email, phone=phone, links=links)
+    candidate_id = candidate_id_for_profile(source, email=email, phone=phone, links=links)
     profile = normalize_profile(CandidateProfile(
         tenant_id=source.tenant_id,
         candidate_id=candidate_id,
@@ -823,8 +623,8 @@ def heuristic_extract_profile(source: DocumentSource, document_text: DocumentTex
     ))
     return replace(
         profile,
-        missing_fields=_profile_missing_fields(profile),
-        confidence=_calculate_profile_confidence(profile, document_text),
+        missing_fields=missing_profile_fields(profile),
+        confidence=calculate_profile_confidence(profile, document_text),
     )
 
 

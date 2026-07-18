@@ -3,14 +3,9 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_candidate_system_prompt
+from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_candidate_system_prompt, profile_from_extraction
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.extraction import (
-    _merge_extracted_profile,
-    classify_job_family_with_llm,
-    extract_candidate_profile,
-    heuristic_extract_profile,
-)
+from cv_intelligence_worker.extraction import classify_job_family_with_llm, extract_candidate_profile, heuristic_extract_profile
 from cv_intelligence_worker.llm import LLMResponseError
 from cv_intelligence_worker.llm_models import CandidateExtraction, JobFamily, JobFamilyExtraction
 from cv_intelligence_worker.schema import DocumentSource, DocumentText
@@ -253,10 +248,10 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
             parser_name="plain-text",
             parser_version="2.0.0",
         )
-        profile = _merge_extracted_profile(
+        profile = profile_from_extraction(
             source,
             document,
-            {
+            CandidateExtraction.model_validate({
                 "name": "Jane Doe",
                 "current_title": "Senior Backend Engineer",
                 "headline": "Senior Backend Engineer",
@@ -274,7 +269,7 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
                 "languages": [],
                 "certifications": [],
                 "summary": "Senior backend engineer building Python APIs and PostgreSQL systems.",
-            },
+            }),
         )
 
         self.assertEqual(profile.name, "Jane Doe")
@@ -414,10 +409,10 @@ Frontend developer with product and campaign experience.
         )
 
         with patch("cv_intelligence_worker.extraction.heuristic_extract_profile") as heuristic_mock:
-            merged = _merge_extracted_profile(
+            merged = profile_from_extraction(
                 source,
                 document,
-                {
+                CandidateExtraction.model_validate({
                     "name": "Jane Doe",
                     "current_title": "Frontend Developer",
                     "headline": "Frontend Developer",
@@ -435,7 +430,7 @@ Frontend developer with product and campaign experience.
                     "education": [],
                     "projects": [],
                     "summary": "Frontend developer with product and campaign experience.",
-                },
+                }),
             )
 
         heuristic_mock.assert_not_called()
@@ -454,10 +449,10 @@ Frontend developer with product and campaign experience.
             parser_version="2.0.0",
         )
 
-        profile = _merge_extracted_profile(
+        profile = profile_from_extraction(
             source,
             document,
-            {
+            CandidateExtraction.model_validate({
                 "name": "Daniel Alzelaa",
                 "current_title": "Backend Developer",
                 "headline": "Information Technology Engineering | Software Engineering",
@@ -488,7 +483,7 @@ Frontend developer with product and campaign experience.
                     {"name": "E-commerce Online Store", "description": "Online store backend.", "technologies": ["Node.js"]},
                 ],
                 "summary": "Motivated backend developer specializing in SpringBoot and Node.js.",
-            },
+            }),
         )
 
         self.assertNotIn("experience", profile.missing_fields)
@@ -507,10 +502,10 @@ Frontend developer with product and campaign experience.
             parser_version="2.0.0",
         )
 
-        profile = _merge_extracted_profile(
+        profile = profile_from_extraction(
             source,
             document,
-            {
+            CandidateExtraction.model_validate({
                 "name": "Bader Ghabra",
                 "current_title": "",
                 "headline": "",
@@ -537,7 +532,7 @@ Frontend developer with product and campaign experience.
                 ],
                 "projects": [],
                 "summary": "",
-            },
+            }),
         )
 
         self.assertEqual(profile.current_title, "Software Engineering Student")
