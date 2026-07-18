@@ -11,6 +11,7 @@ from .candidate_normalization.experience import (
     has_dated_education_entries as has_dated_education_entries,
     infer_years_experience,
 )
+from .candidate_normalization.locations import normalize_location as normalize_location
 from .candidate_normalization.titles import (
     count_work_like_experience_entries as count_work_like_experience_entries,
 )
@@ -18,21 +19,9 @@ from .candidate_normalization.titles import is_title_like as _is_title_like
 from .schema import CandidateProfile
 from .utils import compact_whitespace, dedupe_keep_order, skill_slugify, slugify
 from .normalization_constants import (
-    BLOCKED_LOCATION_PHRASES,
-    BLOCKED_LOCATION_TOKENS,
-    CITY_ALIASES,
-    CONTACT_PATTERN,
-    COUNTRY_ALIASES,
-    DATE_FRAGMENT_RE,
-    GEO_ACRONYMS,
-    IMPLICIT_COUNTRY_BY_CITY,
     JOB_FAMILY_RULES,
     JOB_FAMILY_TAXONOMY_VERSION,
     JUNIOR_SIGNAL_RE,
-    LOCATION_CONNECTOR_TOKENS,
-    LOCATION_SEGMENT_PATTERN,
-    LOCATION_WORD_RE,
-    ROLE_HINT_RE,
     ROLE_PATTERNS,
     ROLE_TAG_ALIASES,
     SENIORITY_ALIASES,
@@ -43,7 +32,6 @@ from .normalization_constants import (
     SKILL_DROP_EXACT,
     SKILL_PHRASE_ALIASES,
     SKILL_ROLE_ONLY_RE,
-    WORK_EXPERIENCE_TITLE_RE,
 )
 
 
@@ -113,113 +101,6 @@ def _normalize_seniority_label(value: object) -> str:
     if "junior" in lowered or "intern" in lowered or "entry" in lowered:
         return "junior"
     return "unclassified"
-
-
-def _titlecase_location_token(token: str) -> str:
-    lowered = token.lower()
-    if lowered in LOCATION_CONNECTOR_TOKENS:
-        if lowered == "st":
-            return "St"
-        return lowered
-    parts = re.split(r"([-'’])", token)
-    rebuilt: list[str] = []
-    for part in parts:
-        if not part:
-            continue
-        if part in {"-", "'", "’"}:
-            rebuilt.append(part)
-            continue
-        rebuilt.append(part[:1].upper() + part[1:].lower())
-    return "".join(rebuilt)
-
-
-def _split_location_segments(cleaned: str) -> list[str]:
-    segments = [compact_whitespace(segment) for segment in cleaned.split(",") if compact_whitespace(segment)]
-    if len(segments) != 1:
-        return segments
-    words = segments[0].split()
-    for size in range(min(3, len(words) - 1), 0, -1):
-        country_candidate = " ".join(words[-size:])
-        if slugify(country_candidate) in COUNTRY_ALIASES:
-            city_candidate = compact_whitespace(" ".join(words[:-size]))
-            if city_candidate:
-                return [city_candidate, country_candidate]
-    return segments
-
-
-def _canonical_location_segment(segment: str) -> str:
-    cleaned = compact_whitespace(segment.strip(" -"))
-    if not cleaned:
-        return ""
-    slug = slugify(cleaned)
-    if slug in COUNTRY_ALIASES:
-        return COUNTRY_ALIASES[slug]
-    if slug in CITY_ALIASES:
-        return CITY_ALIASES[slug]
-    return " ".join(_titlecase_location_token(token) for token in cleaned.split())
-
-
-def _is_location_segment(segment: str) -> bool:
-    cleaned = compact_whitespace(segment.strip(" -"))
-    if not cleaned:
-        return False
-    if not LOCATION_SEGMENT_PATTERN.match(cleaned):
-        return False
-    lowered = cleaned.lower()
-    if any(phrase in lowered for phrase in BLOCKED_LOCATION_PHRASES):
-        return False
-    if ROLE_HINT_RE.search(cleaned) or WORK_EXPERIENCE_TITLE_RE.search(cleaned):
-        return False
-    words = LOCATION_WORD_RE.findall(cleaned)
-    if not words or len(words) > 5:
-        return False
-    acronym = re.sub(r"[^A-Za-z]", "", cleaned).lower()
-    if cleaned.isupper():
-        return acronym in GEO_ACRONYMS
-    for word in words:
-        token = word.lower()
-        if token in LOCATION_CONNECTOR_TOKENS:
-            continue
-        if token in BLOCKED_LOCATION_TOKENS:
-            return False
-    return True
-
-
-def normalize_location(value: object) -> str:
-    if not isinstance(value, str):
-        return ""
-    cleaned = compact_whitespace(value).strip(" |,-")
-    if not cleaned:
-        return ""
-    if CONTACT_PATTERN.search(cleaned):
-        return ""
-    if DATE_FRAGMENT_RE.search(cleaned):
-        return ""
-    if len(cleaned) > 60:
-        return ""
-    if any(character in cleaned for character in ("/", "|", ";", ":")):
-        return ""
-    segments = _split_location_segments(cleaned)
-    if not segments or len(segments) > 3:
-        return ""
-    canonical_segments: list[str] = []
-    seen: set[str] = set()
-    for segment in segments:
-        canonical = _canonical_location_segment(segment)
-        if not canonical or not _is_location_segment(canonical):
-            return ""
-        key = slugify(canonical)
-        if key in seen:
-            continue
-        seen.add(key)
-        canonical_segments.append(canonical)
-    if not canonical_segments:
-        return ""
-    if len(canonical_segments) == 1:
-        inferred_country = IMPLICIT_COUNTRY_BY_CITY.get(slugify(canonical_segments[0]))
-        if inferred_country:
-            canonical_segments.append(inferred_country)
-    return ", ".join(canonical_segments)
 
 
 def infer_seniority(profile: CandidateProfile, years_experience: float) -> str:
