@@ -133,7 +133,15 @@ export async function listAdminTenants(admin: SupabaseClient) {
     documentCounts.set(tenantId, (documentCounts.get(tenantId) ?? 0) + 1);
   }
 
-  return (tenantsResult.data ?? []).map((tenant) => ({
+  return (tenantsResult.data ?? []).map((
+    tenant: {
+      id: string;
+      slug: string;
+      name: string;
+      icon_url: string | null;
+      created_at: string;
+    },
+  ) => ({
     tenantId: tenant.id,
     slug: tenant.slug,
     name: tenant.name,

@@ -1,4 +1,5 @@
 import { createServiceClient } from "./platformProvisioning.ts";
+import { envText } from "./utils.ts";
 
 const CACHE_TTL_MS = 30_000;
 
@@ -26,11 +27,6 @@ let cachedSettings: {
   expiresAt: number;
   values: Record<string, string>;
 } | null = null;
-
-function envText(name: string) {
-  const value = Deno.env.get(name)?.trim();
-  return value && value.length > 0 ? value : null;
-}
 
 function isValidModelId(value: string) {
   return /^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(value);
