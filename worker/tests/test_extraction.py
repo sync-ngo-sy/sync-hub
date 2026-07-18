@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from cv_intelligence_worker.candidate_extraction import build_candidate_system_prompt
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.extraction import (
-    _extractor_system_prompt,
     _merge_extracted_profile,
-    _structured_prompt,
+    build_candidate_prompt,
     classify_job_family_with_llm,
     extract_candidate_profile,
     heuristic_extract_profile,
@@ -348,8 +348,8 @@ Damascus, Syria
             parser_version="2.0.0",
         )
 
-        prompt = _structured_prompt(document)
-        system_prompt = _extractor_system_prompt()
+        prompt = build_candidate_prompt(document)
+        system_prompt = build_candidate_system_prompt()
 
         self.assertIn("<EXPERIENCE>", prompt["sectioned_cv_text"])
         self.assertIn("</EXPERIENCE>", prompt["sectioned_cv_text"])

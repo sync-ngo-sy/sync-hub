@@ -18,11 +18,12 @@ from fastapi.security import APIKeyHeader
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+from cv_intelligence_worker.candidate_extraction import build_candidate_system_prompt
 from cv_intelligence_worker.config import WorkerConfig
+from cv_intelligence_worker.extraction import build_candidate_prompt
 from cv_intelligence_worker.llm import LLMClient, LLMResponseError
 from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
 from cv_intelligence_worker.parsing import parse_document
-from cv_intelligence_worker.extraction import _extractor_system_prompt, _structured_prompt
 from cv_intelligence_worker.schema import DocumentSource
 from cv_intelligence_worker.supabase_client import SupabaseSyncClient
 
@@ -79,7 +80,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
     return api_key
 
 def build_extended_system_prompt() -> str:
-    base_prompt = _extractor_system_prompt().split("Output schema:\n")[0]
+    base_prompt = build_candidate_system_prompt().split("Output schema:\n")[0]
     schema_text = json.dumps(RealtimeCandidateExtraction.model_json_schema(), indent=2, ensure_ascii=True)
 
     additional_rules = (
@@ -215,7 +216,7 @@ async def parse_cv_endpoint(
             os.remove(tmp_path)
 
     # 2. Build Prompt (Re-using original logic but with extended schema)
-    prompt = _structured_prompt(document_text)
+    prompt = build_candidate_prompt(document_text)
     system_prompt = build_extended_system_prompt()
 
     try:
