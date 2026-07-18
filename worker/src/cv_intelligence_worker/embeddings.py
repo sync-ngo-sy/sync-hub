@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import math
-import urllib.request
 
 from .config import WorkerConfig
+from .llm import LLMClient
 from .schema import ChunkRecord, EmbeddingRecord
-from .utils import urlopen
 
 
 def _stable_token_hash(token: str) -> int:
@@ -49,85 +47,38 @@ class DeterministicEmbedder:
         return records
 
 
-class OpenAICompatibleEmbedder:
-    def __init__(self, config: WorkerConfig) -> None:
+class SDKEmbedder:
+    def __init__(self, config: WorkerConfig, *, client: LLMClient | None = None) -> None:
         self.config = config
+        provider = "ollama" if config.embedding_provider.lower().startswith("ollama") else config.embedding_provider
+        self.client = client or LLMClient(config, provider=provider)
 
     def embed_chunks(self, chunks: list[ChunkRecord]) -> list[EmbeddingRecord]:
-        payload = {
-            "model": self.config.embedding_model,
-            "input": [chunk.text for chunk in chunks],
-        }
+        if not chunks:
+            return []
+        dimensions = None
         if self.config.embedding_model.startswith("gemini-embedding-") and self.config.embedding_dimension > 0:
-            payload["dimensions"] = self.config.embedding_dimension
-        request = urllib.request.Request(
-            f"{self.config.model_base_url.rstrip('/')}/embeddings",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.config.model_api_key}",
-            },
-            method="POST",
+            dimensions = self.config.embedding_dimension
+        vectors = self.client.embed(
+            model=self.config.embedding_model,
+            inputs=[chunk.text for chunk in chunks],
+            dimensions=dimensions,
+            expected_dimension=self.config.embedding_dimension if self.config.embedding_dimension > 0 else None,
         )
-        with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        data = body.get("data", [])
-        records: list[EmbeddingRecord] = []
-        for chunk, item in zip(chunks, data):
-            records.append(
-                EmbeddingRecord(
-                    tenant_id=chunk.tenant_id,
-                    candidate_id=chunk.candidate_id,
-                    chunk_id=chunk.chunk_id,
-                    embedding=item["embedding"],
-                    embedding_version=self.config.embedding_version,
-                    provider=self.config.embedding_provider,
-                )
+        return [
+            EmbeddingRecord(
+                tenant_id=chunk.tenant_id,
+                candidate_id=chunk.candidate_id,
+                chunk_id=chunk.chunk_id,
+                embedding=vectors[index],
+                embedding_version=self.config.embedding_version,
+                provider=self.config.embedding_provider,
             )
-        return records
-
-
-class OllamaEmbedder:
-    def __init__(self, config: WorkerConfig) -> None:
-        self.config = config
-
-    def _base_url(self) -> str:
-        return self.config.model_base_url.rstrip("/").removesuffix("/v1")
-
-    def embed_chunks(self, chunks: list[ChunkRecord]) -> list[EmbeddingRecord]:
-        payload = {
-            "model": self.config.embedding_model,
-            "input": [chunk.text for chunk in chunks],
-        }
-        request = urllib.request.Request(
-            f"{self._base_url()}/api/embed",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        vectors = body.get("embeddings", [])
-        records: list[EmbeddingRecord] = []
-        for chunk, vector in zip(chunks, vectors):
-            records.append(
-                EmbeddingRecord(
-                    tenant_id=chunk.tenant_id,
-                    candidate_id=chunk.candidate_id,
-                    chunk_id=chunk.chunk_id,
-                    embedding=vector,
-                    embedding_version=self.config.embedding_version,
-                    provider=self.config.embedding_provider,
-                )
-            )
-        return records
+            for index, chunk in enumerate(chunks)
+        ]
 
 
 def build_embedder(config: WorkerConfig):
-    if config.embedding_provider.lower() in {"openai", "local-openai", "ollama-openai"}:
-        return OpenAICompatibleEmbedder(config)
-    if config.embedding_provider.lower() == "ollama":
-        return OllamaEmbedder(config)
+    if config.embedding_provider.lower() in {"openai", "local-openai", "ollama", "ollama-openai"}:
+        return SDKEmbedder(config)
     return DeterministicEmbedder(config.embedding_dimension, config.embedding_version)
