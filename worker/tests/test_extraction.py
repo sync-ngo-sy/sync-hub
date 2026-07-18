@@ -7,11 +7,13 @@ from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.extraction import (
     _extractor_system_prompt,
     _merge_extracted_profile,
-    _parse_json_content,
     _structured_prompt,
+    classify_job_family_with_llm,
     extract_candidate_profile,
     heuristic_extract_profile,
 )
+from cv_intelligence_worker.llm import LLMResponseError
+from cv_intelligence_worker.llm_models import CandidateExtraction, JobFamily, JobFamilyExtraction
 from cv_intelligence_worker.schema import DocumentSource, DocumentText
 
 
@@ -109,7 +111,7 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
         self.assertEqual(first.email, "jane.doe@example.com")
         self.assertEqual(first.candidate_id, second.candidate_id)
 
-    def test_llm_extraction_retries_once_without_heuristic_fallback(self) -> None:
+    def test_llm_extraction_uses_validated_output(self) -> None:
         source = self._source("doc-retry")
         document = DocumentText(
             source=source,
@@ -117,24 +119,40 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
             parser_name="plain-text",
             parser_version="2.0.0",
         )
-        expected_profile = heuristic_extract_profile(source, document)
         config = WorkerConfig(
             extraction_model="test-model",
             extraction_provider="openai-compatible",
             extraction_max_attempts=2,
-            allow_heuristic_fallback=True,
             job_family_provider="rules",
         )
 
-        with patch("cv_intelligence_worker.extraction.OpenAICompatibleExtractor.extract") as extract_mock:
-            extract_mock.side_effect = [TimeoutError("temporary model outage"), expected_profile]
-
+        with patch("cv_intelligence_worker.extraction.LLMClient.parse") as parse_mock:
+            parse_mock.return_value = CandidateExtraction(
+                name="Jane Doe",
+                current_title="Senior Backend Engineer",
+                headline="Senior Backend Engineer",
+                location=None,
+                email="jane@example.com",
+                phone=None,
+                links=[],
+                years_experience=None,
+                seniority="senior",
+                role_tags=["backend"],
+                skills=["Python"],
+                languages=[],
+                certifications=[],
+                experience=[],
+                education=[],
+                projects=[],
+                summary="Senior backend engineer.",
+            )
             profile = extract_candidate_profile(source, document, config)
 
-        self.assertEqual(profile, expected_profile)
-        self.assertEqual(extract_mock.call_count, 2)
+        self.assertEqual(profile.name, "Jane Doe")
+        self.assertEqual(profile.email, "jane@example.com")
+        self.assertIs(parse_mock.call_args.kwargs["response_model"], CandidateExtraction)
 
-    def test_llm_extraction_raises_after_retries_instead_of_falling_back(self) -> None:
+    def test_llm_extraction_does_not_use_heuristic_fallback_on_client_error(self) -> None:
         source = self._source("doc-no-fallback")
         document = DocumentText(
             source=source,
@@ -147,18 +165,45 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
             extraction_provider="openai-compatible",
             extraction_max_attempts=2,
             allow_heuristic_fallback=True,
+            job_family_provider="rules",
         )
 
         with (
-            patch("cv_intelligence_worker.extraction.OpenAICompatibleExtractor.extract") as extract_mock,
+            patch("cv_intelligence_worker.extraction.LLMClient.parse") as parse_mock,
             patch("cv_intelligence_worker.extraction.heuristic_extract_profile") as heuristic_mock,
         ):
-            extract_mock.side_effect = TimeoutError("model stayed down")
-            with self.assertRaises(TimeoutError):
+            parse_mock.side_effect = LLMResponseError("model stayed down")
+            with self.assertRaises(LLMResponseError):
                 extract_candidate_profile(source, document, config)
 
-        self.assertEqual(extract_mock.call_count, 2)
+        self.assertEqual(parse_mock.call_count, 1)
         heuristic_mock.assert_not_called()
+
+    def test_job_family_classification_uses_taxonomy_validated_output(self) -> None:
+        source = self._source("doc-job-family")
+        document = DocumentText(
+            source=source,
+            raw_text="Jane Doe\nSenior Backend Engineer\njane@example.com\nPython PostgreSQL APIs",
+            parser_name="plain-text",
+            parser_version="2.0.0",
+        )
+        profile = heuristic_extract_profile(source, document)
+        config = WorkerConfig(extraction_model="test-model", job_family_model="test-model")
+
+        with patch("cv_intelligence_worker.extraction.LLMClient.parse") as parse_mock:
+            parse_mock.return_value = JobFamilyExtraction(
+                job_family=JobFamily("Backend Engineering"),
+                confidence=0.95,
+                rationale="Backend title and API skills.",
+                matched_role_tags=["backend"],
+                matched_skills=["Python", "PostgreSQL"],
+                alternate_job_family=None,
+            )
+            classified = classify_job_family_with_llm(profile, config)
+
+        self.assertEqual(classified.metadata["job_family"], "Backend Engineering")
+        self.assertEqual(classified.metadata["job_family_source"], "llm")
+        self.assertIs(parse_mock.call_args.kwargs["response_model"], JobFamilyExtraction)
 
     def test_missing_extraction_model_raises_instead_of_using_heuristics(self) -> None:
         source = self._source("doc-model-required")
@@ -210,16 +255,6 @@ Python, Node.js, GraphQL, PostgreSQL, Docker
 
         self.assertEqual(profile.name, "Jane Doe")
         self.assertIn("contact", profile.missing_fields)
-
-    def test_parse_json_content_repairs_trailing_commas(self) -> None:
-        payload = """```json
-        {
-          "name": "Jane Doe",
-          "skills": ["Python", "PostgreSQL",],
-        }
-        ```"""
-
-        self.assertEqual(_parse_json_content(payload), {"name": "Jane Doe", "skills": ["Python", "PostgreSQL"]})
 
     def test_heuristic_extractor_handles_two_column_pdf_style_text(self) -> None:
         source = DocumentSource(

@@ -12,11 +12,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
+from cv_intelligence_worker.llm import LLMResponseError
+from cv_intelligence_worker.llm_models import DraftValidationExtraction
 from cv_intelligence_worker.schema import (
     CandidateProfile,
     DocumentSource,
     DocumentText,
 )
+from tests.test_helpers.realtime import realtime_extraction
 
 
 # ---------------------------------------------------------------------------
@@ -44,17 +47,17 @@ def _make_config(**overrides: Any) -> WorkerConfig:
 # ===========================================================================
 
 class TestSyncToSupabaseBackground:
-    """sync_to_supabase_background: JSON upload to Supabase after streaming."""
+    """Persist validated realtime extraction output to Supabase."""
 
     @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
-    def test_valid_json_sets_completed(self, mock_cls):
+    def test_validated_extraction_sets_completed(self, mock_cls):
         from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
         config = _make_config()
-        raw_json = json.dumps({"name": "Ahmed", "skills": ["Python"], "field_confidence": {"name": 95}})
+        extraction = realtime_extraction(name="Ahmed", field_confidence={"name": 95})
         mock_client = mock_cls.return_value
         mock_client.upsert_rows.return_value = {"status": 200}
 
-        sync_to_supabase_background("user-1", "cv.pdf", "application/pdf", raw_json, config)
+        sync_to_supabase_background("user-1", extraction, config)
 
         mock_client.upsert_rows.assert_called_once()
         call_args = mock_client.upsert_rows.call_args
@@ -65,24 +68,24 @@ class TestSyncToSupabaseBackground:
         assert row["field_confidence_json"]["name"] == 95
 
     @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
-    def test_invalid_json_sets_failed(self, mock_cls):
-        from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
+    def test_extraction_failure_sets_failed(self, mock_cls):
+        from cv_intelligence_worker.realtime_extractor import mark_extraction_failed
         config = _make_config()
         mock_client = mock_cls.return_value
         mock_client.upsert_rows.return_value = {"status": 200}
 
-        sync_to_supabase_background("user-2", "cv.pdf", "application/pdf", "NOT JSON {{{{", config)
+        mark_extraction_failed("user-2", "structured model response failed validation", config)
 
         mock_client.upsert_rows.assert_called_once()
         row = mock_client.upsert_rows.call_args[0][1][0]
         assert row["parse_status"] == "failed"
-        assert "JSON decode error" in row["parse_error"]
+        assert row["parse_error"] == "structured model response failed validation"
 
     @patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
-    def test_valid_json_db_error_fallback_to_failed(self, mock_cls):
+    def test_validated_extraction_db_error_falls_back_to_failed(self, mock_cls):
         from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
         config = _make_config()
-        raw_json = json.dumps({"name": "Ahmed"})
+        extraction = realtime_extraction(name="Ahmed")
         mock_client = mock_cls.return_value
         mock_client.upsert_rows.side_effect = [
             Exception("DB write failed"),  # first call (completed) fails
@@ -90,7 +93,7 @@ class TestSyncToSupabaseBackground:
         ]
 
         # Should NOT raise — fallback handles it
-        sync_to_supabase_background("user-3", "cv.pdf", "application/pdf", raw_json, config)
+        sync_to_supabase_background("user-3", extraction, config)
 
         assert mock_client.upsert_rows.call_count == 2
         fallback_row = mock_client.upsert_rows.call_args_list[1][0][1][0]
@@ -101,7 +104,7 @@ class TestSyncToSupabaseBackground:
         from cv_intelligence_worker.realtime_extractor import sync_to_supabase_background
         config = _make_config(supabase_url="", supabase_service_key="")
         # Should not raise, should return early
-        sync_to_supabase_background("user-4", "cv.pdf", "application/pdf", '{"name":"X"}', config)
+        sync_to_supabase_background("user-4", realtime_extraction(), config)
 
 
 # ===========================================================================
@@ -127,14 +130,14 @@ class TestValidateUserOverrides:
         assert is_valid is True
         assert reason == ""
 
-    @patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
+    @patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
     def test_illogical_override_rejected(self, mock_llm):
         from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
         config = _make_config()
-        mock_llm.return_value = {
-            "is_valid": False,
-            "reason": "Drastic seniority change from Junior to CEO without evidence",
-        }
+        mock_llm.return_value = DraftValidationExtraction(
+            is_valid=False,
+            reason="Drastic seniority change from Junior to CEO without evidence",
+        )
         original = {"title": "Junior Developer"}
         overrides = {"title": "CEO"}
         is_valid, reason = validate_user_overrides_with_llm(original, overrides, config)
@@ -143,14 +146,14 @@ class TestValidateUserOverrides:
         assert "CEO" in reason or "Drastic" in reason
         mock_llm.assert_called_once()
 
-    @patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
+    @patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
     def test_logical_override_accepted(self, mock_llm):
         from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
         config = _make_config()
-        mock_llm.return_value = {
-            "is_valid": True,
-            "reason": "Minor name correction, acceptable",
-        }
+        mock_llm.return_value = DraftValidationExtraction(
+            is_valid=True,
+            reason="Minor name correction, acceptable",
+        )
         original = {"name": "Ahmed"}
         overrides = {"name": "Ahmed K."}
         is_valid, reason = validate_user_overrides_with_llm(original, overrides, config)
@@ -158,33 +161,32 @@ class TestValidateUserOverrides:
         assert is_valid is True
         mock_llm.assert_called_once()
 
-    def test_disabled_provider_auto_accepts(self):
+    def test_disabled_provider_fails_closed(self):
         from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
-        config = _make_config(job_family_provider="disabled")
-        is_valid, reason = validate_user_overrides_with_llm(
-            {"title": "Intern"}, {"title": "President"}, config
-        )
-        assert is_valid is True
+        config = _make_config(extraction_provider="disabled")
+        with pytest.raises(LLMResponseError, match="not configured"):
+            validate_user_overrides_with_llm(
+                {"title": "Intern"}, {"title": "President"}, config
+            )
 
-    @patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
+    @patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
     def test_llm_exception_rejects(self, mock_llm):
         from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
         config = _make_config()
-        mock_llm.side_effect = ConnectionError("LLM unreachable")
-        is_valid, reason = validate_user_overrides_with_llm(
-            {"name": "A"}, {"name": "B"}, config
-        )
-        assert is_valid is True
-        assert "LLM validation unavailable" in reason
+        mock_llm.side_effect = LLMResponseError("LLM unreachable")
+        with pytest.raises(LLMResponseError, match="LLM unreachable"):
+            validate_user_overrides_with_llm(
+                {"name": "A"}, {"name": "B"}, config
+            )
 
-    @patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-    def test_ollama_provider_uses_ollama_caller(self, mock_ollama):
+    @patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
+    def test_ollama_provider_uses_shared_client(self, mock_llm):
         from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
-        config = _make_config(job_family_provider="ollama", extraction_provider="ollama")
-        mock_ollama.return_value = {"is_valid": True, "reason": "OK"}
+        config = _make_config(extraction_provider="ollama")
+        mock_llm.return_value = DraftValidationExtraction(is_valid=True, reason="OK")
         is_valid, _ = validate_user_overrides_with_llm({"a": 1}, {"b": 2}, config)
         assert is_valid is True
-        mock_ollama.assert_called_once()
+        mock_llm.assert_called_once()
 
 
 # ===========================================================================

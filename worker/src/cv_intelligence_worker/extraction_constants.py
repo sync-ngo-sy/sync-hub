@@ -172,59 +172,6 @@ EXTRACTION_OUTPUT_SCHEMA = {
     "summary": "string|null",
 }
 
-OLLAMA_FORMAT_SCHEMA = {
-    "name": "string",
-    "current_title": "string",
-    "headline": "string",
-    "location": "string",
-    "email": "string",
-    "phone": "string",
-    "links": ["string"],
-    "years_experience": "number",
-    "seniority": "string",
-    "role_tags": ["string"],
-    "skills": ["string"],
-    "languages": ["string"],
-    "certifications": ["string"],
-    "experience": [
-        {
-            "company": "string",
-            "title": "string",
-            "start_date": "string",
-            "end_date": "string",
-            "location": "string",
-            "description": "string",
-        }
-    ],
-    "education": [
-        {
-            "institution": "string",
-            "degree": "string",
-            "field": "string",
-            "start_date": "string",
-            "end_date": "string",
-            "description": "string",
-        }
-    ],
-    "projects": [
-        {
-            "name": "string",
-            "description": "string",
-            "technologies": ["string"],
-        }
-    ],
-    "summary": "string",
-}
-
-JOB_FAMILY_OUTPUT_SCHEMA = {
-    "job_family": "one of the allowed job family labels",
-    "confidence": "number from 0 to 1",
-    "rationale": "short explanation using only supplied profile facts",
-    "matched_role_tags": ["string"],
-    "matched_skills": ["string"],
-    "alternate_job_family": "one allowed label or null",
-}
-
 SECTION_ALIAS_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
     (
         section_name,

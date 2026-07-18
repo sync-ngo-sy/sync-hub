@@ -1,90 +1,93 @@
-import pytest
+from dataclasses import replace
 from unittest.mock import patch
+
+import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.draft_validation import validate_user_overrides_with_llm
+from cv_intelligence_worker.llm import LLMResponseError
+from cv_intelligence_worker.llm_models import DraftValidationExtraction
 
-from dataclasses import replace
 
 @pytest.fixture
-def config():
+def config() -> WorkerConfig:
     return replace(
         WorkerConfig(),
-        job_family_provider="llm",
-        job_family_model="gpt-4",
-        extraction_model="gpt-4",
-        extraction_provider="openai-compatible"
+        extraction_model="test-model",
+        extraction_provider="openai-compatible",
     )
 
-@patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_no_overrides(mock_openai, mock_ollama, config):
-    is_valid, reason = validate_user_overrides_with_llm({"name": "Test"}, {}, config)
-    assert is_valid is True
-    assert reason == ""
-    mock_openai.assert_not_called()
-    mock_ollama.assert_not_called()
 
-@patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_disabled_provider(mock_openai, mock_ollama, config):
-    config = replace(config, job_family_provider="off")
-    is_valid, reason = validate_user_overrides_with_llm({"name": "Test"}, {"name": "Test 2"}, config)
-    assert is_valid is True
-    assert reason == ""
-    mock_openai.assert_not_called()
+@patch("cv_intelligence_worker.draft_validation.LLMClient")
+def test_validate_user_overrides_skips_empty_overrides(client, config: WorkerConfig) -> None:
+    assert validate_user_overrides_with_llm({"name": "Test"}, {}, config) == (True, "")
+    client.assert_not_called()
 
-@patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_valid(mock_openai, mock_ollama, config):
-    mock_openai.return_value = {"is_valid": True, "reason": ""}
 
-    is_valid, reason = validate_user_overrides_with_llm(
-        {"title": "SE"}, {"title": "Senior <b>SE</b>"}, config
+@pytest.mark.parametrize("provider", ["off", "disabled", "deterministic", "rules"])
+def test_validate_user_overrides_fails_closed_without_provider(provider: str, config: WorkerConfig) -> None:
+    with pytest.raises(LLMResponseError, match="not configured"):
+        validate_user_overrides_with_llm(
+            {"name": "Test"},
+            {"name": "Test 2"},
+            replace(config, extraction_provider=provider),
+        )
+
+
+def test_validate_user_overrides_fails_closed_without_model(config: WorkerConfig) -> None:
+    with pytest.raises(LLMResponseError, match="not configured"):
+        validate_user_overrides_with_llm(
+            {"name": "Test"},
+            {"name": "Test 2"},
+            replace(config, extraction_model=""),
+        )
+
+
+@patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
+def test_validate_user_overrides_accepts_valid_result(parse, config: WorkerConfig) -> None:
+    parse.return_value = DraftValidationExtraction(is_valid=True, reason="Minor correction")
+
+    result = validate_user_overrides_with_llm(
+        {"title": "SE"},
+        {"title": "Senior <b>SE</b>"},
+        config,
     )
 
-    assert is_valid is True
-    mock_openai.assert_called_once()
+    assert result == (True, "Minor correction")
+    prompt = parse.call_args.kwargs["prompt"]["payload"]
+    assert "<user_data>" in prompt
+    assert "Senior &lt;b&gt;SE&lt;/b&gt;" in prompt
 
-    # Verify prompt contains XML payload protection
-    prompt_arg = mock_openai.call_args[0][3]
-    assert "<user_data>" in prompt_arg["payload"]
-    assert "</user_data>" in prompt_arg["payload"]
-    assert "Senior &lt;b&gt;SE&lt;/b&gt;" in prompt_arg["payload"]
 
-@patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_invalid(mock_openai, mock_ollama, config):
-    mock_openai.return_value = {"is_valid": False, "reason": "Unrealistic title change"}
+@patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
+def test_validate_user_overrides_rejects_invalid_result(parse, config: WorkerConfig) -> None:
+    parse.return_value = DraftValidationExtraction(is_valid=False, reason="Unrealistic title change")
 
-    is_valid, reason = validate_user_overrides_with_llm(
-        {"title": "Intern"}, {"title": "CEO"}, config
+    result = validate_user_overrides_with_llm(
+        {"title": "Intern"},
+        {"title": "CEO"},
+        config,
     )
 
-    assert is_valid is False
-    assert reason == "Unrealistic title change"
+    assert result == (False, "Unrealistic title change")
 
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_llm_failure_fails_open(mock_openai, config):
-    mock_openai.side_effect = RuntimeError("LLM down")
 
-    is_valid, reason = validate_user_overrides_with_llm(
-        {"title": "Intern"}, {"title": "CEO"}, config
-    )
+@patch("cv_intelligence_worker.draft_validation.LLMClient.parse")
+def test_validate_user_overrides_fails_closed_on_client_error(parse, config: WorkerConfig) -> None:
+    parse.side_effect = LLMResponseError("LLM down")
 
-    assert is_valid is True
-    assert "LLM validation unavailable" in reason
+    with pytest.raises(LLMResponseError, match="LLM down"):
+        validate_user_overrides_with_llm(
+            {"title": "Intern"},
+            {"title": "CEO"},
+            config,
+        )
 
-@patch("cv_intelligence_worker.draft_validation._call_ollama_json")
-@patch("cv_intelligence_worker.draft_validation._call_openai_compatible_json")
-def test_validate_user_overrides_ollama(mock_openai, mock_ollama, config):
-    config = replace(config, job_family_provider="ollama")
-    mock_ollama.return_value = {"is_valid": True, "reason": ""}
 
-    is_valid, reason = validate_user_overrides_with_llm(
-        {"title": "SE"}, {"title": "Senior SE"}, config
-    )
+@patch("cv_intelligence_worker.draft_validation.LLMClient")
+def test_validate_user_overrides_uses_ollama_compatibility(client, config: WorkerConfig) -> None:
+    client.return_value.parse.return_value = DraftValidationExtraction(is_valid=True, reason="Supported")
+    ollama_config = replace(config, extraction_provider="ollama")
 
-    assert is_valid is True
-    mock_ollama.assert_called_once()
-    mock_openai.assert_not_called()
+    assert validate_user_overrides_with_llm({"title": "SE"}, {"title": "Senior SE"}, ollama_config)[0] is True
+    client.assert_called_once_with(ollama_config, provider="ollama")
