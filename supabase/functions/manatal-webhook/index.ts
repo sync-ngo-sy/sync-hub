@@ -1,60 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-
-type JsonRecord = Record<string, unknown>;
-
-function jsonResponse(status: number, payload: JsonRecord) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json",
-    },
-  });
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function candidateIdFromPayload(payload: JsonRecord) {
-  const direct = asString(payload.candidate_id) ??
-    asString(payload.candidate_pk) ??
-    asString(payload.id);
-  if (direct) {
-    return direct;
-  }
-
-  const nestedCandidates = [
-    asRecord(payload.candidate),
-    asRecord(payload.object),
-    asRecord(payload.data),
-    asRecord(payload.payload),
-  ];
-
-  for (const record of nestedCandidates) {
-    const nested = asString(record.candidate_id) ??
-      asString(record.candidate_pk) ??
-      asString(record.id);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  return null;
-}
-
-function requestSecret(req: Request, url: URL) {
-  return (
-    req.headers.get("x-webhook-secret") ??
-      req.headers.get("x-manatal-webhook-secret") ??
-      url.searchParams.get("secret")
-  );
-}
+import { type JsonRecord } from "../_shared/utils.ts";
+import {
+  candidateIdFromPayload,
+  jsonResponse,
+  requestSecret,
+} from "./helpers.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {

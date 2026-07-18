@@ -1,0 +1,30 @@
+export function buildRpcPayload(
+  query: string,
+  queryEmbedding: number[] | null,
+  limit: number,
+  offset: number,
+  filters: Record<string, unknown>,
+  scopedRequestFilters: Record<string, unknown>,
+  queryEmbeddingVersion: string | null,
+  rankVersion: string,
+) {
+  return {
+    p_q: query,
+    p_query_embedding: queryEmbedding,
+    p_limit: limit,
+    p_offset: offset,
+    p_role: filters.role ?? null,
+    p_seniority: filters.seniority ?? null,
+    p_min_years: filters.min_years_experience ?? null,
+    p_skills: filters.skills ?? [],
+    p_embedding_version: queryEmbeddingVersion,
+    p_rank_version: rankVersion,
+    p_tenant_ids: null,
+    p_filter_role: scopedRequestFilters.role ?? null,
+    p_filter_seniority: scopedRequestFilters.seniority ?? null,
+    p_filter_min_years: scopedRequestFilters.min_years_experience ?? null,
+    p_filter_skills: scopedRequestFilters.skills ?? [],
+    p_filter_companies: scopedRequestFilters.companies ?? [],
+    p_filter_location: scopedRequestFilters.location ?? null,
+  };
+}
