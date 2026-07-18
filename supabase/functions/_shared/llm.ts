@@ -2,6 +2,7 @@ import {
   getRuntimeSetting,
   type RuntimeSettingKey,
 } from "./platformRuntimeSettings.ts";
+import { envNumber, envText, isLocalRuntime } from "./utils.ts";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -55,28 +56,8 @@ type LlmConfig =
     timeoutMs: number;
   };
 
-function envText(name: string) {
-  const value = Deno.env.get(name)?.trim();
-  return value && value.length > 0 ? value : null;
-}
-
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, "");
-}
-
-function isLocalRuntime() {
-  const supabaseUrl = envText("SUPABASE_URL") ?? "";
-  return supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
-}
-
-function envNumber(name: string, fallback: number) {
-  const value = envText(name);
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 async function resolveRuntimeOrEnv(key: RuntimeSettingKey, envName: string) {

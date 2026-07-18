@@ -1,430 +1,16 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/platformProvisioning.ts";
-
-type JsonRecord = Record<string, unknown>;
-
-const RESUME_BUCKET = Deno.env.get("SUPABASE_STORAGE_BUCKET") ?? "cv-originals";
-const MAX_RESUME_BYTES = 10 * 1024 * 1024;
-const ALLOWED_RESUME_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain",
-]);
-
-function jsonResponse(status: number, body: unknown) {
-  return new Response(JSON.stringify(body, null, 2), {
-    status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-    },
-  });
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
-    : {};
-}
-
-function asStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.map((item) => typeof item === "string" ? item.trim() : "").filter(
-      Boolean,
-    ).slice(0, 24)
-    : [];
-}
-
-function splitList(value: unknown) {
-  if (Array.isArray(value)) {
-    return asStringArray(value);
-  }
-  const text = asString(value);
-  if (!text) {
-    return [];
-  }
-  return text
-    .split(/[,;\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 24);
-}
-
-function uniqueStrings(values: Array<string | null | undefined>) {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const normalized = typeof value === "string" ? value.trim() : "";
-    const key = normalized.toLowerCase();
-    if (!normalized || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(normalized);
-  }
-  return result;
-}
-
-function skillSlug(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9+#.]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 96);
-}
-
-function boundedYears(value: unknown) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric < 0) {
-    return 0;
-  }
-  return Math.min(80, Math.round(numeric * 10) / 10);
-}
-
-function isDeadlineOpen(value: unknown) {
-  const deadline = asString(value);
-  return !deadline || deadline >= new Date().toISOString().slice(0, 10);
-}
-
-function publicJob(row: JsonRecord) {
-  const locationInfo = asRecord(row.location_info);
-  return {
-    id: String(row.public_slug ?? ""),
-    slug: String(row.public_slug ?? ""),
-    title: String(row.public_title ?? row.title ?? ""),
-    summary: String(row.public_summary ?? ""),
-    description: String(row.public_description ?? ""),
-    location: String(
-      row.public_location ?? locationInfo.city ?? locationInfo.country ?? "",
-    ),
-    remotePolicy: String(
-      locationInfo.remotePolicy ?? locationInfo.remote_policy ?? "Unspecified",
-    ),
-    seniorityLevel: String(row.seniority_level ?? ""),
-    employmentType: String(row.employment_type ?? ""),
-    requiredSkills: asStringArray(row.required_skills),
-    preferredSkills: asStringArray(row.preferred_skills),
-    keyResponsibilities: asStringArray(row.key_responsibilities),
-    applicationDeadline: asString(row.application_deadline),
-    applyEnabled: row.public_apply_enabled !== false &&
-      isDeadlineOpen(row.application_deadline),
-    publishedAt: asString(row.public_published_at),
-  };
-}
-
-function publicJobSelect() {
-  return [
-    "id",
-    "title",
-    "public_slug",
-    "public_title",
-    "public_summary",
-    "public_description",
-    "public_location",
-    "public_apply_enabled",
-    "public_published_at",
-    "application_deadline",
-    "seniority_level",
-    "employment_type",
-    "required_skills",
-    "preferred_skills",
-    "key_responsibilities",
-    "location_info",
-  ].join(", ");
-}
-
-async function sha256Hex(value: string) {
-  const bytes = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
-  return Array.from(new Uint8Array(bytes)).map((byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-}
-
-async function sha256Bytes(bytes: Uint8Array) {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  const hash = await crypto.subtle.digest("SHA-256", copy.buffer);
-  return Array.from(new Uint8Array(hash)).map((byte) =>
-    byte.toString(16).padStart(2, "0")
-  ).join("");
-}
-
-function safeFileName(value: string) {
-  const normalized = value
-    .trim()
-    .replace(/[/\\]/g, "-")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return (normalized || "candidate-cv.pdf").slice(0, 160);
-}
-
-function contentTypeForFile(fileName: string, contentType: string | null) {
-  if (contentType && ALLOWED_RESUME_TYPES.has(contentType)) {
-    return contentType;
-  }
-  const lowerName = fileName.toLowerCase();
-  if (lowerName.endsWith(".pdf")) {
-    return "application/pdf";
-  }
-  if (lowerName.endsWith(".docx")) {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  }
-  if (lowerName.endsWith(".txt")) {
-    return "text/plain";
-  }
-  return null;
-}
-
-function decodeBase64(value: string) {
-  const normalized = value.includes(",") ? value.split(",").pop() ?? "" : value;
-  const binary = atob(normalized.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function parseResumeFile(input: JsonRecord) {
-  const resumeFile = asRecord(input.resumeFile ?? input.resume_file);
-  const base64 = asString(resumeFile.base64);
-  if (!base64) {
-    return null;
-  }
-  const fileName = safeFileName(
-    asString(resumeFile.fileName ?? resumeFile.file_name) ?? "candidate-cv.pdf",
-  );
-  const contentType = contentTypeForFile(
-    fileName,
-    asString(resumeFile.contentType ?? resumeFile.content_type),
-  );
-  if (!contentType) {
-    throw new Error("Upload a PDF, DOCX, or TXT CV.");
-  }
-  const bytes = decodeBase64(base64);
-  const declaredSize = Number(
-    resumeFile.sizeBytes ?? resumeFile.size_bytes ?? bytes.byteLength,
-  );
-  if (
-    !Number.isFinite(declaredSize) || declaredSize <= 0 ||
-    declaredSize > MAX_RESUME_BYTES || bytes.byteLength > MAX_RESUME_BYTES
-  ) {
-    throw new Error("CV upload must be 10 MB or smaller.");
-  }
-  if (bytes.byteLength === 0) {
-    throw new Error("CV upload is empty.");
-  }
-  return { fileName, contentType, bytes };
-}
-
-async function upsertCandidateShell(
-  supabase: ReturnType<typeof createServiceClient>,
-  jobRecord: JsonRecord,
-  application: ReturnType<typeof assertApplication>,
-  applicationId: string,
-  preferredCandidateId: string | null,
-  resumeSourceDocumentId: string | null,
-) {
-  const tenantId = String(jobRecord.tenant_id ?? "");
-  let existingCandidate: JsonRecord | null = null;
-
-  if (preferredCandidateId) {
-    const { data, error } = await supabase
-      .from("candidates")
-      .select(
-        "id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json",
-      )
-      .eq("tenant_id", tenantId)
-      .eq("id", preferredCandidateId)
-      .maybeSingle();
-    if (error) throw error;
-    existingCandidate = data ? asRecord(data) : null;
-  }
-
-  if (!existingCandidate) {
-    const { data, error } = await supabase
-      .from("candidates")
-      .select(
-        "id, current_title, years_experience, seniority, primary_role, top_skills, links, latest_document_id, summary_short, status, metadata_json",
-      )
-      .eq("tenant_id", tenantId)
-      .eq("email", application.email)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    existingCandidate = data ? asRecord(data) : null;
-  }
-
-  const candidateId = asString(existingCandidate?.id) ?? crypto.randomUUID();
-  const existingSkills = asStringArray(existingCandidate?.top_skills);
-  const topSkills = uniqueStrings([...application.topSkills, ...existingSkills])
-    .slice(0, 24);
-  const currentTitle = application.currentTitle ||
-    asString(existingCandidate?.current_title) || "Public job applicant";
-  const yearsExperience = application.yearsExperience ??
-    Number(existingCandidate?.years_experience ?? 0);
-  const seniority = application.seniority ||
-    asString(existingCandidate?.seniority) || "unclassified";
-  const links = uniqueStrings([
-    ...asStringArray(existingCandidate?.links),
-    application.linkedinUrl,
-    application.portfolioUrl,
-  ]).slice(0, 12);
-  const jobTitle = String(
-    jobRecord.public_title ?? jobRecord.title ?? "public role",
-  );
-  const coverSummary = application.coverNote
-    ? ` ${application.coverNote.slice(0, 220)}`
-    : "";
-  const summaryShort = asString(existingCandidate?.summary_short) ??
-    `Applied for ${jobTitle}.${coverSummary}`;
-  const metadata = {
-    ...asRecord(existingCandidate?.metadata_json),
-    public_application: {
-      application_id: applicationId,
-      job_posting_id: jobRecord.id,
-      job_title: jobTitle,
-      submitted_from: "public_job_board",
-      source_document_id: resumeSourceDocumentId,
-    },
-  };
-  const candidatePayload = {
-    id: candidateId,
-    tenant_id: tenantId,
-    name: application.name,
-    headline: currentTitle,
-    current_title: currentTitle,
-    location: application.location,
-    years_experience: boundedYears(yearsExperience),
-    seniority,
-    primary_role: currentTitle,
-    top_skills: topSkills,
-    email: application.email,
-    phone: application.phone,
-    links,
-    latest_document_id: resumeSourceDocumentId ??
-      asString(existingCandidate?.latest_document_id),
-    summary_short: summaryShort,
-    status: asString(existingCandidate?.status) === "completed"
-      ? "completed"
-      : "application_submitted",
-    metadata_json: metadata,
-    hub_visibility: "platform",
-  };
-
-  const { error: upsertError } = await supabase
-    .from("candidates")
-    .upsert(candidatePayload, { onConflict: "id" });
-  if (upsertError) throw upsertError;
-
-  if (topSkills.length) {
-    const skillRows = topSkills
-      .map((skill) => ({ skill, slug: skillSlug(skill) }))
-      .filter((skill) => skill.slug)
-      .map(({ skill, slug }) => ({
-        id: crypto.randomUUID(),
-        tenant_id: tenantId,
-        candidate_id: candidateId,
-        skill_slug: slug,
-        canonical_skill: skill,
-        evidence: {
-          source: "public_application_form",
-          job_application_id: applicationId,
-        },
-      }));
-    if (skillRows.length) {
-      const { error: skillError } = await supabase
-        .from("candidate_skill_map")
-        .upsert(skillRows, {
-          onConflict: "tenant_id,candidate_id,skill_slug",
-          ignoreDuplicates: true,
-        });
-      if (skillError) throw skillError;
-    }
-  }
-
-  if (resumeSourceDocumentId) {
-    const { error: sourceError } = await supabase
-      .from("source_documents")
-      .update({ candidate_id: candidateId })
-      .eq("tenant_id", tenantId)
-      .eq("id", resumeSourceDocumentId)
-      .is("candidate_id", null);
-    if (sourceError) throw sourceError;
-  }
-
-  return {
-    candidateId,
-    created: !existingCandidate,
-  };
-}
-
-function assertApplication(input: JsonRecord) {
-  const name = asString(input.name);
-  const email = asString(input.email)?.toLowerCase();
-  const consent = input.consent === true || input.consentGiven === true;
-  const topSkills = splitList(input.topSkills ?? input.top_skills);
-  const currentTitle =
-    asString(input.currentTitle ?? input.current_title)?.slice(0, 180) ?? "";
-  const seniority = asString(input.seniority)?.slice(0, 80) ?? "";
-  if (!name || name.length > 160) {
-    throw new Error("Applicant name is required.");
-  }
-  if (
-    !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254
-  ) {
-    throw new Error("A valid email address is required.");
-  }
-  if (!consent) {
-    throw new Error("Consent is required before submitting an application.");
-  }
-  if (!currentTitle) {
-    throw new Error("Current title is required.");
-  }
-  if (!topSkills.length) {
-    throw new Error("At least one skill is required.");
-  }
-  const resumeFile = parseResumeFile(input);
-  return {
-    name,
-    email,
-    phone: asString(input.phone)?.slice(0, 80) ?? null,
-    location: asString(input.location)?.slice(0, 160) ?? null,
-    currentTitle,
-    yearsExperience: boundedYears(
-      input.yearsExperience ?? input.years_experience,
-    ),
-    seniority,
-    topSkills,
-    linkedinUrl:
-      asString(input.linkedinUrl ?? input.linkedin_url)?.slice(0, 500) ?? null,
-    portfolioUrl:
-      asString(input.portfolioUrl ?? input.portfolio_url)?.slice(0, 500) ??
-        null,
-    coverNote: asString(input.coverNote ?? input.cover_note)?.slice(0, 4000) ??
-      "",
-    resumeOriginalFilename: resumeFile?.fileName ??
-      asString(input.resumeOriginalFilename ?? input.resume_original_filename)
-        ?.slice(0, 255) ??
-      null,
-    resumeFile,
-    idempotencyKey:
-      asString(input.idempotencyKey ?? input.idempotency_key)?.slice(0, 120) ??
-        null,
-  };
-}
+import { asRecord, asString, sha256Hex } from "../_shared/utils.ts";
+import { type JsonRecord } from "./types.ts";
+import { RESUME_BUCKET } from "./constants.ts";
+import {
+  isDeadlineOpen,
+  jsonResponse,
+  publicJob,
+  publicJobSelect,
+  sha256Bytes,
+} from "./helpers.ts";
+import { assertApplication, upsertCandidateShell } from "./application.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -451,7 +37,9 @@ Deno.serve(async (req) => {
         .limit(100);
       if (error) throw error;
       return jsonResponse(200, {
-        jobs: (data ?? []).map((row) => publicJob(asRecord(row))),
+        jobs: (data ?? []).map((row: Record<string, unknown>) =>
+          publicJob(asRecord(row))
+        ),
       });
     }
 
@@ -592,7 +180,7 @@ Deno.serve(async (req) => {
               original_filename: application.resumeFile.fileName,
               mime_type: application.resumeFile.contentType,
               document_sha256: resumeSha256,
-              source_uri: `supabase://${RESUME_BUCKET}/${resumeStoragePath}`,
+              source_uri: `supabase:${RESUME_BUCKET}/${resumeStoragePath}`,
               storage_path: resumeStoragePath,
               uploaded_by: application.email,
               metadata_json: {
@@ -738,7 +326,7 @@ Deno.serve(async (req) => {
             input_hash: await sha256Hex(
               `${jobRecord.tenant_id}:${resumeSourceDocumentId}:${applicationId}:public_job_application`,
             ),
-            source_path: `supabase://${RESUME_BUCKET}/${resumeStoragePath}`,
+            source_path: `supabase:${RESUME_BUCKET}/${resumeStoragePath}`,
             source_sha256: resumeSha256,
             parser_version: "queued-public-application",
             model_version: "queued-public-application",
@@ -773,12 +361,14 @@ Deno.serve(async (req) => {
           },
         });
       if (eventError) throw eventError;
+
       const { error: refreshError } = await supabase.rpc(
         "refresh_candidate_search_cache_v1",
       );
       if (refreshError) {
         console.error("candidate_search_cache_refresh_failed", refreshError);
       }
+
       if (resumeSourceDocumentId && resumeIngestionStatus === "queued") {
         const { error: queueEventError } = await supabase
           .from("job_application_events")
