@@ -6,8 +6,13 @@ import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
+from cv_intelligence_worker.realtime_extractor import (
+    app,
+    build_extended_system_prompt,
+    mark_extraction_failed,
+    sync_to_supabase_background,
+)
 from cv_intelligence_worker.schema import DocumentText
-from realtime_extractor import app, build_extended_system_prompt, mark_extraction_failed, sync_to_supabase_background
 from tests.test_helpers.realtime import realtime_extraction
 
 client = TestClient(app)
@@ -38,14 +43,14 @@ def test_realtime_schema_rejects_unknown_fields_and_invalid_confidence():
 
 
 def test_detect_allowed_mime_type_matches_magic_bytes():
-    from realtime_extractor import _detect_allowed_mime_type
+    from cv_intelligence_worker.realtime_extractor import _detect_allowed_mime_type
 
     assert _detect_allowed_mime_type(b"%PDF-1.7\nrest") == "application/pdf"
     assert _detect_allowed_mime_type(b"PK\x03\x04rest") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     assert _detect_allowed_mime_type(b"not a document") is None
 
 
-@patch("realtime_extractor.SupabaseSyncClient")
+@patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
 def test_sync_to_supabase_background_success(mock_supabase_client_class):
     """Test successful DB sync, extracting field_confidence and setting completed status."""
     mock_instance = MagicMock()
@@ -88,7 +93,7 @@ def test_sync_to_supabase_background_success(mock_supabase_client_class):
     assert row["field_confidence_json"] == {"name": 100}
 
 
-@patch("realtime_extractor.logger")
+@patch("cv_intelligence_worker.realtime_extractor.logger")
 def test_sync_to_supabase_background_missing_config(mock_logger):
     """Test that sync aborts if supabase config is missing."""
     config = WorkerConfig(supabase_url="", supabase_service_key="")
@@ -98,8 +103,8 @@ def test_sync_to_supabase_background_missing_config(mock_logger):
     mock_logger.info.assert_called_with("[DB SYNC] No Supabase credentials, skipping sync")
 
 
-@patch("realtime_extractor.SupabaseSyncClient")
-@patch("realtime_extractor.logger")
+@patch("cv_intelligence_worker.realtime_extractor.SupabaseSyncClient")
+@patch("cv_intelligence_worker.realtime_extractor.logger")
 def test_mark_extraction_failed_uses_safe_error(mock_logger, mock_supabase_client_class):
     mock_instance = MagicMock()
     mock_supabase_client_class.return_value = mock_instance
@@ -114,9 +119,9 @@ def test_mark_extraction_failed_uses_safe_error(mock_logger, mock_supabase_clien
     assert fail_row["parse_error"] == "structured model response failed validation"
 
 
-@patch("realtime_extractor._check_rate_limit")
-@patch("realtime_extractor.parse_document")
-@patch("realtime_extractor.WorkerConfig.from_env")
+@patch("cv_intelligence_worker.realtime_extractor._check_rate_limit")
+@patch("cv_intelligence_worker.realtime_extractor.parse_document")
+@patch("cv_intelligence_worker.realtime_extractor.WorkerConfig.from_env")
 @patch("cv_intelligence_worker.llm.AsyncOpenAI")
 def test_parse_endpoint_returns_only_sdk_validated_json(openai, config_from_env, parse_document, _rate_limit):
     extraction = realtime_extraction()
@@ -149,9 +154,9 @@ def test_parse_endpoint_returns_only_sdk_validated_json(openai, config_from_env,
     sdk_client.chat.completions.parse.assert_awaited_once()
 
 
-@patch("realtime_extractor._check_rate_limit")
-@patch("realtime_extractor.parse_document")
-@patch("realtime_extractor.WorkerConfig.from_env")
+@patch("cv_intelligence_worker.realtime_extractor._check_rate_limit")
+@patch("cv_intelligence_worker.realtime_extractor.parse_document")
+@patch("cv_intelligence_worker.realtime_extractor.WorkerConfig.from_env")
 @patch("cv_intelligence_worker.llm.AsyncOpenAI")
 def test_parse_endpoint_rejects_malformed_model_output(openai, config_from_env, parse_document, _rate_limit):
     payload = realtime_extraction().model_dump()

@@ -117,6 +117,8 @@ In addition to the Dockerized Supabase stack, local development currently uses:
     - `/agent`
 - `ollama serve`
   - provides local LLM and embedding endpoints during local AI testing
+- `python -m uvicorn cv_intelligence_worker.realtime_extractor:app --host 127.0.0.1 --port 8000`
+  - runs the packaged CV extraction API after installing `worker/`
 - `npm run dev --host 0.0.0.0 --port 5175`
   - runs the frontend dev server
 
@@ -136,13 +138,15 @@ docker ps
 supabase status
 supabase functions serve --no-verify-jwt
 ollama serve
+python -m uvicorn cv_intelligence_worker.realtime_extractor:app --host 127.0.0.1 --port 8000
+curl http://127.0.0.1:8000/health
 cd frontend && npm run dev --host 0.0.0.0 --port 5175
 ```
 
 ### Worker commands
 
 ```bash
-python3 -m unittest discover -s worker/tests -t worker
+python -m pytest worker/tests
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker discover ./workspaces/<tenant-slug> --tenant-id <tenant-id>
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest ./workspaces/<tenant-slug> --tenant-id <tenant-id> --no-sync
 PYTHONPATH=worker/src python3 -m cv_intelligence_worker compare --tenant-id <tenant-id> --candidate-id <id-1> --candidate-id <id-2> --no-sync

@@ -30,6 +30,14 @@ Thanks for helping improve CV Intelligence Platform. This repo combines a React 
    python -m pip install -e "worker[dev]"
    ```
 
+   Verify the installed CLI and start the local extraction API:
+
+   ```bash
+   cv-intelligence-worker --help
+   python -m uvicorn cv_intelligence_worker.realtime_extractor:app --host 127.0.0.1 --port 8000
+   curl http://127.0.0.1:8000/health
+   ```
+
 4. Optional local backend:
 
    ```bash

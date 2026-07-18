@@ -29,7 +29,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from realtime_extractor import app
+from cv_intelligence_worker.realtime_extractor import app
 from tests.test_helpers.cv_generator import EXPECTED_PROFILE, make_cv_file
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ class TestOutputComparison:
 
     @pytest.fixture(autouse=True)
     def _disable_rate_limit(self):
-        with patch("realtime_extractor._check_rate_limit"):
+        with patch("cv_intelligence_worker.realtime_extractor._check_rate_limit"):
             yield
 
     def test_normal_vs_realtime_same_cv(self):

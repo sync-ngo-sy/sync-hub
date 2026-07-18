@@ -64,7 +64,7 @@ TRANSITIONS: dict[tuple[str, str], dict[str, str]] = {
     },
     ("parsing", "completed"): {
         "trigger": "Stream completes (FastAPI background sync)",
-        "source": "realtime_extractor.py:152-158",
+        "source": "cv_intelligence_worker/realtime_extractor.py:156-167",
     },
     ("completed", "pending_validation"): {
         "trigger": "User publishes draft",

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import json
 import time
@@ -25,6 +27,11 @@ from cv_intelligence_worker.schema import DocumentSource
 from cv_intelligence_worker.supabase_client import SupabaseSyncClient
 
 app = FastAPI(title="Realtime CV Extraction")
+
+
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 # ---------------------------------------------------------------------------
 # H2: Rate limiting — 10 requests/minute per API key (sliding window)

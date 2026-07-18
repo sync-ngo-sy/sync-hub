@@ -56,7 +56,5 @@ USER appuser
 # Expose the Cloud Run default port
 EXPOSE 8080
 
-# 8. Start the FastAPI application
-# Setting the working directory to src so uvicorn resolves realtime_extractor cleanly
-WORKDIR /app/src
-CMD ["uvicorn", "realtime_extractor:app", "--host", "0.0.0.0", "--port", "8080"]
+# 8. Start the packaged FastAPI application
+CMD ["uvicorn", "cv_intelligence_worker.realtime_extractor:app", "--host", "0.0.0.0", "--port", "8080"]
