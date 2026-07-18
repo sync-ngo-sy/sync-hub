@@ -370,16 +370,14 @@ class ManatalSync:
             "migrated_to_gcs_from": "manatal-sync",
             "migrated_to_gcs_at": _isoformat(_utc_now()),
         }
-        query = urllib.parse.urlencode({"id": f"eq.{source_document_id}"})
-        self.supabase._request(
-            "PATCH",
-            f"/rest/v1/source_documents?{query}",
-            data={
+        self.supabase.update_source_document(
+            source.tenant_id,
+            source_document_id,
+            {
                 "source_uri": f"gs://{bucket}/{object_name}",
                 "storage_path": object_name,
                 "metadata_json": metadata,
             },
-            headers={"Prefer": "return=minimal"},
         )
         return object_name
 

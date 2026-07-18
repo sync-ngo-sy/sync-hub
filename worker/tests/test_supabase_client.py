@@ -207,6 +207,43 @@ class SupabaseClientTests(unittest.TestCase):
         self.assertIn("metadata_json-%3E%3Ejob_application_id=eq.application-1", path)
         self.assertEqual({"status": "completed"}, client.requests[0][2])
 
+    def test_source_document_lookup_is_tenant_scoped(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+
+        client.source_documents_by_ids("tenant-1", ["source-1", "source-2"])
+
+        method, path, _data, _headers = client.requests[0]
+        self.assertEqual("GET", method)
+        self.assertIn("tenant_id=eq.tenant-1", path)
+        self.assertIn("id=in.%28source-1%2Csource-2%29", path)
+
+    def test_manatal_original_page_is_tenant_scoped_and_bounded(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+
+        client.manatal_original_source_rows("tenant-1", offset=-5, limit=0)
+
+        method, path, _data, _headers = client.requests[0]
+        self.assertEqual("GET", method)
+        self.assertIn("tenant_id=eq.tenant-1", path)
+        self.assertIn("source_document_id=not.is.null", path)
+        self.assertIn("limit=1", path)
+        self.assertIn("offset=0", path)
+
+    def test_source_document_update_is_tenant_scoped(self) -> None:
+        config = WorkerConfig(supabase_url="https://example.supabase.co", supabase_anon_key="anon")
+        client = RequestRecordingSupabaseClient(config)
+
+        client.update_source_document("tenant-1", "source-1", {"storage_path": "path/to/cv.pdf"})
+
+        method, path, data, headers = client.requests[0]
+        self.assertEqual("PATCH", method)
+        self.assertIn("tenant_id=eq.tenant-1", path)
+        self.assertIn("id=eq.source-1", path)
+        self.assertEqual({"storage_path": "path/to/cv.pdf"}, data)
+        self.assertEqual({"Prefer": "return=minimal"}, headers)
+
 
 if __name__ == "__main__":
     unittest.main()

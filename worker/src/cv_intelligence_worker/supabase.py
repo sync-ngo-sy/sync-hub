@@ -164,6 +164,44 @@ class SupabaseClient:
             if isinstance(row, dict) and row.get("manatal_candidate_id")
         ]
 
+    def manatal_original_source_rows(self, tenant_id: str, *, offset: int, limit: int) -> list[dict[str, Any]]:
+        query = urllib.parse.urlencode(
+            {
+                "tenant_id": f"eq.{tenant_id}",
+                "source_document_id": "not.is.null",
+                "select": "tenant_id,manatal_candidate_id,manatal_full_name,manatal_email,resume_url,source_document_id,resume_sha256,metadata_json",
+                "order": "updated_at.asc",
+                "limit": str(max(1, limit)),
+                "offset": str(max(0, offset)),
+            }
+        )
+        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
+        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
+
+    def source_documents_by_ids(self, tenant_id: str, source_document_ids: list[str]) -> dict[str, dict[str, Any]]:
+        rows = self._select_in(
+            "source_documents",
+            tenant_id,
+            "id",
+            source_document_ids,
+            "id,tenant_id,candidate_id,original_filename,mime_type,source_uri,storage_path,metadata_json",
+        )
+        return {str(row.get("id")): row for row in rows if row.get("id")}
+
+    def update_source_document(self, tenant_id: str, source_document_id: str, values: dict[str, Any]) -> None:
+        query = urllib.parse.urlencode(
+            {
+                "tenant_id": f"eq.{tenant_id}",
+                "id": f"eq.{source_document_id}",
+            }
+        )
+        self._request(
+            "PATCH",
+            f"/rest/v1/source_documents?{query}",
+            data=values,
+            headers={"Prefer": "return=minimal"},
+        )
+
     def _count_table(self, table: str, tenant_id: str | None = None) -> int:
         query_args = {"select": "id", "limit": "1"}
         if tenant_id:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import tempfile
 import time
-import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -46,35 +45,14 @@ class ManatalOriginalsBackfill:
         self.gcs = GcsJsonClient(config)
 
     def _manatal_rows(self, *, offset: int, limit: int) -> list[dict[str, Any]]:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{self.config.tenant_id}",
-                "source_document_id": "not.is.null",
-                "select": "tenant_id,manatal_candidate_id,manatal_full_name,manatal_email,resume_url,source_document_id,resume_sha256,metadata_json",
-                "order": "updated_at.asc",
-                "limit": str(max(1, limit)),
-                "offset": str(max(0, offset)),
-            }
+        return self.supabase.manatal_original_source_rows(
+            self.config.tenant_id,
+            offset=offset,
+            limit=limit,
         )
-        result = self.supabase._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
-        return result if isinstance(result, list) else []
 
     def _source_documents(self, source_document_ids: list[str]) -> dict[str, dict[str, Any]]:
-        if not source_document_ids:
-            return {}
-        rows: list[dict[str, Any]] = []
-        for batch_start in range(0, len(source_document_ids), 100):
-            batch = source_document_ids[batch_start : batch_start + 100]
-            query = urllib.parse.urlencode(
-                {
-                    "id": f"in.({','.join(batch)})",
-                    "select": "id,tenant_id,candidate_id,original_filename,mime_type,source_uri,storage_path,metadata_json",
-                }
-            )
-            result = self.supabase._request("GET", f"/rest/v1/source_documents?{query}")
-            if isinstance(result, list):
-                rows.extend(row for row in result if isinstance(row, dict))
-        return {str(row.get("id")): row for row in rows if row.get("id")}
+        return self.supabase.source_documents_by_ids(self.config.tenant_id, source_document_ids)
 
     def _update_source_document(self, source: dict[str, Any], manatal_row: dict[str, Any], bucket: str, object_name: str, update_source_uri: bool) -> None:
         metadata = _as_metadata(source.get("metadata_json"))
@@ -100,13 +78,7 @@ class ManatalOriginalsBackfill:
         }
         if update_source_uri:
             payload["source_uri"] = f"gs://{bucket}/{object_name}"
-        query = urllib.parse.urlencode({"id": f"eq.{source['id']}"})
-        self.supabase._request(
-            "PATCH",
-            f"/rest/v1/source_documents?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self.supabase.update_source_document(self.config.tenant_id, str(source["id"]), payload)
 
     def run(
         self,
