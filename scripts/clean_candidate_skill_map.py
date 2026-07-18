@@ -7,7 +7,6 @@ import json
 import os
 import re
 import ssl
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +14,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from cv_intelligence_worker.config import WorkerConfig
+from cv_intelligence_worker.llm import LLMClient, LLMResponseError
+from cv_intelligence_worker.llm_models import SkillClassificationBatch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -940,20 +943,6 @@ def json_dump(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True))
 
 
-def parse_json_object(content: str) -> dict[str, Any]:
-    try:
-        value = json.loads(content)
-    except json.JSONDecodeError:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start < 0 or end <= start:
-            raise
-        value = json.loads(content[start : end + 1])
-    if not isinstance(value, dict):
-        raise ValueError("LLM response was not a JSON object")
-    return value
-
-
 class SupabaseRest:
     def __init__(self) -> None:
         self.url = os.environ["SUPABASE_URL"].rstrip("/")
@@ -1026,88 +1015,56 @@ class SupabaseRest:
 
 
 class SkillClassifier:
-    def __init__(self, *, batch_size: int, max_workers: int) -> None:
+    def __init__(
+        self,
+        *,
+        batch_size: int,
+        max_workers: int,
+        config: WorkerConfig | None = None,
+        client: LLMClient | None = None,
+    ) -> None:
+        if batch_size < 1 or max_workers < 1:
+            raise ValueError("batch size and max workers must be positive")
+        config = config or WorkerConfig.from_env()
+        if not config.extraction_model:
+            raise RuntimeError("Missing CV_EXTRACTION_MODEL for LLM skill cleanup")
         self.batch_size = batch_size
         self.max_workers = max_workers
-        self.base_url = os.environ.get("CV_MODEL_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
-        self.api_key = os.environ.get("CV_MODEL_API_KEY") or os.environ.get("GEMINI_API_KEY")
-        self.model = os.environ.get("CV_EXTRACTION_MODEL", "gemini-2.5-flash")
-        self.ssl_context = ssl._create_unverified_context()
-        if not self.api_key:
-            raise RuntimeError("Missing CV_MODEL_API_KEY or GEMINI_API_KEY for LLM skill cleanup")
+        self.model = config.extraction_model
+        self.client = client or LLMClient(config)
 
-    def prompt(self, items: list[dict[str, Any]]) -> str:
+    @staticmethod
+    def system_prompt() -> str:
         return (
             "You are cleaning a recruiter CV skill taxonomy.\n"
-            "For each input label, decide if it is a reusable candidate skill.\n"
-            'Return JSON only as {"items":[{"id":number,"action":"keep|drop","canonical":string|null}]}.\n'
+            "Classify every supplied item exactly once and preserve each input ID.\n"
             "Rules:\n"
             "- Keep real technical skills, tools, frameworks, methods, domain skills, languages, and soft/professional skills.\n"
             "- Drop dates, phone numbers, emails, URLs, locations, person names, company-only labels, job titles, CV section headings, random OCR text, and full sentences that are not reusable skills.\n"
+            "- Kept items require a concise canonical value; dropped items require a null canonical value.\n"
             "- Canonicalize aliases to concise recruiter-friendly names.\n"
             "- Examples: React.js -> React, Vue.js -> Vue, Express.js -> Express, NodeJS -> Node.js, Next Js -> Next.js.\n"
             "- Examples: RESTful API/RESTful APIs -> REST APIs, HTML5 -> HTML, CSS3 -> CSS, .Net/.NET Core/.NET 8 -> .NET.\n"
             "- Examples: Javascript/JS -> JavaScript, Typescript/TS -> TypeScript, Git/GIT -> Git, Github -> GitHub.\n"
             "- Prefer the broad searchable skill over version noise unless the version is the important skill name.\n"
-            "- Do not invent new skills not supported by the label.\n"
-            f"Inputs: {json.dumps(items, ensure_ascii=False)}"
+            "- Do not invent new skills not supported by the label."
         )
 
     def request_batch(self, items: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-        payload = {
-            "model": self.model,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [{"role": "user", "content": self.prompt(items)}],
-        }
-        req = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(payload).encode(),
-            method="POST",
+        parsed = self.client.parse(
+            model=self.model,
+            system_prompt=self.system_prompt(),
+            prompt={"items": items},
+            response_model=SkillClassificationBatch,
         )
-        req.add_header("Authorization", f"Bearer {self.api_key}")
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=120, context=self.ssl_context) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        content = data["choices"][0]["message"]["content"]
-        parsed = parse_json_object(content)
-        raw_items = parsed.get("items")
-        if not isinstance(raw_items, list):
-            raise ValueError("LLM response missing items array")
-        results: dict[int, dict[str, Any]] = {}
-        for item in raw_items:
-            if not isinstance(item, dict) or "id" not in item:
-                continue
-            try:
-                item_id = int(item["id"])
-            except (TypeError, ValueError):
-                continue
-            action = "drop" if item.get("action") == "drop" else "keep"
-            canonical = item.get("canonical")
-            canonical = compact_whitespace(canonical) if isinstance(canonical, str) else ""
-            if action == "keep" and not canonical:
-                action = "drop"
-            results[item_id] = {"action": action, "canonical": canonical or None}
         expected = {int(item["id"]) for item in items}
-        if expected - set(results):
-            raise ValueError(f"LLM response missed {len(expected - set(results))} items")
-        return results
-
-    def classify_batch(self, items: list[dict[str, Any]], *, attempt: int = 1) -> dict[int, dict[str, Any]]:
-        try:
-            return self.request_batch(items)
-        except Exception:
-            if len(items) > 1:
-                middle = len(items) // 2
-                left = self.classify_batch(items[:middle], attempt=attempt)
-                right = self.classify_batch(items[middle:], attempt=attempt)
-                return {**left, **right}
-            if attempt < 3:
-                time.sleep(1.5 * attempt)
-                return self.classify_batch(items, attempt=attempt + 1)
-            item = items[0]
-            label = compact_whitespace(str(item["label"]))
-            return {int(item["id"]): {"action": "keep", "canonical": label, "fallback": True}}
+        received = {item.id for item in parsed.items}
+        if received != expected:
+            raise LLMResponseError("skill classification response IDs do not match request")
+        return {
+            item.id: {"action": item.action, "canonical": item.canonical}
+            for item in parsed.items
+        }
 
     def classify(self, labels: list[tuple[str, int]], cache: dict[str, Any]) -> dict[str, Any]:
         missing = [
@@ -1122,7 +1079,7 @@ class SkillClassifier:
         by_id = {int(item["id"]): item["label"] for item in missing}
         completed = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_batch = {executor.submit(self.classify_batch, batch): batch for batch in batches}
+            future_to_batch = {executor.submit(self.request_batch, batch): batch for batch in batches}
             for future in concurrent.futures.as_completed(future_to_batch):
                 results = future.result()
                 for item_id, value in results.items():
@@ -1171,7 +1128,9 @@ def build_plan(rows: list[dict[str, Any]], mapping: dict[str, Any]) -> dict[str,
     row_targets: dict[str, tuple[str, str]] = {}
     for row in rows:
         raw_label = compact_whitespace(str(row.get("canonical_skill") or ""))
-        decision = mapping.get(raw_label) or {"action": "keep", "canonical": raw_label, "fallback": True}
+        decision = mapping.get(raw_label)
+        if decision is None:
+            raise ValueError("skill mapping is incomplete")
         canonical = compact_whitespace(str(decision.get("canonical") or ""))
         action = decision.get("action")
         target_slug = skill_slug(canonical) if canonical else ""
@@ -1274,6 +1233,7 @@ def main() -> None:
     parser.add_argument("--skip-llm", action="store_true", help="Use existing LLM cache only when --mode llm.")
     args = parser.parse_args()
 
+    load_env(ROOT / ".env")
     load_env(ROOT / ".env.local")
     load_env(ROOT / "frontend" / ".env.local")
 

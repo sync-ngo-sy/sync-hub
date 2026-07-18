@@ -7,6 +7,7 @@ from openai import AsyncOpenAI, OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from .config import WorkerConfig
+from .llm_models import EmbeddingVector
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 
@@ -60,7 +61,7 @@ class LLMClient:
         except ValidationError as exc:
             raise LLMResponseError("structured model response failed validation") from exc
         except OpenAIError as exc:
-            raise self._request_error(exc) from exc
+            raise self._request_error("structured model", exc) from exc
         return self._completion_output(completion, response_model)
 
     def _async_client_instance(self) -> AsyncOpenAI:
@@ -73,6 +74,57 @@ class LLMClient:
         if not completion.choices:
             raise LLMResponseError("model returned no completion choices")
         return cls._parsed_output(completion.choices[0].message, response_model)
+
+    def embed(
+        self,
+        *,
+        model: str,
+        inputs: list[str],
+        dimensions: int | None = None,
+        expected_dimension: int | None = None,
+    ) -> list[list[float]]:
+        if not inputs:
+            return []
+        request: dict[str, Any] = {"model": model, "input": inputs}
+        if dimensions is not None:
+            request["dimensions"] = dimensions
+        try:
+            response = self._sync_client().embeddings.create(**request)
+        except ValidationError as exc:
+            raise LLMResponseError("embedding response failed validation") from exc
+        except OpenAIError as exc:
+            raise self._request_error("embedding", exc) from exc
+
+        data = getattr(response, "data", None)
+        if not isinstance(data, list):
+            raise LLMResponseError("embedding response failed validation")
+        try:
+            vectors = [
+                EmbeddingVector.model_validate(
+                    {
+                        "index": getattr(item, "index", None),
+                        "embedding": getattr(item, "embedding", None),
+                    }
+                )
+                for item in data
+            ]
+        except ValidationError as exc:
+            raise LLMResponseError("embedding response failed validation") from exc
+
+        if len(vectors) != len(inputs):
+            raise LLMResponseError("embedding response count mismatch")
+        if all(vector.index is None for vector in vectors):
+            ordered_vectors = [vector.embedding for vector in vectors]
+        elif any(vector.index is None for vector in vectors):
+            raise LLMResponseError("embedding response indices are invalid")
+        else:
+            vectors_by_index = {vector.index: vector.embedding for vector in vectors}
+            if len(vectors_by_index) != len(vectors) or set(vectors_by_index) != set(range(len(inputs))):
+                raise LLMResponseError("embedding response indices are invalid")
+            ordered_vectors = [vectors_by_index[index] for index in range(len(inputs))]
+        if expected_dimension is not None and any(len(vector) != expected_dimension for vector in ordered_vectors):
+            raise LLMResponseError("embedding response dimension mismatch")
+        return ordered_vectors
 
     def _sync_client(self) -> OpenAI:
         if self._client is None:
@@ -108,10 +160,10 @@ class LLMClient:
         }
 
     @staticmethod
-    def _request_error(exc: OpenAIError) -> LLMResponseError:
+    def _request_error(operation: str, exc: OpenAIError) -> LLMResponseError:
         status = getattr(exc, "status_code", None)
         detail = f" with status {status}" if status is not None else ""
-        return LLMResponseError(f"structured model request failed{detail}")
+        return LLMResponseError(f"{operation} request failed{detail}")
 
     @staticmethod
     def _messages(system_prompt: str, prompt: dict[str, Any]) -> list[dict[str, str]]:
