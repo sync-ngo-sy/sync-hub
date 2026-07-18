@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, TypeVar
 
-from openai import OpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from .config import WorkerConfig
@@ -22,10 +22,12 @@ class LLMClient:
         *,
         provider: str | None = None,
         client: OpenAI | None = None,
+        async_client: AsyncOpenAI | None = None,
     ) -> None:
         self.config = config
         self.provider = (provider or config.extraction_provider).lower()
         self._client = client
+        self._async_client = async_client
 
     def parse(
         self,
@@ -36,21 +38,41 @@ class LLMClient:
         response_model: type[OutputT],
     ) -> OutputT:
         try:
-            completion = self._sync_client().chat.completions.parse(
-                model=model,
-                messages=self._messages(system_prompt, prompt),
-                temperature=0,
-                response_format=response_model,
+            completion = self._sync_client().chat.completions.parse(**self._parse_request(model, system_prompt, prompt, response_model))
+        except ValidationError as exc:
+            raise LLMResponseError("structured model response failed validation") from exc
+        except OpenAIError as exc:
+            raise self._request_error(exc) from exc
+        return self._completion_output(completion, response_model)
+
+    async def parse_async(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        prompt: dict[str, Any],
+        response_model: type[OutputT],
+    ) -> OutputT:
+        try:
+            completion = await self._async_client_instance().chat.completions.parse(
+                **self._parse_request(model, system_prompt, prompt, response_model)
             )
         except ValidationError as exc:
             raise LLMResponseError("structured model response failed validation") from exc
         except OpenAIError as exc:
-            status = getattr(exc, "status_code", None)
-            detail = f" with status {status}" if status is not None else ""
-            raise LLMResponseError(f"structured model request failed{detail}") from exc
+            raise self._request_error(exc) from exc
+        return self._completion_output(completion, response_model)
+
+    def _async_client_instance(self) -> AsyncOpenAI:
+        if self._async_client is None:
+            self._async_client = AsyncOpenAI(**self._client_options())
+        return self._async_client
+
+    @classmethod
+    def _completion_output(cls, completion: Any, response_model: type[OutputT]) -> OutputT:
         if not completion.choices:
             raise LLMResponseError("model returned no completion choices")
-        return self._parsed_output(completion.choices[0].message, response_model)
+        return cls._parsed_output(completion.choices[0].message, response_model)
 
     def _sync_client(self) -> OpenAI:
         if self._client is None:
@@ -70,6 +92,26 @@ class LLMClient:
         if self.provider == "ollama" and not base_url.endswith("/v1"):
             return f"{base_url}/v1"
         return base_url
+
+    def _parse_request(
+        self,
+        model: str,
+        system_prompt: str,
+        prompt: dict[str, Any],
+        response_model: type[OutputT],
+    ) -> dict[str, Any]:
+        return {
+            "model": model,
+            "messages": self._messages(system_prompt, prompt),
+            "temperature": 0,
+            "response_format": response_model,
+        }
+
+    @staticmethod
+    def _request_error(exc: OpenAIError) -> LLMResponseError:
+        status = getattr(exc, "status_code", None)
+        detail = f" with status {status}" if status is not None else ""
+        return LLMResponseError(f"structured model request failed{detail}")
 
     @staticmethod
     def _messages(system_prompt: str, prompt: dict[str, Any]) -> list[dict[str, str]]:

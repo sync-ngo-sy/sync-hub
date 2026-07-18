@@ -1,12 +1,17 @@
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+import pytest
 
-from realtime_extractor import app, build_extended_system_prompt, sync_to_supabase_background
 from cv_intelligence_worker.config import WorkerConfig
+from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
+from cv_intelligence_worker.schema import DocumentText
+from realtime_extractor import app, build_extended_system_prompt, mark_extraction_failed, sync_to_supabase_background
+from tests.test_helpers.realtime import realtime_extraction
 
 client = TestClient(app)
+
 
 def test_build_extended_system_prompt():
     """Test that the extended system prompt successfully merges base prompt, extra rules, and schema."""
@@ -22,12 +27,23 @@ def test_build_extended_system_prompt():
     assert "employment_type" in prompt
     assert "work_mode" in prompt
 
+
+def test_realtime_schema_rejects_unknown_fields_and_invalid_confidence():
+    payload = realtime_extraction().model_dump()
+    payload["nme"] = payload.pop("name")
+    payload["field_confidence"] = {"name": 101}
+
+    with pytest.raises(ValidationError):
+        RealtimeCandidateExtraction.model_validate(payload)
+
+
 def test_detect_allowed_mime_type_matches_magic_bytes():
     from realtime_extractor import _detect_allowed_mime_type
 
     assert _detect_allowed_mime_type(b"%PDF-1.7\nrest") == "application/pdf"
     assert _detect_allowed_mime_type(b"PK\x03\x04rest") == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     assert _detect_allowed_mime_type(b"not a document") is None
+
 
 @patch("realtime_extractor.SupabaseSyncClient")
 def test_sync_to_supabase_background_success(mock_supabase_client_class):
@@ -37,18 +53,12 @@ def test_sync_to_supabase_background_success(mock_supabase_client_class):
 
     config = WorkerConfig(supabase_url="http://mock.supabase.co", supabase_service_key="mock_key")
 
-    raw_json = json.dumps({
-        "name": "Test User",
-        "experience": [],
-        "field_confidence": {"name": 100}
-    })
+    extraction = realtime_extraction(name="Test User", field_confidence={"name": 100})
 
     sync_to_supabase_background(
         user_id="user_123",
-        file_name="resume.pdf",
-        mime_type="application/pdf",
-        raw_json_str=raw_json,
-        config=config
+        extraction=extraction,
+        config=config,
     )
 
     # Check if client was instantiated with correct credentials
@@ -77,31 +87,99 @@ def test_sync_to_supabase_background_success(mock_supabase_client_class):
     # Ensure field_confidence_json received the popped data
     assert row["field_confidence_json"] == {"name": 100}
 
+
 @patch("realtime_extractor.logger")
 def test_sync_to_supabase_background_missing_config(mock_logger):
     """Test that sync aborts if supabase config is missing."""
     config = WorkerConfig(supabase_url="", supabase_service_key="")
 
-    sync_to_supabase_background("user_123", "resume.pdf", "application/pdf", "{}", config)
+    sync_to_supabase_background("user_123", realtime_extraction(), config)
 
     mock_logger.info.assert_called_with("[DB SYNC] No Supabase credentials, skipping sync")
 
+
 @patch("realtime_extractor.SupabaseSyncClient")
 @patch("realtime_extractor.logger")
-def test_sync_to_supabase_background_invalid_json(mock_logger, mock_supabase_client_class):
-    """Test that sync marks draft as failed on malformed JSON."""
+def test_mark_extraction_failed_uses_safe_error(mock_logger, mock_supabase_client_class):
     mock_instance = MagicMock()
     mock_supabase_client_class.return_value = mock_instance
 
     config = WorkerConfig(supabase_url="http://mock.supabase.co", supabase_service_key="mock_key")
 
-    sync_to_supabase_background("user_123", "resume.pdf", "application/pdf", "{invalid_json}", config)
+    mark_extraction_failed("user_123", "structured model response failed validation", config)
 
-    assert mock_logger.error.called
-    assert "Failed to decode final JSON" in mock_logger.error.call_args_list[0][0][0]
-
-    # Verify it tried to mark the draft as failed in the DB
-    assert mock_instance.upsert_rows.called
+    mock_logger.error.assert_not_called()
     fail_row = mock_instance.upsert_rows.call_args[0][1][0]
     assert fail_row["parse_status"] == "failed"
-    assert "JSON decode error" in fail_row["parse_error"]
+    assert fail_row["parse_error"] == "structured model response failed validation"
+
+
+@patch("realtime_extractor._check_rate_limit")
+@patch("realtime_extractor.parse_document")
+@patch("realtime_extractor.WorkerConfig.from_env")
+@patch("cv_intelligence_worker.llm.AsyncOpenAI")
+def test_parse_endpoint_returns_only_sdk_validated_json(openai, config_from_env, parse_document, _rate_limit):
+    extraction = realtime_extraction()
+    sdk_client = MagicMock()
+    sdk_client.chat.completions.parse = AsyncMock(
+        return_value=MagicMock(choices=[MagicMock(message=MagicMock(parsed=extraction, refusal=None))])
+    )
+    openai.return_value = sdk_client
+    config_from_env.return_value = WorkerConfig(
+        api_key="worker-secret",
+        extraction_model="test-model",
+        model_api_key="model-secret",
+    )
+    parse_document.return_value = DocumentText(
+        source=None,
+        raw_text="Jane Doe, backend engineer",
+        parser_name="test",
+        parser_version="1",
+    )
+
+    response = client.post(
+        "/api/v1/parse-cv-fast",
+        files={"file": ("cv.pdf", b"%PDF-1.7\ntest", "application/pdf")},
+        data={"user_id": "b7d19f85-fcb1-4eb9-bb10-0d515e925c55"},
+        headers={"X-API-Key": "worker-secret"},
+    )
+
+    assert response.status_code == 200
+    assert RealtimeCandidateExtraction.model_validate_json(response.text) == extraction
+    sdk_client.chat.completions.parse.assert_awaited_once()
+
+
+@patch("realtime_extractor._check_rate_limit")
+@patch("realtime_extractor.parse_document")
+@patch("realtime_extractor.WorkerConfig.from_env")
+@patch("cv_intelligence_worker.llm.AsyncOpenAI")
+def test_parse_endpoint_rejects_malformed_model_output(openai, config_from_env, parse_document, _rate_limit):
+    payload = realtime_extraction().model_dump()
+    payload["nme"] = "private CV content"
+    with pytest.raises(ValidationError) as validation:
+        RealtimeCandidateExtraction.model_validate(payload)
+    sdk_client = MagicMock()
+    sdk_client.chat.completions.parse = AsyncMock(side_effect=validation.value)
+    openai.return_value = sdk_client
+    config_from_env.return_value = WorkerConfig(
+        api_key="worker-secret",
+        extraction_model="test-model",
+        model_api_key="model-secret",
+    )
+    parse_document.return_value = DocumentText(
+        source=None,
+        raw_text="private CV content",
+        parser_name="test",
+        parser_version="1",
+    )
+
+    response = client.post(
+        "/api/v1/parse-cv-fast",
+        files={"file": ("cv.pdf", b"%PDF-1.7\ntest", "application/pdf")},
+        data={"user_id": "b7d19f85-fcb1-4eb9-bb10-0d515e925c55"},
+        headers={"X-API-Key": "worker-secret"},
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "CV extraction failed"}
+    assert "private CV content" not in response.text

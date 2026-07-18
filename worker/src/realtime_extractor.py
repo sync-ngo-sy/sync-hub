@@ -11,18 +11,17 @@ from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, 
 import uuid
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
-import httpx
 
 # Configure standard logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 from cv_intelligence_worker.config import WorkerConfig
+from cv_intelligence_worker.llm import LLMClient, LLMResponseError
+from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
 from cv_intelligence_worker.parsing import parse_document
 from cv_intelligence_worker.extraction import _extractor_system_prompt, _structured_prompt
-from cv_intelligence_worker.extraction_constants import EXTRACTION_OUTPUT_SCHEMA
 from cv_intelligence_worker.schema import DocumentSource
-import copy
 from cv_intelligence_worker.supabase_client import SupabaseSyncClient
 
 app = FastAPI(title="Realtime CV Extraction")
@@ -74,44 +73,7 @@ def verify_api_key(api_key: str = Security(api_key_header)):
 
 def build_extended_system_prompt() -> str:
     base_prompt = _extractor_system_prompt().split("Output schema:\n")[0]
-
-    extended_schema = copy.deepcopy(EXTRACTION_OUTPUT_SCHEMA)
-
-    # Extend Experience
-    extended_schema["experience"][0].update({
-        "employment_type": "string|null (Full-time/Part-time/Contract/Freelance)",
-        "work_mode": "string|null (Onsite/Remote/Hybrid)",
-        "technologies": ["string"]
-    })
-
-    # Extend Projects
-    extended_schema["projects"][0].update({
-        "role": "string|null",
-        "link": "string|null"
-    })
-
-    # Modify Certifications
-    extended_schema["certifications"] = [{
-        "name": "string",
-        "issuing_body": "string|null",
-        "issue_date": "string|null",
-        "expiry_date": "string|null"
-    }]
-
-    # Modify Skills
-    extended_schema["skills"] = [{
-        "name": "string",
-        "proficiency": "string|null (Beginner/Intermediate/Advanced/Expert)",
-        "years_of_experience": "number|null",
-        "last_used": "number|null (Year)"
-    }]
-
-    # Add Field Confidence
-    extended_schema["field_confidence"] = {
-        "example_field_name": 95
-    }
-
-    schema_text = json.dumps(extended_schema, indent=2, ensure_ascii=True)
+    schema_text = json.dumps(RealtimeCandidateExtraction.model_json_schema(), indent=2, ensure_ascii=True)
 
     additional_rules = (
         "Additional Registration Flow Rules:\n"
@@ -122,31 +84,15 @@ def build_extended_system_prompt() -> str:
 
     return base_prompt + additional_rules + "Output schema:\n" + schema_text
 
-def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, raw_json_str: str, config: WorkerConfig):
-    """
-    Runs in the background after the stream completes.
-    Parses the fully accumulated JSON and uploads it to Supabase.
-    """
+def sync_to_supabase_background(user_id: str, extraction: RealtimeCandidateExtraction, config: WorkerConfig) -> None:
     if not config.supabase_url or not config.supabase_service_key:
         logger.info("[DB SYNC] No Supabase credentials, skipping sync")
         return
 
     supabase = SupabaseSyncClient(config.supabase_url, config.supabase_service_key)
 
-    try:
-        parsed_json = json.loads(raw_json_str)
-        field_confidence = parsed_json.pop("field_confidence", {})
-    except json.JSONDecodeError as e:
-        logger.error(f"[DB SYNC] Failed to decode final JSON for Supabase: {e}")
-        try:
-            supabase.upsert_rows("candidate_registration_drafts", [{
-                "user_id": user_id,
-                "parse_status": "failed",
-                "parse_error": f"JSON decode error: {e}",
-            }], on_conflict="user_id")
-        except Exception as db_err:
-            logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
-        return
+    parsed_json = extraction.model_dump(mode="json")
+    field_confidence = parsed_json.pop("field_confidence")
 
     from datetime import datetime, timezone
     row = {
@@ -170,6 +116,19 @@ def sync_to_supabase_background(user_id: str, file_name: str, mime_type: str, ra
             }], on_conflict="user_id")
         except Exception as db_err:
             logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
+
+
+def mark_extraction_failed(user_id: str, error: str, config: WorkerConfig) -> None:
+    if not config.supabase_url or not config.supabase_service_key:
+        return
+    try:
+        SupabaseSyncClient(config.supabase_url, config.supabase_service_key).upsert_rows(
+            "candidate_registration_drafts",
+            [{"user_id": user_id, "parse_status": "failed", "parse_error": error}],
+            on_conflict="user_id",
+        )
+    except Exception as db_err:
+        logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -196,7 +155,7 @@ async def parse_cv_endpoint(
     # H2: enforce per-key rate limit and global concurrency cap
     _check_rate_limit(api_key)
 
-    if _concurrency_sem.locked() and _concurrency_sem._value == 0:  # noqa: SLF001
+    if _concurrency_sem.locked():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Server busy, please retry shortly",
@@ -204,6 +163,8 @@ async def parse_cv_endpoint(
 
     # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
+    if not config.extraction_model:
+        raise HTTPException(status_code=503, detail="CV extraction model is not configured")
 
     # 1. Parse Document (Using existing robust logic)
     suffix = Path(file.filename).suffix if file.filename else ".pdf"
@@ -239,7 +200,7 @@ async def parse_cv_endpoint(
         )
 
         # Offload CPU-bound parsing to threadpool
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         document_text = await loop.run_in_executor(None, parse_document, source)
 
     finally:
@@ -250,59 +211,21 @@ async def parse_cv_endpoint(
     prompt = _structured_prompt(document_text)
     system_prompt = build_extended_system_prompt()
 
-    payload = {
-        "model": config.extraction_model or "gemini-3.5-flash",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(prompt)},
-        ],
-        "temperature": 0,
-        "stream": True,
-        "response_format": {"type": "json_object"},
-    }
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {config.model_api_key}",
-    }
-    url = f"{config.model_base_url.rstrip('/')}/chat/completions"
-
-    # 3. Stream LLM Response (Natively Async)
-    async def stream_generator():
-        collected_content = []
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                async with client.stream("POST", url, json=payload, headers=headers) as response:
-                    if response.status_code != 200:
-                        error_text = await response.aread()
-                        yield f"Error: {response.status_code} - {error_text.decode('utf-8')}"
-                        return
-
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                                if 'choices' in chunk and len(chunk['choices']) > 0:
-                                    delta = chunk['choices'][0].get('delta', {})
-                                    content = delta.get('content', '')
-                                    if content:
-                                        collected_content.append(content)
-                                        yield content
-                            except json.JSONDecodeError:
-                                pass
-        finally:
-            full_json = "".join(collected_content)
-            # Add database save task to run seamlessly after user closes stream
-            background_tasks.add_task(
-                sync_to_supabase_background,
-                user_id=user_id,
-                file_name=file.filename or "cv",
-                mime_type=detected_mime_type,
-                raw_json_str=full_json,
-                config=config
+    try:
+        async with _concurrency_sem:
+            extraction = await LLMClient(config).parse_async(
+                model=config.extraction_model,
+                system_prompt=system_prompt,
+                prompt=prompt,
+                response_model=RealtimeCandidateExtraction,
             )
+    except LLMResponseError as exc:
+        await asyncio.to_thread(mark_extraction_failed, user_id, str(exc), config)
+        raise HTTPException(status_code=502, detail="CV extraction failed") from exc
 
-    return StreamingResponse(stream_generator(), media_type="text/event-stream")
+    background_tasks.add_task(sync_to_supabase_background, user_id, extraction, config)
+
+    async def validated_stream():
+        yield extraction.model_dump_json()
+
+    return StreamingResponse(validated_stream(), media_type="text/event-stream")

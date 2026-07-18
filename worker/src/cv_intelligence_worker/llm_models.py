@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -86,3 +86,39 @@ class DraftValidationExtraction(LLMOutput):
         if not self.is_valid and not self.reason.strip():
             raise ValueError("rejected draft validation requires a reason")
         return self
+
+
+class RealtimeExperience(ExtractedExperience):
+    employment_type: Literal["Full-time", "Part-time", "Contract", "Freelance"] | None
+    work_mode: Literal["Onsite", "Remote", "Hybrid"] | None
+    technologies: list[str]
+
+
+class RealtimeProject(ExtractedProject):
+    role: str | None
+    link: str | None
+
+
+class RealtimeCertification(LLMOutput):
+    name: str = Field(min_length=1)
+    issuing_body: str | None
+    issue_date: str | None
+    expiry_date: str | None
+
+
+class RealtimeSkill(LLMOutput):
+    name: str = Field(min_length=1)
+    proficiency: Literal["Beginner", "Intermediate", "Advanced", "Expert"] | None
+    years_of_experience: Annotated[float, Field(ge=0)] | None
+    last_used: Annotated[int, Field(ge=1900, le=2100)] | None
+
+
+ConfidenceScore = Annotated[int, Field(ge=0, le=100)]
+
+
+class RealtimeCandidateExtraction(CandidateExtraction):
+    skills: list[RealtimeSkill]
+    certifications: list[RealtimeCertification]
+    experience: list[RealtimeExperience]
+    projects: list[RealtimeProject]
+    field_confidence: dict[str, ConfidenceScore]
