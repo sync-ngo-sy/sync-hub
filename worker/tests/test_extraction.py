@@ -3,11 +3,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from cv_intelligence_worker.candidate_extraction import build_candidate_system_prompt
+from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_candidate_system_prompt
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.extraction import (
     _merge_extracted_profile,
-    build_candidate_prompt,
     classify_job_family_with_llm,
     extract_candidate_profile,
     heuristic_extract_profile,

@@ -17,9 +17,8 @@ from fastapi.security import APIKeyHeader
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-from cv_intelligence_worker.candidate_extraction import build_realtime_candidate_system_prompt
+from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_realtime_candidate_system_prompt
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.extraction import build_candidate_prompt
 from cv_intelligence_worker.llm import LLMClient, LLMResponseError
 from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
 from cv_intelligence_worker.parsing import parse_document

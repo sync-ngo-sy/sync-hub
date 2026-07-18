@@ -4,7 +4,16 @@ import re
 from dataclasses import replace
 from typing import Any
 
-from .candidate_extraction import build_candidate_system_prompt, build_job_family_prompt, build_job_family_system_prompt
+from .candidate_extraction import (
+    build_candidate_prompt,
+    build_candidate_system_prompt,
+    build_job_family_prompt,
+    build_job_family_system_prompt,
+    extract_sections,
+    is_date_line,
+    match_section_headers,
+    split_lines,
+)
 from .config import WorkerConfig
 from .extraction_constants import (
     COMPANY_HINT_RE,
@@ -17,9 +26,6 @@ from .extraction_constants import (
     NON_NAME_TOKENS,
     PAGE_NOISE_RE,
     PHONE_RE,
-    SECTION_ALIASES,
-    SECTION_ALIAS_PATTERNS,
-    SECTION_RENDER_ORDER,
     SOCIAL_NOISE_RE,
     TECH_KEYWORDS,
     URL_RE,
@@ -32,141 +38,12 @@ from .schema import CandidateProfile, DocumentSource, DocumentText, EducationEnt
 from .utils import compact_whitespace, dedupe_keep_order, format_error_message, normalize_email, stable_uuid
 
 
-def _split_lines(text: str) -> list[str]:
-    lines: list[str] = []
-    for raw_line in text.splitlines():
-        line = compact_whitespace(raw_line)
-        if not line:
-            continue
-        for split_line in _split_embedded_section_headers(line):
-            matches = _match_section_headers(split_line)
-            if len(matches) > 1 and len(split_line.split()) <= 6:
-                lines.extend(match.upper() for match in matches)
-            else:
-                lines.append(split_line)
-    return lines
-
-
-def _normalize_header(line: str) -> str:
-    return re.sub(r"[^a-z]+", " ", line.lower()).strip()
-
-
-def _header_label(section_name: str) -> str:
-    return section_name.upper()
-
-
-def _is_loud_header_match(value: str) -> bool:
-    return value.isupper() or value.istitle()
-
-
-def _split_embedded_section_headers(line: str) -> list[str]:
-    best_match: tuple[str, re.Match[str]] | None = None
-    for section_name, _alias, pattern in SECTION_ALIAS_PATTERNS:
-        match = pattern.search(line)
-        if not match:
-            continue
-        matched_text = line[match.start():match.end()]
-        prefix = compact_whitespace(line[: match.start()].strip(" |:-–"))
-        suffix = compact_whitespace(line[match.end():].strip(" |:-–"))
-        if match.start() == 0:
-            if suffix and len(suffix.split()) > 10 and not _is_loud_header_match(matched_text):
-                continue
-            best_match = (section_name, match)
-            break
-        if matched_text.isupper():
-            best_match = (section_name, match)
-            break
-    if not best_match:
-        return [line]
-
-    section_name, match = best_match
-    prefix = compact_whitespace(line[: match.start()].strip(" |:-–"))
-    suffix = compact_whitespace(line[match.end():].strip(" |:-–"))
-    pieces: list[str] = []
-    if prefix:
-        pieces.append(prefix)
-    pieces.append(_header_label(section_name))
-    if suffix:
-        pieces.extend(_split_embedded_section_headers(suffix))
-    return pieces
-
-
-def _match_section_headers(line: str) -> list[str]:
-    normalized = _normalize_header(line)
-    matches: list[str] = []
-    for section_name, aliases in SECTION_ALIASES.items():
-        for alias in aliases:
-            remainder = normalized.replace(alias, "").strip()
-            if normalized == alias:
-                matches.append(section_name)
-                break
-            if alias in normalized and len(normalized.split()) <= 5 and not remainder:
-                matches.append(section_name)
-                break
-            if alias in normalized and len(normalized.split()) <= 4 and set(remainder.split()).issubset({"contact", "cv", "resume"}):
-                matches.append(section_name)
-                break
-    return matches
-
-
-def _extract_sections(text: str) -> dict[str, list[str]]:
-    current = "header"
-    sections: dict[str, list[str]] = {"header": []}
-    for line in _split_lines(text):
-        matches = _match_section_headers(line)
-        if matches:
-            current = matches[0]
-            sections.setdefault(current, [])
-            continue
-        sections.setdefault(current, []).append(line)
-    return sections
-
-
-def _split_pre_experience_date_hints(summary_lines: list[str]) -> tuple[list[str], list[str]]:
-    cleaned = [compact_whitespace(line) for line in summary_lines if compact_whitespace(line)]
-    if not cleaned:
-        return [], []
-
-    hints: list[str] = []
-    while cleaned:
-        candidate = cleaned[-1]
-        if _is_date_line(candidate) or LOCATION_HINT_RE.match(candidate):
-            hints.insert(0, candidate)
-            cleaned.pop()
-            continue
-        break
-    return cleaned, hints
-
-
-def _render_sectioned_cv_text(sections: dict[str, list[str]], max_chars: int = 16000) -> str:
-    rendered_sections = {key: list(value) for key, value in sections.items()}
-    summary_lines, pre_experience_hints = _split_pre_experience_date_hints(rendered_sections.get("summary", []))
-    if summary_lines != rendered_sections.get("summary", []):
-        rendered_sections["summary"] = summary_lines
-    if pre_experience_hints:
-        rendered_sections["pre_experience_date_hints"] = pre_experience_hints
-
-    order = ["header", "summary", "pre_experience_date_hints", *[name for name in SECTION_RENDER_ORDER if name not in {"header", "summary"}]]
-    blocks: list[str] = []
-    for section_name in order:
-        lines = [compact_whitespace(line) for line in rendered_sections.get(section_name, []) if compact_whitespace(line)]
-        if not lines:
-            continue
-        label = section_name.upper()
-        blocks.append(f"<{label}>\n" + "\n".join(lines) + f"\n</{label}>")
-
-    rendered = "\n\n".join(blocks).strip()
-    if len(rendered) <= max_chars:
-        return rendered
-    return rendered[:max_chars].rstrip()
-
-
 def _extract_name(lines: list[str], source: DocumentSource) -> str:
     for line in lines[:12]:
         cleaned = _clean_content_line(line)
         if not cleaned or PAGE_NOISE_RE.match(cleaned):
             continue
-        if _match_section_headers(cleaned) or LOCATION_HINT_RE.match(cleaned) or _location_from_known_city(cleaned):
+        if match_section_headers(cleaned) or LOCATION_HINT_RE.match(cleaned) or _location_from_known_city(cleaned):
             continue
         if "@" in cleaned or URL_RE.search(cleaned) or PHONE_RE.search(cleaned) or any(char.isdigit() for char in cleaned):
             continue
@@ -204,7 +81,7 @@ def _extract_title(lines: list[str]) -> str:
         cleaned = _clean_content_line(line)
         if not cleaned or PAGE_NOISE_RE.match(cleaned):
             continue
-        if _match_section_headers(cleaned) or LOCATION_HINT_RE.match(cleaned) or _location_from_known_city(cleaned):
+        if match_section_headers(cleaned) or LOCATION_HINT_RE.match(cleaned) or _location_from_known_city(cleaned):
             continue
         if "@" in cleaned or URL_RE.search(cleaned) or PHONE_RE.search(cleaned):
             continue
@@ -308,10 +185,6 @@ def _extract_skills(text: str, skill_lines: list[str]) -> list[str]:
     return dedupe_keep_order(found)
 
 
-def _is_date_line(line: str) -> bool:
-    return bool(DATE_RANGE_RE.search(line))
-
-
 def _parse_date_line_parts(line: str) -> tuple[str | None, str | None, str | None, str, str]:
     match = DATE_RANGE_RE.search(line)
     if not match:
@@ -412,11 +285,11 @@ def _extract_experience(experience_lines: list[str]) -> list[ExperienceEntry]:
         cleaned = _clean_content_line(line)
         if not cleaned or NOISE_LINE_RE.match(cleaned):
             continue
-        if _match_section_headers(cleaned):
+        if match_section_headers(cleaned):
             break
         lines.append(cleaned)
 
-    date_indices = [index for index, line in enumerate(lines) if _is_date_line(line)]
+    date_indices = [index for index, line in enumerate(lines) if is_date_line(line)]
     if not date_indices:
         undated_entry = _extract_undated_experience_entry(lines)
         if undated_entry:
@@ -466,7 +339,7 @@ def _extract_experience(experience_lines: list[str]) -> list[ExperienceEntry]:
 
 
 def _extract_experience_fallback(all_text: str) -> list[ExperienceEntry]:
-    candidate_lines = [line for line in _split_lines(all_text) if not _match_section_headers(line)]
+    candidate_lines = [line for line in split_lines(all_text) if not match_section_headers(line)]
     entries = _extract_experience(candidate_lines)
     return [entry for entry in entries if _looks_like_job_title(entry.title)][:12]
 
@@ -479,9 +352,9 @@ def _extract_education(lines: list[str]) -> list[EducationEntry]:
         cleaned = _clean_content_line(line)
         if not cleaned or NOISE_LINE_RE.match(cleaned):
             continue
-        if _match_section_headers(cleaned):
+        if match_section_headers(cleaned):
             break
-        if _is_date_line(cleaned):
+        if is_date_line(cleaned):
             if current:
                 entries.append(_education_entry_from_state(current))
             start_date, end_date, _, date_prefix, date_remainder = _parse_date_line_parts(cleaned)
@@ -546,7 +419,7 @@ def _extract_projects(lines: list[str]) -> list[ProjectEntry]:
     current_name = ""
     current_desc: list[str] = []
     for line in lines:
-        if _match_section_headers(line):
+        if match_section_headers(line):
             break
         if not current_name:
             current_name = line.lstrip("•- ")
@@ -565,7 +438,7 @@ def _extract_projects(lines: list[str]) -> list[ProjectEntry]:
 def _extract_languages(lines: list[str]) -> list[str]:
     languages: list[str] = []
     for line in lines:
-        if _match_section_headers(line):
+        if match_section_headers(line):
             break
         pieces = re.split(r"[•,|/]", line)
         for piece in pieces:
@@ -637,13 +510,6 @@ def _calculate_profile_confidence(profile: CandidateProfile, document_text: Docu
     if raw_text_length < 300:
         confidence = min(confidence, 0.45)
     return round(max(0.0, min(0.99, confidence - warning_penalty)), 2)
-
-
-def build_candidate_prompt(document_text: DocumentText) -> dict[str, Any]:
-    sections = _extract_sections(document_text.raw_text)
-    return {
-        "sectioned_cv_text": _render_sectioned_cv_text(sections, max_chars=16000),
-    }
 
 
 def _string_value(value: Any) -> str:
@@ -906,8 +772,8 @@ class LLMProfileExtractor:
 
 
 def heuristic_extract_profile(source: DocumentSource, document_text: DocumentText) -> CandidateProfile:
-    sections = _extract_sections(document_text.raw_text)
-    raw_lines = _split_lines(document_text.raw_text)
+    sections = extract_sections(document_text.raw_text)
+    raw_lines = split_lines(document_text.raw_text)
     header_lines = sections.get("header", []) or raw_lines[:16]
     all_text = document_text.raw_text
     name = _extract_name(header_lines, source)
