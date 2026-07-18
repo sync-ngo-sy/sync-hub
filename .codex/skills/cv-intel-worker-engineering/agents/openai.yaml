@@ -1,0 +1,4 @@
+interface:
+  display_name: "CV Intel Worker Engineering"
+  short_description: "Worker architecture and review guardrails"
+  default_prompt: "Use $cv-intel-worker-engineering to review or implement a focused CV Intel worker change and run the required validation loop."
