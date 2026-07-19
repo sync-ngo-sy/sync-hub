@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from cv_intelligence_worker.normalization import normalize_location, normalize_profile
+from cv_intelligence_worker.candidate_normalization import normalize_location, normalize_profile
 from cv_intelligence_worker.schema import CandidateProfile, ExperienceEntry
 
 

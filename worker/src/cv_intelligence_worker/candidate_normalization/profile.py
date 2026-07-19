@@ -3,14 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime
 
-from .candidate_normalization.experience import (
-    experience_years_from_entries as experience_years_from_entries,
-    resolve_years_experience,
-)
-from .candidate_normalization.locations import normalize_location as normalize_location
-from .candidate_normalization.skills import canonical_skill as canonical_skill
-from .schema import CandidateProfile
-from .utils import compact_whitespace, dedupe_keep_order
+from ..schema import CandidateProfile
+from ..utils import compact_whitespace, dedupe_keep_order
+from .experience import resolve_years_experience
+from .locations import normalize_location
+from .skills import canonical_skill
 
 
 def normalize_profile(
