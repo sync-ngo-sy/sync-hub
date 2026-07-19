@@ -12,6 +12,24 @@ from ...core.sanitization import strip_nul_bytes
 from .helpers import is_jwt
 
 
+def build_supabase_headers(
+    config: WorkerConfig,
+    extra: dict[str, str] | None = None,
+) -> dict[str, str]:
+    api_key = config.supabase_api_key()
+    bearer_token = config.supabase_bearer_token()
+    headers = {
+        "apikey": api_key,
+        "Content-Type": "application/json",
+        "User-Agent": config.user_agent,
+    }
+    if is_jwt(bearer_token):
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    if extra:
+        headers.update(extra)
+    return headers
+
+
 class SupabaseRestTransport:
     def __init__(
         self,
@@ -24,18 +42,7 @@ class SupabaseRestTransport:
         self._opener = opener or urlopen
 
     def headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
-        api_key = self._config.supabase_api_key()
-        bearer_token = self._config.supabase_bearer_token()
-        headers = {
-            "apikey": api_key,
-            "Content-Type": "application/json",
-            "User-Agent": self._config.user_agent,
-        }
-        if is_jwt(bearer_token):
-            headers["Authorization"] = f"Bearer {bearer_token}"
-        if extra:
-            headers.update(extra)
-        return headers
+        return build_supabase_headers(self._config, extra)
 
     def request_with_headers(
         self,

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,7 +15,6 @@ from .helpers import (
     chunks,
     dedupe_rows,
     format_bytes,
-    is_jwt,
     is_retryable_supabase_error,
     json_payload_size,
 )
@@ -29,6 +26,7 @@ from .responses import (
     validate_rows,
 )
 from .rows import build_bundle_rows
+from .storage import SupabaseStorageClient
 from .transport import SupabaseRestTransport
 
 
@@ -52,8 +50,8 @@ class SupabaseSyncStats:
 class SupabaseClient:
     def __init__(self, config: WorkerConfig) -> None:
         self.config = config
-        self.base_url = config.supabase_url.rstrip("/")
         self._transport = SupabaseRestTransport(config, opener=urlopen)
+        self._storage = SupabaseStorageClient(config, opener=urlopen)
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         return self._transport.headers(extra)
@@ -407,46 +405,10 @@ class SupabaseClient:
         return rows, storage_bytes
 
     def upload_file(self, bucket: str, object_path: str, file_path: str, content_type: str) -> None:
-        data = Path(file_path).read_bytes()
-        api_key = self.config.supabase_api_key()
-        bearer_token = self.config.supabase_bearer_token()
-        headers = {
-            "apikey": api_key,
-            "Content-Type": content_type,
-            "x-upsert": "true",
-        }
-        if is_jwt(bearer_token):
-            headers["Authorization"] = f"Bearer {bearer_token}"
-        request = urllib.request.Request(
-            f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
-            data=data,
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds):
-                return
-        except urllib.error.HTTPError as exc:
-            if exc.code == 409:
-                return
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase storage upload failed ({exc.code}): {content or exc.reason}") from exc
+        self._storage.upload_file(bucket, object_path, file_path, content_type)
 
     def download_file(self, bucket: str, object_path: str, target_path: str) -> None:
-        request = urllib.request.Request(
-            f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
-            headers=self._headers({"Accept": "application/octet-stream"}),
-            method="GET",
-        )
-        try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-                data = response.read()
-        except urllib.error.HTTPError as exc:
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase storage download failed ({exc.code}): {content or exc.reason}") from exc
-        path = Path(target_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        self._storage.download_file(bucket, object_path, target_path)
 
     def queued_public_job_applications(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
         query_args = {
