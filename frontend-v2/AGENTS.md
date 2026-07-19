@@ -11,3 +11,7 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: `CONTEXT.md` + `docs/adr/` at this directory's root. See `docs/agents/domain.md`.
+
+### Design system
+
+Before implementing UI, read `docs/design-system.md`. The tokens themselves live in `src/index.css`.

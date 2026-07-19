@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-@import '@fontsource-variable/alexandria';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -45,19 +45,20 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Restrained enterprise geometry. Named radii are explicit so a component
+     asking for rounded-xl gets an 18px panel, not a value larger than the
+     legacy app's already-generous 22px radius. */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.375rem;
+  --radius-3xl: 1.75rem;
+  --radius-4xl: 2.25rem;
 
-  /* The old app used a *separate*, smaller radius for buttons (16px) than
-     for panels/cards (the 22px --radius above) — shell.css:132. Buttons
-     read from this dedicated token, not --radius-lg, so they keep the old
-     app's moderate rounded-rectangle look instead of becoming a full pill
-     at button height. */
+  /* The old app used a separate 16px button radius alongside 22px panels.
+     Buttons keep that dedicated token while the calibrated named scale uses
+     18px for ordinary panels, preserving the moderate rounded rectangle. */
   --radius-button: 16px;
   /* Caps small button corners from rounding into a pill shape at tiny sizes. */
   --radius-button-xs: min(var(--radius-md), 10px);
@@ -68,37 +69,36 @@
      there's no existing precedent for those. */
   --shadow-elevated: 0 24px 80px rgb(0 0 0 / 0.28);
 
-  --font-sans: 'Alexandria Variable', 'Alexandria', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Utopia-style fluid type scale: interpolates between a mobile-min
-     (20rem/320px, base 16px) and desktop-max (96rem/1536px, Tailwind's 2xl
-     breakpoint, base 18px) viewport, so text grows smoothly instead of
-     jumping at breakpoints. Replaces Tailwind's static default sizes. */
-  --text-xs: clamp(0.6944rem, 0.6877rem + 0.0336vw, 0.72rem);
+  /* Restrained fluid type scale: interpolates between 20rem/320px and
+     96rem/1536px. Dashboard text stays compact and readable; display steps
+     grow enough to establish hierarchy without taking over the page. */
+  --text-xs: clamp(0.6875rem, 0.6711rem + 0.0822vw, 0.75rem);
   --text-xs--line-height: 1.5;
-  --text-sm: clamp(0.8333rem, 0.8158rem + 0.0877vw, 0.9rem);
+  --text-sm: clamp(0.8125rem, 0.7961rem + 0.0822vw, 0.875rem);
   --text-sm--line-height: 1.5;
-  --text-base: clamp(1rem, 0.9671rem + 0.1645vw, 1.125rem);
+  --text-base: clamp(0.9375rem, 0.9211rem + 0.0822vw, 1rem);
   --text-base--line-height: 1.5;
-  --text-lg: clamp(1.2rem, 1.1457rem + 0.2714vw, 1.4063rem);
+  --text-lg: clamp(1.0625rem, 1.0461rem + 0.0822vw, 1.125rem);
   --text-lg--line-height: 1.45;
-  --text-xl: clamp(1.44rem, 1.3564rem + 0.4182vw, 1.7578rem);
+  --text-xl: clamp(1.25rem, 1.2171rem + 0.1645vw, 1.375rem);
   --text-xl--line-height: 1.35;
-  --text-2xl: clamp(1.728rem, 1.6045rem + 0.6175vw, 2.1973rem);
+  --text-2xl: clamp(1.5rem, 1.4342rem + 0.3289vw, 1.75rem);
   --text-2xl--line-height: 1.25;
-  --text-3xl: clamp(2.0736rem, 1.8965rem + 0.8855vw, 2.7466rem);
+  --text-3xl: clamp(1.875rem, 1.7763rem + 0.4934vw, 2.25rem);
   --text-3xl--line-height: 1.2;
-  --text-4xl: clamp(2.4883rem, 2.24rem + 1.2433vw, 3.4332rem);
+  --text-4xl: clamp(2.25rem, 2.1184rem + 0.6579vw, 2.75rem);
   --text-4xl--line-height: 1.1;
-  --text-5xl: clamp(2.986rem, 2.6424rem + 1.7178vw, 4.2915rem);
+  --text-5xl: clamp(2.75rem, 2.5855rem + 0.8224vw, 3.375rem);
   --text-5xl--line-height: 1.1;
-  --text-6xl: clamp(3.5832rem, 3.1144rem + 2.3437vw, 5.3644rem);
+  --text-6xl: clamp(3.25rem, 3.0526rem + 0.9868vw, 4rem);
   --text-6xl--line-height: 1.1;
-  --text-7xl: clamp(4.2998rem, 3.6667rem + 3.1654vw, 6.7055rem);
+  --text-7xl: clamp(3.75rem, 3.4868rem + 1.3158vw, 4.75rem);
   --text-7xl--line-height: 1.1;
-  --text-8xl: clamp(5.1598rem, 4.3119rem + 4.2396vw, 8.3819rem);
+  --text-8xl: clamp(4.25rem, 3.9211rem + 1.6447vw, 5.5rem);
   --text-8xl--line-height: 1.1;
-  --text-9xl: clamp(6.1917rem, 5.0639rem + 5.639vw, 10.4774rem);
+  --text-9xl: clamp(4.75rem, 4.3553rem + 1.9737vw, 6.25rem);
   --text-9xl--line-height: 1.1;
 
   /* Breakpoints: Tailwind v4's built-in sm/md/lg/xl/2xl scale (640/768/
@@ -168,7 +168,7 @@
   --chart-6: oklch(0.777 0.123 291.2);
   --chart-7: oklch(0.777 0.122 51.6);
   --chart-8: oklch(0.852 0.084 237.8);
-  --radius: 1.375rem;
+  --radius: 1.125rem;
   --sidebar: var(--neutral-50);
   --sidebar-foreground: var(--neutral-950);
   --sidebar-primary: var(--primary);
@@ -191,7 +191,7 @@
      isn't safe for a reusable token that may sit over other surfaces. */
   --card: var(--neutral-700);
   --card-foreground: var(--foreground);
-  --popover: var(--neutral-700);
+  --popover: oklch(0.412 0.003 286.3); /* #49494b, raised legacy surface */
   --popover-foreground: var(--foreground);
   --primary: oklch(0.744 0.103 188); /* #50c1b8, 40 occurrences */
   /* Matches the current app's .button--primary: color: var(--bg) —
@@ -203,7 +203,7 @@
   --muted: var(--neutral-700);
   --muted-foreground: oklch(0.847 0.028 191); /* #b9d3d1, current --text-muted */
   --muted-foreground-soft: oklch(0.712 0.037 189.7); /* #88aaa7, current --text-soft */
-  --accent: var(--neutral-600);
+  --accent: oklch(0.412 0.003 286.3); /* restrained raised/hover surface */
   --accent-foreground: var(--foreground);
   /* New token — the old app had no error/destructive color, just four
      different ad hoc reds. Standardized on the one already used for a

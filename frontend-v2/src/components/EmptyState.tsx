@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { Sparkles } from 'lucide-react'
+import { Inbox } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 interface EmptyStateProps {
   title: string
@@ -11,11 +12,11 @@ interface EmptyStateProps {
 
 export function EmptyState({ title, detail, action, className }: EmptyStateProps) {
   return (
-    <Card className={className}>
-      <div className="flex flex-col items-start gap-3 p-7">
-        <Sparkles className="text-primary" size={18} />
-        <strong>{title}</strong>
-        <p className="text-muted-foreground">{detail}</p>
+    <Card className={cn('gap-0 py-0', className)}>
+      <div className="flex flex-col items-start gap-3 p-6">
+        <Inbox aria-hidden="true" className="text-primary" size={18} />
+        <strong className="text-base font-medium">{title}</strong>
+        <p className="text-sm leading-relaxed text-muted-foreground">{detail}</p>
         {action}
       </div>
     </Card>

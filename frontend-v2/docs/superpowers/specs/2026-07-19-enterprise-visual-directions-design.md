@@ -25,11 +25,11 @@ The prototype is throwaway and isolated from the application. It will not modify
 
 ## Visual Directions
 
-### A — Boardroom Graphite (recommended)
+### A — Faithful Lift (production baseline)
 
-An institutional, calm direction built around an Inter-style sans-serif. Body text uses regular weight, labels and controls use medium weight, and major headings stop at semibold. Deep neutral charcoal surfaces carry a measured teal accent. Corners are moderately tight, gradients are nearly imperceptible, and a 20–24px spacing rhythm keeps the interface composed without feeling sparse.
+An institutional, calm direction built around Inter. Body text uses regular weight, labels and controls use medium weight, and major headings stop at semibold. The palette uses the product's established `#39393a` canvas, `#444446` panels, `#50c1b8` primary, `#f6fbfa` foreground, and teal-gray secondary text. Explicit 6/8/12/18/22px radius roles and a 20–24px spacing rhythm keep the interface composed without feeling unfamiliar.
 
-This is the recommended baseline because it best balances premium restraint, dashboard clarity, and broad usability. Its trade-off is that it is intentionally quiet and therefore depends on excellent hierarchy rather than visual novelty.
+This is the production baseline because it best balances visual continuity, premium restraint, dashboard clarity, and broad usability. It is intentionally quiet and depends on hierarchy rather than visual novelty.
 
 ### B — Editorial Intelligence
 
@@ -63,7 +63,7 @@ A successful direction should:
 4. Make buttons, cards, labels, numbers, and tables feel like one system.
 5. Provide reusable guidance for the later production token revision.
 
-The user may choose one direction or combine explicitly identified elements from multiple directions. No production design tokens will change until that decision is made.
+Faithful Lift is the production design-system baseline. The other directions remain prototype references only.
 
 ## Verification
 

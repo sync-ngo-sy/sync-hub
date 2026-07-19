@@ -54,12 +54,12 @@ export function StatCard({
         {loading ? (
           <Skeleton className="h-8 w-24 rounded-full" />
         ) : (
-          <strong className="text-3xl leading-none font-semibold">{value}</strong>
+          <strong className="text-3xl leading-none font-medium tracking-[-0.04em]">{value}</strong>
         )}
         {loading
           ? delta !== undefined && <Skeleton className="h-6 w-21.5 rounded-full" />
           : delta && (
-              <span className="rounded-full bg-primary/12 px-2 py-1 text-xs font-bold text-primary">
+              <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
                 {delta}
               </span>
             )}

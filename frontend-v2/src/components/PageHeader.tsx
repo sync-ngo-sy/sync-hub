@@ -9,19 +9,23 @@ interface PageHeaderProps {
 
 export function PageHeader({ eyebrow, title, description, actions }: PageHeaderProps) {
   return (
-    <header className="flex items-end justify-between gap-5">
+    <header className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-end">
       <div>
         {eyebrow && (
-          <p className="mb-3 font-sans text-xs tracking-[0.16em] text-primary uppercase">
+          <p className="mb-3 font-sans text-xs font-medium tracking-[0.12em] text-primary uppercase">
             {eyebrow}
           </p>
         )}
-        <h1 className="m-0 text-5xl leading-[0.94] font-semibold tracking-[-0.06em]">{title}</h1>
+        <h1 className="m-0 text-3xl leading-[1.08] font-medium tracking-[-0.045em]">{title}</h1>
         {description && (
-          <p className="mt-2.5 max-w-[68ch] leading-relaxed text-muted-foreground">{description}</p>
+          <p className="mt-2.5 max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
+            {description}
+          </p>
         )}
       </div>
-      {actions && <div className="flex flex-wrap justify-end gap-2.5">{actions}</div>}
+      {actions && (
+        <div className="flex w-full flex-wrap gap-2.5 sm:w-auto sm:justify-end">{actions}</div>
+      )}
     </header>
   )
 }
