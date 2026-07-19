@@ -24,6 +24,21 @@ class PublicApplicationIngestionResult:
     failures: list[dict[str, str]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _ApplicationContext:
+    application_id: str
+    tenant_id: str
+    source_document_id: str
+
+    @classmethod
+    def from_record(cls, application: dict[str, object]) -> _ApplicationContext:
+        return cls(
+            application_id=str(application.get("id") or ""),
+            tenant_id=str(application.get("tenant_id") or ""),
+            source_document_id=str(application.get("resume_source_document_id") or ""),
+        )
+
+
 def _safe_filename(value: str, fallback: str) -> str:
     name = Path(value or fallback).name.strip()
     return name or fallback
@@ -73,6 +88,109 @@ class PublicApplicationIngestion:
             },
         )
 
+    def _ingest_application(
+        self,
+        application: dict[str, object],
+        context: _ApplicationContext,
+        work_dir: Path,
+        progress: Callable[[str], None] | None,
+    ) -> str:
+        if progress:
+            progress(f"parsing public application {context.application_id}")
+        self.supabase.update_job_application(
+            context.application_id,
+            {
+                "resume_ingestion_status": "parsing",
+                "resume_ingestion_error": None,
+            },
+        )
+        if context.source_document_id:
+            self.supabase.update_processing_runs_for_source(
+                context.source_document_id,
+                {"status": "parsing"},
+                application_id=context.application_id,
+            )
+
+        local_path = self._download_application_cv(application, work_dir)
+        source = self._source_for_application(application, local_path)
+        result = IngestionPipeline(config=self.config).ingest_sources(
+            [source],
+            tenant_id=context.tenant_id,
+            uploaded_by="public-job-board",
+            sync_to_supabase=True,
+            progress=progress,
+        )
+        if result.failures:
+            raise RuntimeError(result.failures[0].get("error") or "CV parsing failed.")
+
+        source_document = self.supabase.source_document(source.document_id)
+        candidate_id = str((source_document or {}).get("candidate_id") or "")
+        if not candidate_id:
+            raise RuntimeError("CV parsed, but no candidate was linked to the source document.")
+        self._mark_parsed(context, source.document_id, candidate_id)
+        return candidate_id
+
+    def _mark_parsed(self, context: _ApplicationContext, source_document_id: str, candidate_id: str) -> None:
+        self.supabase.update_job_application(
+            context.application_id,
+            {
+                "candidate_id": candidate_id,
+                "candidate_source_tenant_id": context.tenant_id,
+                "resume_ingestion_status": "parsed",
+                "resume_ingestion_error": None,
+            },
+        )
+        self.supabase.update_processing_runs_for_source(
+            source_document_id,
+            {"candidate_id": candidate_id, "status": "completed"},
+            application_id=context.application_id,
+        )
+        self.supabase.record_job_application_event(
+            context.tenant_id,
+            context.application_id,
+            "CV_INGESTION_PARSED",
+            {"candidate_id": candidate_id, "source_document_id": source_document_id},
+        )
+
+    def _mark_failed(self, context: _ApplicationContext, message: str) -> None:
+        if context.application_id:
+            self.supabase.update_job_application(
+                context.application_id,
+                {
+                    "resume_ingestion_status": "failed",
+                    "resume_ingestion_error": message[:1000],
+                },
+            )
+
+    def _failure_result(self, context: _ApplicationContext, exc: Exception) -> dict[str, str]:
+        message = format_error_message(exc)
+        failure = {"application_id": context.application_id, "error": message}
+        try:
+            self._mark_failed(context, message)
+        except Exception as reporting_exc:  # noqa: BLE001
+            failure["reporting_error"] = format_error_message(reporting_exc)
+        return failure
+        if context.source_document_id:
+            self.supabase.update_processing_runs_for_source(
+                context.source_document_id,
+                {
+                    "status": "failed",
+                    "error_code": "public_application_ingestion_failed",
+                    "error_message": message[:1000],
+                },
+                application_id=context.application_id,
+            )
+        if context.tenant_id and context.application_id:
+            self.supabase.record_job_application_event(
+                context.tenant_id,
+                context.application_id,
+                "CV_INGESTION_FAILED",
+                {
+                    "error": message[:1000],
+                    "source_document_id": context.source_document_id or None,
+                },
+            )
+
     def run(
         self,
         limit: int = 25,
@@ -87,86 +205,16 @@ class PublicApplicationIngestion:
         application_ids: list[str] = []
         work_dir = self.config.cache_path() / "public_application_uploads"
 
-        def emit(message: str) -> None:
-            if progress:
-                progress(message)
-
         for application in queued:
-            application_id = str(application.get("id") or "")
-            tenant_id = str(application.get("tenant_id") or "")
-            source_document_id = str(application.get("resume_source_document_id") or "")
-            application_ids.append(application_id)
+            context = _ApplicationContext.from_record(application)
+            application_ids.append(context.application_id)
             try:
-                emit(f"parsing public application {application_id}")
-                self.supabase.update_job_application(application_id, {
-                    "resume_ingestion_status": "parsing",
-                    "resume_ingestion_error": None,
-                })
-                if source_document_id:
-                    self.supabase.update_processing_runs_for_source(source_document_id, {"status": "parsing"}, application_id=application_id)
-
-                local_path = self._download_application_cv(application, work_dir)
-                source = self._source_for_application(application, local_path)
-                pipeline = IngestionPipeline(config=self.config)
-                result = pipeline.ingest_sources(
-                    [source],
-                    tenant_id=tenant_id,
-                    uploaded_by="public-job-board",
-                    sync_to_supabase=True,
-                    progress=progress,
-                )
-                if result.failures:
-                    raise RuntimeError(result.failures[0].get("error") or "CV parsing failed.")
-
-                source_document = self.supabase.source_document(source.document_id)
-                candidate_id = str((source_document or {}).get("candidate_id") or "")
-                if not candidate_id:
-                    raise RuntimeError("CV parsed, but no candidate was linked to the source document.")
-
-                self.supabase.update_job_application(application_id, {
-                    "candidate_id": candidate_id,
-                    "candidate_source_tenant_id": tenant_id,
-                    "resume_ingestion_status": "parsed",
-                    "resume_ingestion_error": None,
-                })
-                self.supabase.update_processing_runs_for_source(
-                    source.document_id,
-                    {
-                        "candidate_id": candidate_id,
-                        "status": "completed",
-                    },
-                    application_id=application_id,
-                )
-                self.supabase.record_job_application_event(tenant_id, application_id, "CV_INGESTION_PARSED", {
-                    "candidate_id": candidate_id,
-                    "source_document_id": source.document_id,
-                })
+                candidate_id = self._ingest_application(application, context, work_dir, progress)
                 candidate_ids.append(candidate_id)
                 parsed += 1
             except Exception as exc:  # noqa: BLE001
-                message = format_error_message(exc)
                 failed += 1
-                failures.append({"application_id": application_id, "error": message})
-                if application_id:
-                    self.supabase.update_job_application(application_id, {
-                        "resume_ingestion_status": "failed",
-                        "resume_ingestion_error": message[:1000],
-                    })
-                if source_document_id:
-                    self.supabase.update_processing_runs_for_source(
-                        source_document_id,
-                        {
-                            "status": "failed",
-                            "error_code": "public_application_ingestion_failed",
-                            "error_message": message[:1000],
-                        },
-                        application_id=application_id,
-                    )
-                if tenant_id and application_id:
-                    self.supabase.record_job_application_event(tenant_id, application_id, "CV_INGESTION_FAILED", {
-                        "error": message[:1000],
-                        "source_document_id": source_document_id or None,
-                    })
+                failures.append(self._failure_result(context, exc))
 
         return PublicApplicationIngestionResult(
             queued=len(queued),
