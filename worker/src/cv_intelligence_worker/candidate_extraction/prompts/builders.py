@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ...core.text import compact_whitespace
 from ...domain import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
-from ...schema import CandidateProfile
-from ...utils import compact_whitespace
+from ...domain.models import CandidateProfile
 from .loader import load_prompt_template
 
 

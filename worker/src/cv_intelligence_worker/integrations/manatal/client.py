@@ -11,7 +11,7 @@ import httpx
 
 from ...config import WorkerConfig
 from ...documents import compute_sha256, guess_mime_type
-from ...utils import format_error_message
+from ...core.errors import format_error_message
 from .models import ManatalCandidate, ManatalResumeDownload
 
 

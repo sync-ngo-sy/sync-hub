@@ -11,7 +11,7 @@ from ..config import WorkerConfig
 from ..integrations.gcs import GcsJsonClient
 from ..integrations.manatal import ManatalCandidate, ManatalClient
 from ..integrations.supabase import SupabaseClient
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 
 
 Progress = Callable[[str], None]

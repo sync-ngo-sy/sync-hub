@@ -13,18 +13,18 @@ from unittest import mock
 from cv_intelligence_worker.cli import build_parser, main
 from cv_intelligence_worker.commands import CommandRegistry, command_registry
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.public_applications import PublicApplicationIngestionResult
+from cv_intelligence_worker.workflows import PublicApplicationIngestionResult
 from cv_intelligence_worker.integrations.supabase import SupabaseSyncStats
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
 
 class CliTests(unittest.TestCase):
     def setUp(self) -> None:
-        embedder_patcher = mock.patch("cv_intelligence_worker.pipeline.build_embedder", return_value=FakeEmbedder())
+        embedder_patcher = mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.build_embedder", return_value=FakeEmbedder())
         self.addCleanup(embedder_patcher.stop)
         embedder_patcher.start()
         artifact_patcher = mock.patch(
-            "cv_intelligence_worker.pipeline.LLMArtifactGenerator",
+            "cv_intelligence_worker.workflows.ingestion_pipeline.LLMArtifactGenerator",
             return_value=FakeArtifactGenerator(),
         )
         self.addCleanup(artifact_patcher.stop)
@@ -39,7 +39,7 @@ class CliTests(unittest.TestCase):
             )
             buffer = io.StringIO()
             with mock.patch.dict(os.environ, {"CV_WORKER_CACHE_DIR": str(Path(tmpdir) / "cache")}):
-                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+                with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                     with redirect_stdout(buffer):
                         exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1", "--no-sync"])
             self.assertEqual(0, exit_code)
@@ -57,7 +57,7 @@ class CliTests(unittest.TestCase):
             )
             ingest_buffer = io.StringIO()
             with mock.patch.dict(os.environ, {"CV_WORKER_CACHE_DIR": str(Path(tmpdir) / "cache")}):
-                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+                with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                     with redirect_stdout(ingest_buffer):
                         exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1", "--no-sync"])
             self.assertEqual(0, exit_code)
@@ -99,9 +99,9 @@ class CliTests(unittest.TestCase):
                 "CV_DELETE_SYNCED_BUNDLES": "true",
             }
             with mock.patch.dict(os.environ, env):
-                with mock.patch("cv_intelligence_worker.pipeline.SupabaseClient") as supabase_client_cls:
+                with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.SupabaseClient") as supabase_client_cls:
                     supabase_client_cls.return_value.sync_bundles.return_value = SupabaseSyncStats(bundles=1)
-                    with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+                    with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                         with redirect_stdout(buffer):
                             exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1"])
             self.assertEqual(0, exit_code)

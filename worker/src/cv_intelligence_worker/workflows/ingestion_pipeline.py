@@ -6,16 +6,15 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from .artifacts import ArtifactGenerator, LLMArtifactGenerator, comparison_key
-from .candidate_extraction import extract_candidate_profile
-from .config import WorkerConfig
-from .documents import discover_documents, parse_document
-from .ingestion import SyncBatcher, build_processing_run
-from .integrations.supabase import SupabaseClient
-from .schema import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
-from .store import LocalArtifactStore
-from .utils import format_error_message
-from .vectorization import Embedder, build_chunks, build_embedder
+from ..artifacts import ArtifactGenerator, LLMArtifactGenerator, LocalArtifactStore, comparison_key
+from ..candidate_extraction import extract_candidate_profile
+from ..config import WorkerConfig
+from ..documents import discover_documents, parse_document
+from ..ingestion import SyncBatcher, build_processing_run
+from ..integrations.supabase import SupabaseClient
+from ..domain.models import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
+from ..core.errors import format_error_message
+from ..vectorization import Embedder, build_chunks, build_embedder
 
 
 @dataclass(frozen=True)
