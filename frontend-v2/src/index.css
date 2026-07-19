@@ -53,6 +53,12 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
+  /* The old app used a *separate*, smaller radius for buttons (16px) than
+     for panels/cards (the 22px --radius above) — shell.css:132. Buttons
+     read from this dedicated token, not --radius-lg, so they keep the old
+     app's moderate rounded-rectangle look instead of becoming a full pill
+     at button height. */
+  --radius-button: 16px;
   /* Caps small button corners from rounding into a pill shape at tiny sizes. */
   --radius-button-xs: min(var(--radius-md), 10px);
   --radius-button-sm: min(var(--radius-md), 12px);
