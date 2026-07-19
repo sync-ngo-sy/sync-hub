@@ -1,43 +1,31 @@
 import type { PropsWithChildren } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { z } from 'zod'
 import { queryClient } from '@/lib/queryClient'
 import { getSupabaseClient, hasSupabaseConfig } from '@/lib/supabaseClient'
 import { useAuthContextQuery } from '@/lib/auth/api/useAuthContextQuery'
 import { AuthContext, type AuthContextValue } from '@/lib/auth/authContextStore'
 import {
-  clearVersionedLocalStorage,
-  readVersionedLocalStorage,
-  writeVersionedLocalStorage,
-} from '@/lib/auth/versionedLocalStorage'
-
-const SELECTED_TENANT_STORAGE_KEY = 'frontend-v2.auth.selected-tenant-id'
-const SELECTED_TENANT_STORAGE_VERSION = 1
-const selectedTenantIdSchema = z.string().min(1)
-
-function readStoredTenantId(): string | null {
-  return readVersionedLocalStorage(SELECTED_TENANT_STORAGE_KEY, SELECTED_TENANT_STORAGE_VERSION, selectedTenantIdSchema)
-}
-
-function storeTenantId(tenantId: string | null): void {
-  if (tenantId) {
-    writeVersionedLocalStorage(SELECTED_TENANT_STORAGE_KEY, SELECTED_TENANT_STORAGE_VERSION, tenantId)
-  } else {
-    clearVersionedLocalStorage(SELECTED_TENANT_STORAGE_KEY)
-  }
-}
+  clearAuthPreferences,
+  readAuthPreferences,
+  saveAuthPreferences,
+  type ScopeMode,
+} from '@/lib/auth/authPreferences'
 
 function resolvePasswordResetRedirect(): string {
   return `${window.location.origin}${window.location.pathname}`
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const [storedPreferences] = useState(readAuthPreferences)
   const [session, setSession] = useState<Session | null>(null)
   const [sessionResolved, setSessionResolved] = useState(!hasSupabaseConfig)
-  const [authError, setAuthError] = useState<string | null>(null)
+  const [sessionError, setSessionError] = useState<Error | null>(null)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(() => readStoredTenantId())
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(
+    storedPreferences.selectedTenantId,
+  )
+  const [scopeMode, setScopeMode] = useState<ScopeMode>(storedPreferences.scopeMode)
 
   const user = session?.user ?? null
   const userId = user?.id ?? null
@@ -57,7 +45,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         return
       }
       if (error) {
-        setAuthError(error.message)
+        setSessionError(error)
       }
       setSession(data.session)
       setSessionResolved(true)
@@ -73,7 +61,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (event === 'SIGNED_OUT') {
         queryClient.clear()
         setSelectedTenantId(null)
-        storeTenantId(null)
+        setScopeMode('current')
+        clearAuthPreferences()
         setPasswordRecovery(false)
       }
 
@@ -81,7 +70,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setPasswordRecovery(true)
       }
 
-      setAuthError(null)
+      setSessionError(null)
       setSession(nextSession)
       setSessionResolved(true)
     })
@@ -94,25 +83,41 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const queryData = authContextQuery.data
   const memberships = useMemo(() => queryData?.memberships ?? [], [queryData])
-  const isAdmin = queryData?.isPlatformAdmin ?? false
+  const isPlatformAdmin = queryData?.isPlatformAdmin ?? false
+  const authError = sessionError ?? authContextQuery.error
 
   const currentTenant = useMemo(() => {
     if (memberships.length === 0) {
       return null
     }
-    return memberships.find((membership) => membership.id === selectedTenantId) ?? memberships[0] ?? null
+    return (
+      memberships.find((membership) => membership.id === selectedTenantId) ?? memberships[0] ?? null
+    )
   }, [memberships, selectedTenantId])
 
   useEffect(() => {
-    storeTenantId(currentTenant?.id ?? null)
-  }, [currentTenant])
+    if (session === null || !authContextQuery.isSuccess) {
+      return
+    }
+    saveAuthPreferences({ selectedTenantId: currentTenant?.id ?? null, scopeMode })
+  }, [authContextQuery.isSuccess, currentTenant, scopeMode, session])
 
   const selectTenant = useCallback((tenantId: string) => {
     setSelectedTenantId(tenantId)
   }, [])
 
+  const selectScopeMode = useCallback(
+    (nextScopeMode: ScopeMode) => {
+      setScopeMode(isPlatformAdmin ? nextScopeMode : 'current')
+    },
+    [isPlatformAdmin],
+  )
+
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await getSupabaseClient().auth.signInWithPassword({ email: email.trim(), password })
+    const { error } = await getSupabaseClient().auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
     if (error) {
       throw error
     }
@@ -152,8 +157,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       session,
       user,
       memberships,
-      isAdmin,
+      isPlatformAdmin,
       currentTenant,
+      scopeMode,
       authError,
       passwordRecovery,
       signIn,
@@ -161,14 +167,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       updatePassword,
       signOut,
       selectTenant,
+      selectScopeMode,
     }),
     [
       loading,
       session,
       user,
       memberships,
-      isAdmin,
+      isPlatformAdmin,
       currentTenant,
+      scopeMode,
       authError,
       passwordRecovery,
       signIn,
@@ -176,6 +184,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       updatePassword,
       signOut,
       selectTenant,
+      selectScopeMode,
     ],
   )
 

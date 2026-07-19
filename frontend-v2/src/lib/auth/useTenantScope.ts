@@ -1,17 +1,6 @@
-import { useCallback, useMemo, useState } from 'react'
-import { z } from 'zod'
+import { useMemo } from 'react'
 import { useAuth } from '@/lib/auth/authContextStore'
-import { readVersionedLocalStorage, writeVersionedLocalStorage } from '@/lib/auth/versionedLocalStorage'
-
-const SCOPE_MODE_STORAGE_KEY = 'frontend-v2.auth.scope-mode'
-const SCOPE_MODE_STORAGE_VERSION = 1
-const scopeModeSchema = z.enum(['current', 'all'])
-
-export type ScopeMode = z.infer<typeof scopeModeSchema>
-
-function readStoredScopeMode(): ScopeMode {
-  return readVersionedLocalStorage(SCOPE_MODE_STORAGE_KEY, SCOPE_MODE_STORAGE_VERSION, scopeModeSchema) ?? 'current'
-}
+export type { ScopeMode } from '@/lib/auth/authPreferences'
 
 /**
  * Resolves which tenant(s) the current view is scoped to (a single company,
@@ -21,19 +10,27 @@ function readStoredScopeMode(): ScopeMode {
  * refetches automatically instead of relying on a manual cache clear.
  */
 export function useTenantScope() {
-  const { isAdmin, currentTenant, memberships } = useAuth()
-  const [scopeModeState, setScopeModeState] = useState<ScopeMode>(() => readStoredScopeMode())
+  const {
+    isPlatformAdmin,
+    currentTenant,
+    memberships,
+    scopeMode: storedScopeMode,
+    selectScopeMode,
+  } = useAuth()
 
-  const scopeMode: ScopeMode = isAdmin ? scopeModeState : 'current'
-  const isAllScope = isAdmin && scopeMode === 'all'
-  const workspaceOptions = useMemo(() => (isAdmin ? memberships : []), [isAdmin, memberships])
+  const scopeMode = isPlatformAdmin ? storedScopeMode : 'current'
+  const isAllScope = isPlatformAdmin && scopeMode === 'all'
+  const tenantOptions = useMemo(
+    () => (isPlatformAdmin ? memberships : []),
+    [isPlatformAdmin, memberships],
+  )
 
   const resolvedTenantIds = useMemo(() => {
     if (isAllScope) {
-      return workspaceOptions.map((membership) => membership.id)
+      return tenantOptions.map((membership) => membership.id)
     }
     return currentTenant ? [currentTenant.id] : []
-  }, [isAllScope, workspaceOptions, currentTenant])
+  }, [isAllScope, tenantOptions, currentTenant])
 
   const scopeKey = useMemo(() => {
     if (isAllScope) {
@@ -42,20 +39,11 @@ export function useTenantScope() {
     return currentTenant ? `tenant:${currentTenant.id}` : 'none'
   }, [isAllScope, resolvedTenantIds, currentTenant])
 
-  const setScopeMode = useCallback(
-    (mode: ScopeMode) => {
-      const nextMode = isAdmin ? mode : 'current'
-      setScopeModeState(nextMode)
-      writeVersionedLocalStorage(SCOPE_MODE_STORAGE_KEY, SCOPE_MODE_STORAGE_VERSION, nextMode)
-    },
-    [isAdmin],
-  )
-
   return {
     scopeMode,
-    setScopeMode,
+    setScopeMode: selectScopeMode,
     isAllScope,
-    workspaceOptions,
+    tenantOptions,
     currentTenant,
     resolvedTenantIds,
     scopeKey,

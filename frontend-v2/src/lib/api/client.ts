@@ -1,6 +1,12 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
-import { isRecord } from '@/lib/isRecord'
+import { z } from 'zod'
 import { getSupabaseClient, hasSupabaseConfig } from '@/lib/supabaseClient'
+
+const errorPayloadSchema = z.object({
+  details: z.string().trim().min(1).optional(),
+  error: z.string().trim().min(1).optional(),
+  message: z.string().trim().min(1).optional(),
+})
 
 /**
  * Normalized shape for every transport failure: a network error, a relay
@@ -25,28 +31,28 @@ function describeUnknownError(error: unknown): string {
   if (typeof error === 'string') {
     return error
   }
-  if (isRecord(error)) {
-    return JSON.stringify(error)
+  try {
+    const serialized = JSON.stringify(error)
+    if (serialized) {
+      return serialized
+    }
+  } catch {
+    // A circular or otherwise unserializable value has no safe detail.
   }
   return 'Unknown error'
 }
 
 function extractErrorDetail(payload: unknown): string | null {
-  if (!isRecord(payload)) {
+  const result = errorPayloadSchema.safeParse(payload)
+  if (!result.success) {
     return null
   }
-
-  for (const key of ['details', 'error', 'message']) {
-    const value = payload[key]
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
-  }
-
-  return null
+  return result.data.details ?? result.data.error ?? result.data.message ?? null
 }
 
-async function readHttpError(error: FunctionsHttpError): Promise<{ detail: string | null; status: number }> {
+async function readHttpError(
+  error: FunctionsHttpError,
+): Promise<{ detail: string | null; status: number }> {
   const context: unknown = error.context
   if (!(context instanceof Response)) {
     return { detail: null, status: 0 }
@@ -66,7 +72,10 @@ async function readHttpError(error: FunctionsHttpError): Promise<{ detail: strin
  * session's access token, or the publishable key when signed out) — nothing
  * extra to configure here.
  */
-export async function invokeFunction(name: string, body: Record<string, unknown>): Promise<unknown> {
+export async function invokeFunction(
+  name: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
   if (!hasSupabaseConfig) {
     throw new ApiError('The app is not configured.', 0)
   }
@@ -87,6 +96,9 @@ export async function invokeFunction(name: string, body: Record<string, unknown>
 }
 
 /** Invokes the `platform` aggregator Edge Function with the given action. */
-export async function invokePlatform(action: string, body: Record<string, unknown> = {}): Promise<unknown> {
+export async function invokePlatform(
+  action: string,
+  body: Record<string, unknown> = {},
+): Promise<unknown> {
   return invokeFunction('platform', { action, ...body })
 }

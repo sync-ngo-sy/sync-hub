@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import type { TenantMembership } from '@/lib/auth/api/authContext'
+import type { ScopeMode } from '@/lib/auth/authPreferences'
 
 export interface AuthContextValue {
   configured: boolean
@@ -8,15 +9,17 @@ export interface AuthContextValue {
   session: Session | null
   user: User | null
   memberships: TenantMembership[]
-  isAdmin: boolean
+  isPlatformAdmin: boolean
   currentTenant: TenantMembership | null
-  authError: string | null
+  scopeMode: ScopeMode
+  authError: Error | null
   passwordRecovery: boolean
   signIn: (email: string, password: string) => Promise<void>
   requestPasswordReset: (email: string) => Promise<void>
   updatePassword: (password: string) => Promise<void>
   signOut: () => Promise<void>
   selectTenant: (tenantId: string) => void
+  selectScopeMode: (scopeMode: ScopeMode) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined)

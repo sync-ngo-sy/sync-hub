@@ -110,6 +110,24 @@
      management, so there's no shared magic-number problem left to solve. */
 }
 
+@utility caption-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted-foreground-soft);
+  text-transform: uppercase;
+}
+
+@utility dashboard-number {
+  font-size: var(--text-3xl);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
 :root {
   /* Dark-only for now (no theme toggle) — see gaps-and-recommendations.md
      Part 2 §9. This block is the shadcn-shape placeholder for a future

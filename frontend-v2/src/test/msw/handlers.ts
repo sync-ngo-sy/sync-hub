@@ -1,7 +1,8 @@
 import { http, HttpResponse } from 'msw'
-import { isRecord } from '@/lib/isRecord'
+import { z } from 'zod'
 
 const FUNCTIONS_BASE_URL = 'https://test.supabase.co/functions/v1'
+const platformRequestSchema = z.object({ action: z.string() })
 
 /**
  * Default `auth_context` response used by every test unless a test
@@ -24,16 +25,15 @@ export const defaultAuthContextResponse = {
 }
 
 /**
- * Base handler set for the `platform` aggregator Edge Function, composed
- * per-action. Feature test suites add their own action branches here (or
- * override a single action per-test with `server.use(...)`) rather than
- * standing up a separate handler file per feature — there is one endpoint,
- * so one place routes by `action`.
+ * Base handler set for the `platform` aggregator Edge Function. Future
+ * feature handlers live in their feature test modules and are composed into
+ * this exported array; this file does not become a central action switch.
  */
 export const handlers = [
   http.post(`${FUNCTIONS_BASE_URL}/platform`, async ({ request }) => {
     const body: unknown = await request.json()
-    const action = isRecord(body) ? body.action : null
+    const result = platformRequestSchema.safeParse(body)
+    const action = result.success ? result.data.action : null
 
     if (action === 'auth_context') {
       return HttpResponse.json(defaultAuthContextResponse)

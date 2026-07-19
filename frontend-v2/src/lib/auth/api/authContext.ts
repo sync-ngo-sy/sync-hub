@@ -39,6 +39,13 @@ export const authContextSchema = z.object({
 
 export type AuthContext = z.infer<typeof authContextSchema>
 
+const authContextAdapterSchema = wireAuthContextSchema
+  .transform((wire) => ({
+    memberships: wire.memberships,
+    isPlatformAdmin: wire.is_platform_admin,
+  }))
+  .pipe(authContextSchema)
+
 /**
  * Parses+transforms a raw `auth_context` response into the canonical shape.
  * Throws a `z.ZodError` on anything malformed — a missing required field, an
@@ -47,9 +54,5 @@ export type AuthContext = z.infer<typeof authContextSchema>
  * control, so a silent default here would be a privilege bug).
  */
 export function parseAuthContext(raw: unknown): AuthContext {
-  const wire = wireAuthContextSchema.parse(raw)
-  return {
-    memberships: wire.memberships,
-    isPlatformAdmin: wire.is_platform_admin,
-  }
+  return authContextAdapterSchema.parse(raw)
 }

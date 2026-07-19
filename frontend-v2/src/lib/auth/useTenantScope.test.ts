@@ -1,6 +1,6 @@
 import { createElement, type PropsWithChildren } from 'react'
 import { describe, expect, it } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
 import { TestAuthProvider } from '@/test/TestAuthProvider'
 import { createTestAuthContextValue } from '@/test/createTestAuthContextValue'
 import { useTenantScope } from '@/lib/auth/useTenantScope'
@@ -40,7 +40,7 @@ describe('useTenantScope', () => {
     expect(result.current.resolvedTenantIds).toEqual(['tenant-a'])
     expect(result.current.scopeKey).toBe('tenant:tenant-a')
     expect(result.current.isAllScope).toBe(false)
-    expect(result.current.workspaceOptions).toEqual([])
+    expect(result.current.tenantOptions).toEqual([])
   })
 
   it('returns no resolved tenants and a "none" scope key when nothing is selected', () => {
@@ -53,7 +53,7 @@ describe('useTenantScope', () => {
 
   it('defaults an admin to "current" scope, scoped to their current tenant, with all memberships as workspace options', () => {
     const authValue = createTestAuthContextValue({
-      isAdmin: true,
+      isPlatformAdmin: true,
       memberships: [tenantA, tenantB],
       currentTenant: tenantA,
     })
@@ -61,33 +61,31 @@ describe('useTenantScope', () => {
 
     expect(result.current.scopeMode).toBe('current')
     expect(result.current.resolvedTenantIds).toEqual(['tenant-a'])
-    expect(result.current.workspaceOptions).toEqual([tenantA, tenantB])
+    expect(result.current.tenantOptions).toEqual([tenantA, tenantB])
   })
 
   it('switches an admin to "all" scope, resolving every membership id with a sorted scope key', () => {
     const authValue = createTestAuthContextValue({
-      isAdmin: true,
+      isPlatformAdmin: true,
       memberships: [tenantB, tenantA],
       currentTenant: tenantA,
+      scopeMode: 'all',
     })
     const { result } = renderTenantScope(authValue)
-
-    act(() => {
-      result.current.setScopeMode('all')
-    })
 
     expect(result.current.isAllScope).toBe(true)
     expect(result.current.resolvedTenantIds.slice().sort()).toEqual(['tenant-a', 'tenant-b'])
     expect(result.current.scopeKey).toBe('all:tenant-a,tenant-b')
   })
 
-  it('ignores an attempt to switch to "all" scope for a non-admin user', () => {
-    const authValue = createTestAuthContextValue({ isAdmin: false, memberships: [tenantA], currentTenant: tenantA })
-    const { result } = renderTenantScope(authValue)
-
-    act(() => {
-      result.current.setScopeMode('all')
+  it('forces a non-admin user to current scope even if all scope was stored previously', () => {
+    const authValue = createTestAuthContextValue({
+      isPlatformAdmin: false,
+      memberships: [tenantA],
+      currentTenant: tenantA,
+      scopeMode: 'all',
     })
+    const { result } = renderTenantScope(authValue)
 
     expect(result.current.scopeMode).toBe('current')
     expect(result.current.isAllScope).toBe(false)
