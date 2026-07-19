@@ -10,18 +10,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .config import WorkerConfig
-from .integrations.supabase import (
+from ...config import WorkerConfig
+from ...schema import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
+from ...utils import normalize_email, strip_nul_bytes, urlopen
+from .helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
+from .responses import (
     CandidateDraftRow,
     PublicJobApplicationRow,
     SourceDocumentRow,
-    build_bundle_rows,
     validate_optional_row,
     validate_rows,
 )
-from .integrations.supabase.helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
-from .schema import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
-from .utils import normalize_email, strip_nul_bytes, urlopen
+from .rows import build_bundle_rows
 
 
 @dataclass(frozen=True)

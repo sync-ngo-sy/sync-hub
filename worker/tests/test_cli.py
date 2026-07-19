@@ -14,7 +14,7 @@ from cv_intelligence_worker.cli import build_parser, main
 from cv_intelligence_worker.commands import CommandRegistry, command_registry
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.public_applications import PublicApplicationIngestionResult
-from cv_intelligence_worker.supabase import SupabaseSyncStats
+from cv_intelligence_worker.integrations.supabase import SupabaseSyncStats
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
 

@@ -12,9 +12,9 @@ from .documents import guess_mime_type, stable_document_id
 from .integrations.gcs import GcsJsonClient
 from .integrations.manatal import ManatalCandidate, ManatalClient, ManatalResumeDownload
 from .integrations.manatal.client import _redact_url_for_error
+from .integrations.supabase import SupabaseClient
 from .pipeline import IngestionPipeline, IngestionResult
 from .schema import DocumentSource
-from .supabase import SupabaseClient
 from .utils import format_error_message
 
 

@@ -9,7 +9,7 @@ from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.documents import stable_document_id
 from cv_intelligence_worker.integrations.supabase import build_bundle_rows
 from cv_intelligence_worker.pipeline import IngestionPipeline
-from cv_intelligence_worker.supabase import SupabaseClient
+from cv_intelligence_worker.integrations.supabase import SupabaseClient
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
 

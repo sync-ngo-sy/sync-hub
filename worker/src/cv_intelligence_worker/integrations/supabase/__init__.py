@@ -1,3 +1,4 @@
+from .client import SupabaseCapacitySnapshot, SupabaseClient, SupabaseSyncStats
 from .responses import (
     CandidateDraftRow,
     PublicJobApplicationRow,
@@ -12,7 +13,10 @@ __all__ = [
     "CandidateDraftRow",
     "PublicJobApplicationRow",
     "SourceDocumentRow",
+    "SupabaseCapacitySnapshot",
+    "SupabaseClient",
     "SupabaseResponseError",
+    "SupabaseSyncStats",
     "build_bundle_rows",
     "validate_optional_row",
     "validate_rows",

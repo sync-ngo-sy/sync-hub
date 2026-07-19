@@ -470,9 +470,9 @@ class TestExtractCandidateProfileDraft:
 class TestSupabaseDraftOps:
     """SupabaseClient draft queue and update operations."""
 
-    @patch("cv_intelligence_worker.supabase.urlopen")
+    @patch("cv_intelligence_worker.integrations.supabase.client.urlopen")
     def test_queued_candidate_drafts_returns_list(self, mock_urlopen):
-        from cv_intelligence_worker.supabase import SupabaseClient
+        from cv_intelligence_worker.integrations.supabase import SupabaseClient
         config = _make_config()
         client = SupabaseClient(config)
 
@@ -504,9 +504,9 @@ class TestSupabaseDraftOps:
         assert len(drafts) == 2
         assert drafts[0]["user_id"] == "u1"
 
-    @patch("cv_intelligence_worker.supabase.urlopen")
+    @patch("cv_intelligence_worker.integrations.supabase.client.urlopen")
     def test_queued_candidate_drafts_empty(self, mock_urlopen):
-        from cv_intelligence_worker.supabase import SupabaseClient
+        from cv_intelligence_worker.integrations.supabase import SupabaseClient
         config = _make_config()
         client = SupabaseClient(config)
 
@@ -520,9 +520,9 @@ class TestSupabaseDraftOps:
         drafts = client.queued_candidate_drafts()
         assert drafts == []
 
-    @patch("cv_intelligence_worker.supabase.urlopen")
+    @patch("cv_intelligence_worker.integrations.supabase.client.urlopen")
     def test_queued_candidate_drafts_rejects_non_list_response(self, mock_urlopen):
-        from cv_intelligence_worker.supabase import SupabaseClient
+        from cv_intelligence_worker.integrations.supabase import SupabaseClient
         config = _make_config()
         client = SupabaseClient(config)
 
@@ -536,9 +536,9 @@ class TestSupabaseDraftOps:
         with pytest.raises(SupabaseResponseError, match="invalid response shape"):
             client.queued_candidate_drafts()
 
-    @patch("cv_intelligence_worker.supabase.urlopen")
+    @patch("cv_intelligence_worker.integrations.supabase.client.urlopen")
     def test_update_candidate_draft_calls_patch(self, mock_urlopen):
-        from cv_intelligence_worker.supabase import SupabaseClient
+        from cv_intelligence_worker.integrations.supabase import SupabaseClient
         config = _make_config()
         client = SupabaseClient(config)
 
