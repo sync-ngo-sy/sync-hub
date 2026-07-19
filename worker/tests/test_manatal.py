@@ -97,3 +97,38 @@ def test_list_candidates_paginates_with_api_authentication() -> None:
 
     assert pages == ["1", "2"]
     assert [candidate.id for candidate in candidates] == ["1", "2"]
+
+
+def test_list_candidates_applies_incremental_filter_and_limit() -> None:
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=[
+                {"id": "1", "full_name": "Candidate 1"},
+                {"id": "2", "full_name": "Candidate 2"},
+            ],
+        )
+
+    client = ManatalClient(_config(), transport=httpx.MockTransport(respond))
+    candidates = client.list_candidates(updated_since="2026-01-01T00:00:00Z", limit=1)
+
+    assert [candidate.id for candidate in candidates] == ["1"]
+    assert requests[0].url.params["updated_at__gte"] == "2026-01-01T00:00:00Z"
+    assert requests[0].url.params["page_size"] == str(client.config.manatal_page_size)
+
+
+def test_list_candidates_isolates_explicit_candidate_failure() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/1/"):
+            return httpx.Response(200, json={"id": "1", "full_name": "Candidate 1"})
+        return httpx.Response(404, text="private provider details")
+
+    client = ManatalClient(_config(), transport=httpx.MockTransport(respond))
+    candidates = client.list_candidates(candidate_ids=["1", "2"])
+
+    assert [candidate.id for candidate in candidates] == ["1", "2"]
+    assert "candidate_fetch_error" in candidates[1].raw
+    assert "private provider details" not in candidates[1].raw["candidate_fetch_error"]
