@@ -25,7 +25,6 @@ lists only the vars this app reads) to `../.env` and fill in:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
-- `VITE_API_BASE_URL` (optional override)
 
 ## Scripts
 

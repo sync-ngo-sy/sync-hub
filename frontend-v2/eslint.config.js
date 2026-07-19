@@ -101,9 +101,9 @@ export default tseslint.config(
     },
   },
   {
-    // Vite's own entry-point convention (lowercase main.tsx) predates and
-    // overrides the component-file naming rule above.
-    files: ['src/main.tsx'],
+    // Vite's own conventions (lowercase main.tsx, vite-env.d.ts) predate and
+    // override the file-naming rule above.
+    files: ['src/main.tsx', 'src/vite-env.d.ts'],
     rules: {
       'check-file/filename-naming-convention': 'off',
     },

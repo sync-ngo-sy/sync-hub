@@ -20,5 +20,13 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Fixed test-only Supabase config so `hasSupabaseConfig` is true and the
+    // MSW handlers' base URL (`test/msw/handlers.ts`) matches what the app
+    // actually calls — never real credentials, this project has no browser
+    // mock in dev (only in tests, per ticket 05/gaps-and-recommendations).
+    env: {
+      VITE_SUPABASE_URL: 'https://test.supabase.co',
+      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+    },
   },
 })
