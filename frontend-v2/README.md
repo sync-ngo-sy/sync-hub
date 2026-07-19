@@ -40,7 +40,6 @@ lists only the vars this app reads) to `../.env` and fill in:
 - Component files: `PascalCase.tsx`. Everything else: `camelCase.ts`. Directories: `kebab-case`.
 - Import other modules via the `@/` alias — parent-relative (`../`) imports are a lint error.
 - No hardcoded hex colors or non-dynamic inline styles — use Tailwind classes / design tokens.
-- Invoke the `react-best-practices` skill at least once per `/implement` session (reachable
-  from this directory — see `.claude/skills/react-best-practices` / `.agents/skills/react-best-practices`).
+- Invoke the `react-best-practices` skill at least once per `/implement` session.
 - The repo's issue tracker / triage-label / domain-doc config (`AGENTS.md`, `docs/agents/`)
   is mirrored here from `../frontend/` — see those files for conventions.
