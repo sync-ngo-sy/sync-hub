@@ -9,7 +9,7 @@ from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.discovery import discover_documents
 from cv_intelligence_worker.pipeline import IngestionPipeline
 from cv_intelligence_worker.schema import DocumentSource
-from tests.test_helpers.profiles import build_test_profile
+from tests.test_helpers.profiles import FakeEmbedder, build_test_profile
 
 
 class IngestionPipelineTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class IngestionPipelineTests(unittest.TestCase):
             )
 
             with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
-                result = IngestionPipeline(config).ingest_sources(
+                result = IngestionPipeline(config, embedder=FakeEmbedder()).ingest_sources(
                     sources,
                     tenant_id="tenant-1",
                     sync_to_supabase=False,
@@ -74,7 +74,7 @@ class IngestionPipelineTests(unittest.TestCase):
                     ingestion_run_id="run-1",
                 ),
             ]
-            pipeline = IngestionPipeline(config)
+            pipeline = IngestionPipeline(config, embedder=FakeEmbedder())
 
             def build_bundle(source: DocumentSource, _ingestion_run_id: str):
                 if source.document_id == "bad":

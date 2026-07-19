@@ -126,7 +126,7 @@ class EmbeddingRecord:
     chunk_id: str
     embedding: List[float]
     embedding_version: str
-    provider: str = "deterministic"
+    provider: str = ""
 
 
 @dataclass(frozen=True)
@@ -286,7 +286,7 @@ def embedding_record_from_dict(data: Dict[str, Any]) -> EmbeddingRecord:
         chunk_id=data["chunk_id"],
         embedding=list(data.get("embedding", [])),
         embedding_version=data.get("embedding_version", ""),
-        provider=data.get("provider", "deterministic"),
+        provider=data.get("provider", ""),
     )
 
 

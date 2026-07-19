@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from cv_intelligence_worker.chunking import build_chunks
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.embeddings import DeterministicEmbedder, SDKEmbedder, build_embedder
+from cv_intelligence_worker.embeddings import SDKEmbedder, build_embedder
 from cv_intelligence_worker.schema import CandidateProfile, ExperienceEntry
 
 
@@ -39,13 +39,6 @@ class ChunkingEmbeddingTests(unittest.TestCase):
         self.assertTrue(any(chunk.chunk_type == "profile_overview" for chunk in chunks))
         self.assertTrue(any(chunk.chunk_type == "experience" for chunk in chunks))
 
-    def test_deterministic_embedder_is_stable(self) -> None:
-        embedder = DeterministicEmbedder(16, "det-v1")
-        first = embedder.embed_text("python graphql postgres")
-        second = embedder.embed_text("python graphql postgres")
-        self.assertEqual(first, second)
-        self.assertEqual(len(first), 16)
-
     def test_sdk_embedder_uses_validated_client_results(self) -> None:
         chunks = build_chunks(self._profile(), "v1")[:2]
         client = MagicMock()
@@ -74,10 +67,19 @@ class ChunkingEmbeddingTests(unittest.TestCase):
         self.assertEqual(SDKEmbedder(WorkerConfig(), client=client).embed_chunks([]), [])
         client.embed.assert_not_called()
 
-    def test_network_embedding_providers_share_sdk_embedder(self) -> None:
-        for provider in ("openai", "local-openai", "ollama", "ollama-openai"):
+    def test_supported_embedding_providers_share_sdk_embedder(self) -> None:
+        for provider in ("openai", "openai-compatible", "local-openai", "ollama", "ollama-openai"):
             with self.subTest(provider=provider):
-                self.assertIsInstance(build_embedder(WorkerConfig(embedding_provider=provider)), SDKEmbedder)
+                config = WorkerConfig(embedding_provider=provider, embedding_model="test-embedding-model")
+                self.assertIsInstance(build_embedder(config), SDKEmbedder)
+
+    def test_missing_embedding_model_fails_closed(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "embedding model is not configured"):
+            build_embedder(WorkerConfig(embedding_model=""))
+
+    def test_unsupported_embedding_provider_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported embedding provider"):
+            build_embedder(WorkerConfig(embedding_provider="hash", embedding_model="test-model"))
 
 
 if __name__ == "__main__":

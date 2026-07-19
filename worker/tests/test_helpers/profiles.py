@@ -1,7 +1,22 @@
 from __future__ import annotations
 
-from cv_intelligence_worker.schema import CandidateProfile, DocumentSource, DocumentText, ExperienceEntry
+from cv_intelligence_worker.schema import CandidateProfile, ChunkRecord, DocumentSource, DocumentText, EmbeddingRecord, ExperienceEntry
 from cv_intelligence_worker.utils import stable_uuid
+
+
+class FakeEmbedder:
+    def embed_chunks(self, chunks: list[ChunkRecord]) -> list[EmbeddingRecord]:
+        return [
+            EmbeddingRecord(
+                tenant_id=chunk.tenant_id,
+                candidate_id=chunk.candidate_id,
+                chunk_id=chunk.chunk_id,
+                embedding=[1.0, 0.0],
+                embedding_version="test-v1",
+                provider="test",
+            )
+            for chunk in chunks
+        ]
 
 
 def build_test_profile(
