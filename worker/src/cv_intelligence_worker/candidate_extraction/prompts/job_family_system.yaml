@@ -14,7 +14,6 @@ template: |-
 
   Classification rules:
   - Use only the provided structured profile facts.
-  - Treat deterministic_job_family and deterministic_confidence as hints, not authoritative answers.
   - Give the most weight to recent role titles and responsibilities; use skills, projects, and older roles as supporting evidence.
   - Do not classify from company names, education, or a single generic skill alone.
   - Prefer the most specific supported family when multiple families match.

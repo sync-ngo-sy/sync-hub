@@ -53,7 +53,7 @@ class CandidateExtraction(LLMOutput):
     email: str | None
     phone: str | None
     links: list[str]
-    years_experience: float | None
+    years_experience: Annotated[float, Field(ge=0, le=80)] | None
     seniority: Literal["junior", "mid", "senior", "staff-plus", "unclassified"] | None
     role_tags: list[str]
     skills: list[str]

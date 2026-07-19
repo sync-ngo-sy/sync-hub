@@ -24,9 +24,9 @@ def test_yaml_prompts_preserve_reviewed_content() -> None:
         "skill_classification": SkillClassifier.system_prompt(),
     }
 
-    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "147aa519bade634f94098cfe86e045d9d8cba95d8705e952bcddb9dd66123a78"
-    assert hashlib.sha256(prompts["job_family"].encode()).hexdigest() == "9befc252a1abcb381b97cb6e9d7b31f8edacd17b20adcb516c59bd88d30d2515"
-    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "ec48559ea01daed67d3cfd68016412df85c240dc9c614d59bbe4ebc1fd5ec7d9"
+    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "a84cb60c8c80bbbd55ff4cb489c36ebf0ce682ca818726e8656c5fb64c87832e"
+    assert hashlib.sha256(prompts["job_family"].encode()).hexdigest() == "73773792339e97d46f6b8b24fc22d99333ebb8d3687ff439ee7d8ca48b7472be"
+    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "f5a8cb06c88dee4804afc3bf9bb830400688ec32cc95c925cd36329e66eae03d"
     assert (
         hashlib.sha256(prompts["draft_validation"].encode()).hexdigest()
         == "4dec3b30129e3bc87e207461e7418cfd6b9ef9f4881fb269a255f29bad36c28f"
@@ -49,7 +49,7 @@ def test_candidate_prompt_defines_safety_and_missing_value_contracts() -> None:
 def test_job_family_prompt_requires_profile_backed_evidence() -> None:
     prompt = build_job_family_system_prompt()
 
-    assert "as hints, not authoritative answers" in prompt
+    assert "Use only the provided structured profile facts" in prompt
     assert "must contain only values present in the supplied candidate profile" in prompt
     assert "distinct credible alternative, or null" in prompt
 

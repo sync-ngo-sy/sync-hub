@@ -1,5 +1,5 @@
 from .inputs import build_candidate_prompt
-from .mapping import candidate_id_for_profile, number_value, profile_from_extraction, string_value
+from .mapping import candidate_id_for_profile, profile_from_extraction, string_value
 from .prompts import (
     build_candidate_system_prompt,
     build_job_family_prompt,
@@ -17,7 +17,6 @@ __all__ = [
     "calculate_profile_confidence",
     "candidate_id_for_profile",
     "missing_profile_fields",
-    "number_value",
     "profile_from_extraction",
     "string_value",
 ]

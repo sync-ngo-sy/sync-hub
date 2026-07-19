@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 
 from ..llm_models import CandidateExtraction, ExtractedEducation, ExtractedExperience, ExtractedProject
@@ -64,16 +63,6 @@ def string_value(value: object) -> str:
 
 def string_list(values: list[str]) -> list[str]:
     return dedupe_keep_order(string_value(item) for item in values)
-
-
-def number_value(value: object) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        match = re.search(r"\d+(?:\.\d+)?", compact_whitespace(value))
-        if match:
-            return float(match.group(0))
-    return 0.0
 
 
 def candidate_id_for_profile(

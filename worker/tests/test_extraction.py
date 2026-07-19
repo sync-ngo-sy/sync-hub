@@ -114,6 +114,10 @@ class ExtractionTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CandidateExtraction.model_validate(payload)
 
+    def test_impossible_years_experience_is_rejected_at_runtime(self) -> None:
+        with self.assertRaises(ValidationError):
+            self._extraction(years_experience=81)
+
     def test_email_identity_is_normalized_for_candidate_id(self) -> None:
         first_source = self._source("doc-email-a")
         second_source = self._source("doc-email-b")

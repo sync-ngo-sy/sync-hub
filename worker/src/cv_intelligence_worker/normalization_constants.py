@@ -239,171 +239,23 @@ SKILL_DATE_RANGE_RE = re.compile(
 )
 SKILL_CONTACT_RE = re.compile(r"@|https?://|www\.|(?:linkedin|github|gitlab)\.com/", re.IGNORECASE)
 
-ROLE_PATTERNS = {
-    "full-stack": ["full stack", "full-stack"],
-    "mobile": ["mobile", "flutter", "android", "ios", "react native", "swift", "kotlin"],
-    "frontend": ["frontend", "front-end", "front end", "react", "next.js", "angular", "vue", "html", "css", "ui/ux", "webflow"],
-    "backend": ["backend", "back-end", "back end", "api", "microservice", "node.js", "nestjs", ".net", "asp.net", "django", "flask", "fastapi", "laravel"],
-    "devops": ["devops", "sre", "terraform", "kubernetes", "docker", "ci/cd", "cloud infrastructure"],
-    "data": ["data engineer", "analytics", "etl", "pandas", "numpy", "bi", "data analysis"],
-    "ml": ["machine learning", "ml", "ai engineer", "llm", "tensorflow", "pytorch", "scikit-learn"],
-    "qa": ["qa", "quality assurance", "automation testing", "test automation", "selenium"],
-    "security": ["security", "cybersecurity", "siem", "soc", "threat detection", "penetration testing", "vulnerability"],
-}
-
 JOB_FAMILY_TAXONOMY_VERSION = "production-corpus-v1"
-
-JOB_FAMILY_RULES = (
-    (
-        "Full-Stack Engineering",
-        ("full-stack",),
-        ("full stack", "full-stack"),
-        ("react", "node.js", "apis", "sql", "postgresql", "mongodb"),
-    ),
-    (
-        "Backend Engineering",
-        ("backend",),
-        ("backend", "back-end", "api", "server", "platform"),
-        ("node.js", "nestjs", "express", "java", "spring", "python", "django", "fastapi", "laravel", "php", "asp.net", ".net", "c#", "postgresql", "mysql", "mongodb", "redis", "rest apis", "graphql"),
-    ),
-    (
-        "Frontend Engineering",
-        ("frontend",),
-        ("frontend", "front-end", "ui engineer", "web developer"),
-        ("react", "next.js", "angular", "vue", "javascript", "typescript", "html", "css", "tailwind css", "bootstrap", "redux"),
-    ),
-    (
-        "Mobile Engineering",
-        ("mobile",),
-        ("mobile", "android", "ios", "flutter", "react native"),
-        ("flutter", "dart", "android", "ios", "swift", "kotlin", "react native", "firebase"),
-    ),
-    (
-        "AI & Machine Learning",
-        ("ml",),
-        ("machine learning", "ml engineer", "ai engineer", "data scientist", "llm"),
-        ("machine learning", "deep learning", "tensorflow", "pytorch", "scikit", "keras", "opencv", "nlp", "llm", "computer vision"),
-    ),
-    (
-        "Data & Analytics",
-        ("data",),
-        ("data analyst", "data engineer", "business intelligence", "bi developer", "analytics"),
-        ("sql", "power bi", "tableau", "excel", "pandas", "numpy", "etl", "data analysis", "data visualization"),
-    ),
-    (
-        "Cloud, DevOps & SRE",
-        ("devops",),
-        ("devops", "sre", "site reliability", "cloud", "infrastructure"),
-        ("docker", "kubernetes", "terraform", "aws", "azure", "google cloud", "gcp", "ci/cd", "linux", "jenkins", "ansible", "helm"),
-    ),
-    (
-        "Cybersecurity",
-        ("security",),
-        ("security", "cyber", "soc", "penetration", "threat", "siem"),
-        ("cybersecurity", "security", "soc operations", "siem", "penetration testing", "vulnerability", "threat detection", "incident response"),
-    ),
-    (
-        "QA & Test Automation",
-        ("qa",),
-        ("qa", "quality assurance", "test automation", "tester"),
-        ("selenium", "playwright", "cypress", "jest", "testing", "test automation", "quality assurance"),
-    ),
-    (
-        "Product & Design",
-        (),
-        ("product designer", "ui/ux", "ux designer", "product manager"),
-        ("figma", "ui/ux", "wireframing", "prototyping", "user research", "product management"),
-    ),
-    (
-        "Software Engineering",
-        ("generalist",),
-        ("software", "developer", "engineer", "programmer"),
-        ("git", "github", "apis", "problem solving", "javascript", "python", "sql"),
-    ),
+JOB_FAMILY_LABELS = (
+    "Full-Stack Engineering",
+    "Backend Engineering",
+    "Frontend Engineering",
+    "Mobile Engineering",
+    "AI & Machine Learning",
+    "Data & Analytics",
+    "Cloud, DevOps & SRE",
+    "Cybersecurity",
+    "QA & Test Automation",
+    "Product & Design",
+    "Software Engineering",
+    "Unclassified",
 )
-
-JOB_FAMILY_LABELS = tuple(rule[0] for rule in JOB_FAMILY_RULES) + ("Unclassified",)
-
-ROLE_TAG_ALIASES = {
-    "fullstack": "full-stack",
-    "full-stack": "full-stack",
-    "frontend": "frontend",
-    "front-end": "frontend",
-    "backend": "backend",
-    "back-end": "backend",
-    "mobile": "mobile",
-    "devops": "devops",
-    "sre": "devops",
-    "data": "data",
-    "ml": "ml",
-    "ai": "ml",
-    "qa": "qa",
-    "security": "security",
-    "cybersecurity": "security",
-}
-
-SENIORITY_ALIASES = {
-    "entry-level": "junior",
-    "entry-levels": "junior",
-    "intern": "junior",
-    "junior": "junior",
-    "jr": "junior",
-    "junior-level": "junior",
-    "mid": "mid",
-    "middle": "mid",
-    "mid-level": "mid",
-    "midlevel": "mid",
-    "mid-senior": "senior",
-    "senior": "senior",
-    "sr": "senior",
-    "sr.": "senior",
-    "lead": "staff-plus",
-    "principal": "staff-plus",
-    "staff": "staff-plus",
-    "architect": "staff-plus",
-    "head": "staff-plus",
-    "staff-plus": "staff-plus",
-    "unclassified": "unclassified",
-    "unknown": "unclassified",
-}
-
-ROLE_HINT_RE = re.compile(
-    r"\b(front[\s-]?end|back[\s-]?end|full[\s-]?stack|mobile|flutter|android|ios|developer|engineer|architect|designer|manager|analyst|specialist|consultant|administrator|seo|security|devops|sre|qa)\b",
-    re.IGNORECASE,
-)
-LOCATION_PATTERN = re.compile(r"^[A-Za-z .'-]+,\s*[A-Za-z .'-]+$")
 CONTACT_PATTERN = re.compile(r"@|https?://|linkedin|github|portfolio|\+\d")
 DATE_FRAGMENT_RE = re.compile(r"\b(?:19|20)\d{2}\b")
-YEARS_PATTERN = re.compile(
-    r"\b(?P<count>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\+?\s+years?\b",
-    re.IGNORECASE,
-)
-TITLE_VERB_RE = re.compile(r"\b(collaborated|implemented|developed|built|worked|improved|led|designed|optimized|conducted)\b", re.IGNORECASE)
-DATE_RANGE_PATTERN = re.compile(
-    r"(?P<start>(?:\d{1,2}/)?\d{4}|present|current)\s*[-–]\s*(?P<end>(?:\d{1,2}/)?\d{4}|present|current)",
-    re.IGNORECASE,
-)
-SENIOR_SIGNAL_RE = re.compile(r"\b(senior|principal|staff|lead|architect|head of)\b", re.IGNORECASE)
-JUNIOR_SIGNAL_RE = re.compile(r"\b(junior|intern|entry(?:\s|-)?level)\b", re.IGNORECASE)
-MAX_REASONABLE_YEARS_EXPERIENCE = 80.0
-GENERIC_EXPERIENCE_TITLE_RE = re.compile(
-    r"\b(project leadership|client engagement|key achievements?|responsibilities|achievements?)\b",
-    re.IGNORECASE,
-)
-WORK_EXPERIENCE_TITLE_RE = re.compile(
-    r"\b(developer|engineer|specialist|manager|analyst|designer|consultant|administrator|architect|seo|security|devops|sre|qa|growth[\s-]?hacker)\b",
-    re.IGNORECASE,
-)
-ACADEMIC_HINTS = (
-    "information technology",
-    "computer engineering",
-    "software engineering",
-    "artificial intelligence",
-    "informatics",
-    "bachelor",
-    "degree",
-    "student",
-)
 LOCATION_SEGMENT_PATTERN = re.compile(r"^[A-Za-z .'-]+$")
 LOCATION_WORD_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
 GEO_ACRONYMS = {"uae", "uk", "usa", "ksa"}
@@ -438,12 +290,6 @@ CITY_ALIASES = {
     "damascus": "Damascus",
     "damscus": "Damascus",
     "montreal": "Montreal",
-}
-IMPLICIT_COUNTRY_BY_CITY = {
-    "aleppo": "Syria",
-    "cairo": "Egypt",
-    "damascus": "Syria",
-    "montreal": "Canada",
 }
 BLOCKED_LOCATION_TOKENS = {
     "agency",
