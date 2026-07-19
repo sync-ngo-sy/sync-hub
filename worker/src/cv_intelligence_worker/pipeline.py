@@ -10,7 +10,7 @@ from .artifacts import build_summary_artifact, comparison_key, build_comparison_
 from .chunking import build_chunks
 from .config import WorkerConfig
 from .discovery import discover_documents
-from .embeddings import build_embedder
+from .embeddings import Embedder, build_embedder
 from .extraction import extract_candidate_profile
 from .ingestion import SyncBatcher, build_processing_run
 from .parsing import parse_document
@@ -31,9 +31,9 @@ class IngestionResult:
 
 
 class IngestionPipeline:
-    def __init__(self, config: WorkerConfig) -> None:
+    def __init__(self, config: WorkerConfig, *, embedder: Embedder | None = None) -> None:
         self.config = config
-        self.embedder = build_embedder(config)
+        self.embedder = embedder or build_embedder(config)
         self.store = LocalArtifactStore(config)
         self.supabase = SupabaseClient(config) if config.has_supabase_http_credentials() else None
 

@@ -10,7 +10,7 @@ from cv_intelligence_worker.discovery import stable_document_id
 from cv_intelligence_worker.integrations.supabase import build_bundle_rows
 from cv_intelligence_worker.pipeline import IngestionPipeline
 from cv_intelligence_worker.supabase import SupabaseClient
-from tests.test_helpers.profiles import build_test_profile
+from tests.test_helpers.profiles import FakeEmbedder, build_test_profile
 
 
 class RecordingSupabaseClient(SupabaseClient):
@@ -108,7 +108,7 @@ class SupabaseClientTests(unittest.TestCase):
                 sync_originals_to_storage=True,
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
-            pipeline = IngestionPipeline(config)
+            pipeline = IngestionPipeline(config, embedder=FakeEmbedder())
             with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
@@ -139,7 +139,7 @@ class SupabaseClientTests(unittest.TestCase):
                 sync_originals_to_storage=False,
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
-            pipeline = IngestionPipeline(config)
+            pipeline = IngestionPipeline(config, embedder=FakeEmbedder())
             with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
@@ -178,7 +178,7 @@ class SupabaseClientTests(unittest.TestCase):
                 cache_dir=str(Path(tmpdir) / "cache"),
                 supabase_batch_size=50,
             )
-            pipeline = IngestionPipeline(config)
+            pipeline = IngestionPipeline(config, embedder=FakeEmbedder())
             with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             client = FlakySupabaseClient(config)

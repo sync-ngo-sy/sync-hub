@@ -85,19 +85,23 @@ def _default_extraction_model() -> str:
 def _default_embedding_model() -> str:
     if _has_gemini_key():
         return "gemini-embedding-001"
-    return "multilingual-e5-base"
+    return ""
 
 
 def _default_embedding_provider() -> str:
     if _has_gemini_key():
         return "openai"
-    return "deterministic"
+    return "openai-compatible"
 
 
 def _default_embedding_version() -> str:
-    if _has_gemini_key():
-        return "gemini-embedding-001-768-v1"
-    return "deterministic-fnv1a-768-v2"
+    model = _env_any("CV_EMBEDDING_MODEL", "CVI_EMBEDDING_MODEL", default=_default_embedding_model())
+    if not model:
+        return "embedding-unconfigured-v1"
+    if model.startswith("gemini-embedding-"):
+        dimension = _env_any("CV_EMBEDDING_DIMENSION", "CVI_EMBEDDING_DIMENSION", default="768")
+        return f"{model}-{dimension}-v1"
+    return f"{model}-v1"
 
 
 def _default_model_version() -> str:

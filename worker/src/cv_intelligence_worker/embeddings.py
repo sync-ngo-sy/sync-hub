@@ -1,50 +1,16 @@
 from __future__ import annotations
 
-import math
+from typing import Protocol
 
 from .config import WorkerConfig
 from .llm import LLMClient
 from .schema import ChunkRecord, EmbeddingRecord
 
-
-def _stable_token_hash(token: str) -> int:
-    digest = 2166136261
-    for value in token.encode("utf-8"):
-        digest ^= value
-        digest = (digest * 16777619) & 0xFFFFFFFF
-    return digest
+SUPPORTED_EMBEDDING_PROVIDERS = frozenset({"openai", "openai-compatible", "local-openai", "ollama", "ollama-openai"})
 
 
-class DeterministicEmbedder:
-    def __init__(self, dimension: int, version: str) -> None:
-        self.dimension = dimension
-        self.version = version
-
-    def embed_text(self, text: str) -> list[float]:
-        vector = [0.0] * self.dimension
-        for token in text.lower().split():
-            digest = _stable_token_hash(token)
-            index = digest % self.dimension
-            sign = 1.0 if ((digest >> 1) & 1) == 0 else -1.0
-            weight = 1.0 / max(1, len(token))
-            vector[index] += sign * weight
-        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
-        return [round(value / norm, 8) for value in vector]
-
-    def embed_chunks(self, chunks: list[ChunkRecord]) -> list[EmbeddingRecord]:
-        records: list[EmbeddingRecord] = []
-        for chunk in chunks:
-            records.append(
-                EmbeddingRecord(
-                    tenant_id=chunk.tenant_id,
-                    candidate_id=chunk.candidate_id,
-                    chunk_id=chunk.chunk_id,
-                    embedding=self.embed_text(chunk.text),
-                    embedding_version=self.version,
-                    provider="deterministic",
-                )
-            )
-        return records
+class Embedder(Protocol):
+    def embed_chunks(self, chunks: list[ChunkRecord]) -> list[EmbeddingRecord]: ...
 
 
 class SDKEmbedder:
@@ -78,7 +44,10 @@ class SDKEmbedder:
         ]
 
 
-def build_embedder(config: WorkerConfig):
-    if config.embedding_provider.lower() in {"openai", "local-openai", "ollama", "ollama-openai"}:
-        return SDKEmbedder(config)
-    return DeterministicEmbedder(config.embedding_dimension, config.embedding_version)
+def build_embedder(config: WorkerConfig) -> SDKEmbedder:
+    provider = config.embedding_provider.lower()
+    if provider not in SUPPORTED_EMBEDDING_PROVIDERS:
+        raise ValueError(f"unsupported embedding provider: {config.embedding_provider}")
+    if not config.embedding_model:
+        raise RuntimeError("embedding model is not configured")
+    return SDKEmbedder(config)

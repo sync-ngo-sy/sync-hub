@@ -13,10 +13,15 @@ from unittest import mock
 from cv_intelligence_worker.cli import main
 from cv_intelligence_worker.public_applications import PublicApplicationIngestionResult
 from cv_intelligence_worker.supabase import SupabaseSyncStats
-from tests.test_helpers.profiles import build_test_profile
+from tests.test_helpers.profiles import FakeEmbedder, build_test_profile
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        embedder_patcher = mock.patch("cv_intelligence_worker.pipeline.build_embedder", return_value=FakeEmbedder())
+        self.addCleanup(embedder_patcher.stop)
+        embedder_patcher.start()
+
     def test_ingest_command_outputs_run_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "resume.txt"

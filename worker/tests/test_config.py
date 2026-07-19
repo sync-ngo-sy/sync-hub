@@ -14,6 +14,20 @@ class WorkerConfigTests(unittest.TestCase):
 
         self.assertEqual("openai-json-v2", config.prompt_version)
 
+    def test_embedding_defaults_are_explicitly_unconfigured_without_model_credentials(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            config = WorkerConfig.from_env()
+
+        self.assertEqual("openai-compatible", config.embedding_provider)
+        self.assertEqual("", config.embedding_model)
+        self.assertEqual("embedding-unconfigured-v1", config.embedding_version)
+
+    def test_embedding_version_follows_explicit_model_configuration(self) -> None:
+        with mock.patch.dict(os.environ, {"CV_EMBEDDING_MODEL": "text-embedding-3-small"}, clear=True):
+            config = WorkerConfig.from_env()
+
+        self.assertEqual("text-embedding-3-small-v1", config.embedding_version)
+
     def test_batch_size_does_not_implicitly_change_ingest_concurrency(self) -> None:
         env = {
             "CV_BATCH_SIZE": "2",
