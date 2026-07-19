@@ -128,34 +128,12 @@ class ManatalClient:
     ) -> list[ManatalCandidate]:
         explicit_ids = [str(candidate_id).strip() for candidate_id in (candidate_ids or []) if str(candidate_id).strip()]
         if explicit_ids:
-            candidates: list[ManatalCandidate] = []
-            for candidate_id in explicit_ids:
-                try:
-                    candidates.append(self.get_candidate(candidate_id))
-                except Exception as exc:  # noqa: BLE001
-                    candidates.append(
-                        ManatalCandidate(
-                            id=candidate_id,
-                            raw={"candidate_fetch_error": format_error_message(exc)},
-                        )
-                    )
-            return [candidate for candidate in candidates if candidate.id]
+            return self._candidates_by_id(explicit_ids)
 
         page = 1
-        page_size = max(1, self.config.manatal_page_size)
         candidates: list[ManatalCandidate] = []
         while True:
-            query = {"page": str(page), "page_size": str(page_size)}
-            if updated_since:
-                query["updated_at__gte"] = updated_since
-            payload = self._json("/candidates/", query)
-            if isinstance(payload, list):
-                records = payload
-                has_next = False
-            else:
-                record_payload = _as_record(payload)
-                records = _as_list(record_payload.get("results") or record_payload.get("data"))
-                has_next = bool(record_payload.get("next"))
+            records, has_next = self._candidate_page(page, updated_since)
             for item in records:
                 if isinstance(item, dict):
                     candidate = self._candidate_from_record(item)
@@ -167,6 +145,34 @@ class ManatalClient:
                 break
             page += 1
         return candidates
+
+    def _candidates_by_id(self, candidate_ids: list[str]) -> list[ManatalCandidate]:
+        candidates: list[ManatalCandidate] = []
+        for candidate_id in candidate_ids:
+            try:
+                candidates.append(self.get_candidate(candidate_id))
+            except Exception as exc:  # noqa: BLE001
+                candidates.append(
+                    ManatalCandidate(
+                        id=candidate_id,
+                        raw={"candidate_fetch_error": format_error_message(exc)},
+                    )
+                )
+        return [candidate for candidate in candidates if candidate.id]
+
+    def _candidate_page(self, page: int, updated_since: str) -> tuple[list[Any], bool]:
+        query = {
+            "page": str(page),
+            "page_size": str(max(1, self.config.manatal_page_size)),
+        }
+        if updated_since:
+            query["updated_at__gte"] = updated_since
+        payload = self._json("/candidates/", query)
+        if isinstance(payload, list):
+            return payload, False
+        record_payload = _as_record(payload)
+        records = _as_list(record_payload.get("results") or record_payload.get("data"))
+        return records, bool(record_payload.get("next"))
 
     def get_candidate(self, candidate_id: str) -> ManatalCandidate:
         payload = self._json(f"/candidates/{urllib.parse.quote(candidate_id)}/")
