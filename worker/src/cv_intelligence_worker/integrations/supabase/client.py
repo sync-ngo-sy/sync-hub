@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from ...config import WorkerConfig
+from ...core.http import urlopen
 from ...domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
-from ...utils import normalize_email, strip_nul_bytes, urlopen
+from ...utils import normalize_email, strip_nul_bytes
 from .helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
 from .responses import (
     CandidateDraftRow,
