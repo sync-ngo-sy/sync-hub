@@ -161,15 +161,6 @@ class PublicApplicationIngestion:
                     "resume_ingestion_error": message[:1000],
                 },
             )
-
-    def _failure_result(self, context: _ApplicationContext, exc: Exception) -> dict[str, str]:
-        message = format_error_message(exc)
-        failure = {"application_id": context.application_id, "error": message}
-        try:
-            self._mark_failed(context, message)
-        except Exception as reporting_exc:  # noqa: BLE001
-            failure["reporting_error"] = format_error_message(reporting_exc)
-        return failure
         if context.source_document_id:
             self.supabase.update_processing_runs_for_source(
                 context.source_document_id,
@@ -190,6 +181,15 @@ class PublicApplicationIngestion:
                     "source_document_id": context.source_document_id or None,
                 },
             )
+
+    def _failure_result(self, context: _ApplicationContext, exc: Exception) -> dict[str, str]:
+        message = format_error_message(exc)
+        failure = {"application_id": context.application_id, "error": message}
+        try:
+            self._mark_failed(context, message)
+        except Exception as reporting_exc:  # noqa: BLE001
+            failure["reporting_error"] = format_error_message(reporting_exc)
+        return failure
 
     def run(
         self,

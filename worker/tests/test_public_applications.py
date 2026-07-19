@@ -103,3 +103,48 @@ def test_public_application_ingestion_continues_when_failure_reporting_fails(
     assert result.candidate_ids == ["candidate-good"]
     assert result.failures[0]["application_id"] == "application-bad"
     assert "database unavailable" in result.failures[0]["reporting_error"]
+
+
+@patch("cv_intelligence_worker.public_applications.IngestionPipeline")
+@patch("cv_intelligence_worker.public_applications.SupabaseClient")
+def test_public_application_ingestion_records_failure_state_and_event(
+    supabase_class,
+    _pipeline_class,
+    tmp_path: Path,
+) -> None:
+    supabase = supabase_class.return_value
+    application = {
+        **_application("application-bad"),
+        "resume_source_document_id": "source-1",
+    }
+    supabase.queued_public_job_applications.return_value = [application]
+    supabase.download_file.side_effect = RuntimeError("download failed")
+
+    result = PublicApplicationIngestion(_config(tmp_path)).run()
+
+    assert result.failed == 1
+    supabase.update_job_application.assert_any_call(
+        "application-bad",
+        {
+            "resume_ingestion_status": "failed",
+            "resume_ingestion_error": "RuntimeError: download failed",
+        },
+    )
+    supabase.update_processing_runs_for_source.assert_any_call(
+        "source-1",
+        {
+            "status": "failed",
+            "error_code": "public_application_ingestion_failed",
+            "error_message": "RuntimeError: download failed",
+        },
+        application_id="application-bad",
+    )
+    supabase.record_job_application_event.assert_called_with(
+        "tenant-1",
+        "application-bad",
+        "CV_INGESTION_FAILED",
+        {
+            "error": "RuntimeError: download failed",
+            "source_document_id": "source-1",
+        },
+    )
