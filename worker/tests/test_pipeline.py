@@ -9,6 +9,7 @@ from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.discovery import discover_documents
 from cv_intelligence_worker.extraction import heuristic_extract_profile
 from cv_intelligence_worker.pipeline import IngestionPipeline
+from cv_intelligence_worker.schema import DocumentSource
 
 
 def _test_extract_profile(source, document_text, config):
@@ -46,6 +47,56 @@ class IngestionPipelineTests(unittest.TestCase):
         self.assertEqual(1, len(result.bundles))
         self.assertEqual(1, result.sync_stats["duplicate_source_files_skipped"])
         self.assertIn("processed 1/1 documents; completed=1 failures=0", progress_messages)
+
+    def test_source_failure_is_isolated_and_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config = WorkerConfig(
+                cache_dir=str(root / "cache"),
+                ingest_concurrency=1,
+                progress_interval=1,
+            )
+            sources = [
+                DocumentSource(
+                    tenant_id="tenant-1",
+                    source_path="bad.pdf",
+                    source_type="file",
+                    original_filename="bad.pdf",
+                    mime_type="application/pdf",
+                    document_id="bad",
+                    document_sha256="bad-sha",
+                    ingestion_run_id="run-1",
+                ),
+                DocumentSource(
+                    tenant_id="tenant-1",
+                    source_path="good.pdf",
+                    source_type="file",
+                    original_filename="good.pdf",
+                    mime_type="application/pdf",
+                    document_id="good",
+                    document_sha256="good-sha",
+                    ingestion_run_id="run-1",
+                ),
+            ]
+            pipeline = IngestionPipeline(config)
+
+            def build_bundle(source: DocumentSource, _ingestion_run_id: str):
+                if source.document_id == "bad":
+                    raise RuntimeError("synthetic parse failure")
+                return mock.sentinel.bundle, root / "good.bundle.json"
+
+            progress_messages: list[str] = []
+            with mock.patch.object(pipeline, "_build_bundle", side_effect=build_bundle):
+                result = pipeline.ingest_sources(
+                    sources,
+                    tenant_id="tenant-1",
+                    sync_to_supabase=False,
+                    progress=progress_messages.append,
+                )
+
+        self.assertEqual([mock.sentinel.bundle], result.bundles)
+        self.assertEqual([{"source_path": "bad.pdf", "error": "RuntimeError: synthetic parse failure"}], result.failures)
+        self.assertIn("processed 2/2 documents; completed=1 failures=1", progress_messages)
 
 
 if __name__ == "__main__":
