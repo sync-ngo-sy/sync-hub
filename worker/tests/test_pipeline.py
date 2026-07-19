@@ -8,7 +8,7 @@ from unittest import mock
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.documents import discover_documents
 from cv_intelligence_worker.workflows import IngestionPipeline
-from cv_intelligence_worker.schema import DocumentSource
+from cv_intelligence_worker.domain.models import DocumentSource
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
 

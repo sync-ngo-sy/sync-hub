@@ -9,8 +9,8 @@ from uuid import uuid4
 from ..config import WorkerConfig
 from ..documents import compute_sha256, guess_mime_type, stable_document_id
 from ..integrations.supabase import SupabaseClient
-from ..schema import DocumentSource
-from ..utils import format_error_message
+from ..domain.models import DocumentSource
+from ..core.errors import format_error_message
 from .ingestion_pipeline import IngestionPipeline
 
 

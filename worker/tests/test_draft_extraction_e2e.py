@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.schema import (
+from cv_intelligence_worker.domain.models import (
     CandidateProfile,
     DocumentSource,
     DocumentText,

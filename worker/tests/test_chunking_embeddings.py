@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.schema import CandidateProfile, ExperienceEntry
+from cv_intelligence_worker.domain.models import CandidateProfile, ExperienceEntry
 from cv_intelligence_worker.vectorization import SDKEmbedder, build_chunks, build_embedder
 
 

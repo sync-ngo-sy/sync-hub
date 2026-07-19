@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from ..config import WorkerConfig
-from ..schema import CandidateProfile, ProcessingRun
-from ..utils import sha256_text
+from ..core.identifiers import sha256_text
+from ..domain.models import CandidateProfile, ProcessingRun
 
 
 def build_processing_run(profile: CandidateProfile, config: WorkerConfig, ingestion_run_id: str) -> ProcessingRun:

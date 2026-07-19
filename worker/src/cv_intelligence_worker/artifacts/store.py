@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import WorkerConfig
-from ..schema import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
+from ..domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
 
 
 class LocalArtifactStore:

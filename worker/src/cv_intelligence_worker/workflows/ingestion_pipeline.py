@@ -12,8 +12,8 @@ from ..config import WorkerConfig
 from ..documents import discover_documents, parse_document
 from ..ingestion import SyncBatcher, build_processing_run
 from ..integrations.supabase import SupabaseClient
-from ..schema import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
-from ..utils import format_error_message
+from ..domain.models import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
+from ..core.errors import format_error_message
 from ..vectorization import Embedder, build_chunks, build_embedder
 
 
