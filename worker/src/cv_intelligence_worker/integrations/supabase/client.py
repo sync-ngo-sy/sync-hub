@@ -10,18 +10,14 @@ from ...core.http import urlopen
 from ...core.text import normalize_email
 from ...domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
 from .batching import SupabaseBatchWriter
+from .candidate_drafts import CandidateDraftRepository
 from .helpers import (
     chunks,
     dedupe_rows,
     format_bytes,
     json_payload_size,
 )
-from .query_filters import queued_or_stale_status_filter
 from .public_applications import PublicApplicationRepository
-from .responses import (
-    CandidateDraftRow,
-    validate_rows,
-)
 from .rows import build_bundle_rows
 from .storage import SupabaseStorageClient
 from .transport import SupabaseRestTransport
@@ -54,6 +50,7 @@ class SupabaseClient:
             default_batch_size=config.supabase_batch_size,
         )
         self._public_applications = PublicApplicationRepository(self._request)
+        self._candidate_drafts = CandidateDraftRepository(self._request)
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         return self._transport.headers(extra)
@@ -494,42 +491,10 @@ class SupabaseClient:
         self.upsert("comparison_artifacts", [row], "artifact_key")
 
     def queued_candidate_drafts(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
-        query_args = {
-            "select": "id,user_id,parsed_profile_json,user_overrides_json,cv_storage_path,cv_original_filename,cv_mime_type,cv_size_bytes,primary_specialization,parse_status,updated_at",
-            "order": "updated_at.asc",
-            "limit": str(max(1, limit)),
-        }
-        query_args.update(
-            queued_or_stale_status_filter(
-                status_column="parse_status",
-                queued_status="pending_validation",
-                processing_status="parsing",
-                retry_stale_minutes=retry_stale_minutes,
-            )
-        )
-        query = urllib.parse.urlencode(query_args)
-        result = self._request("GET", f"/rest/v1/candidate_registration_drafts?{query}")
-        return validate_rows(result, CandidateDraftRow, "candidate draft queue")
+        return self._candidate_drafts.queued(limit, retry_stale_minutes)
 
     def update_candidate_draft(self, user_id: str, payload: dict[str, Any]) -> None:
-        query = urllib.parse.urlencode({"user_id": f"eq.{user_id}"})
-        self._request(
-            "PATCH",
-            f"/rest/v1/candidate_registration_drafts?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self._candidate_drafts.update_draft(user_id, payload)
 
     def update_candidate_by_registered_user(self, user_id: str, payload: dict[str, Any]) -> None:
-        """Patch the candidates row whose uploaded_by matches the registering user_id.
-
-        Called after a successful draft publish to stamp registered_user_id,
-        is_published, and published_at onto the row that the pipeline created.
-        """
-        query = urllib.parse.urlencode({"uploaded_by": f"eq.{user_id}"})
-        self._request(
-            "PATCH",
-            f"/rest/v1/candidates?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self._candidate_drafts.update_candidate(user_id, payload)
