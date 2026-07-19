@@ -7,9 +7,9 @@ from typing import Callable
 from uuid import uuid4
 
 from .artifacts import ArtifactGenerator, LLMArtifactGenerator, comparison_key
+from .candidate_extraction import extract_candidate_profile
 from .config import WorkerConfig
 from .documents import discover_documents, parse_document
-from .extraction import extract_candidate_profile
 from .ingestion import SyncBatcher, build_processing_run
 from .schema import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
 from .store import LocalArtifactStore

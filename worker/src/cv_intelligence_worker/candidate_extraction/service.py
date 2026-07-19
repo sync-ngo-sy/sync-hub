@@ -3,22 +3,22 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from .candidate_extraction import (
-    build_candidate_prompt,
-    build_candidate_system_prompt,
-    build_job_family_prompt,
-    build_job_family_system_prompt,
-    profile_from_extraction,
-)
-from .config import WorkerConfig
-from .domain import JOB_FAMILY_TAXONOMY_VERSION
-from .integrations.llm import LLMClient, LLMResponseError
-from .integrations.llm.models import CandidateExtraction, JobFamilyExtraction
-from .schema import CandidateProfile, DocumentSource, DocumentText
-from .utils import compact_whitespace, dedupe_keep_order, format_error_message
+from ..config import WorkerConfig
+from ..domain import JOB_FAMILY_TAXONOMY_VERSION
+from ..integrations.llm import LLMClient, LLMResponseError
+from ..integrations.llm.models import CandidateExtraction, JobFamilyExtraction
+from ..schema import CandidateProfile, DocumentSource, DocumentText
+from ..utils import compact_whitespace, dedupe_keep_order, format_error_message
+from .inputs import build_candidate_prompt
+from .mapping import profile_from_extraction
+from .prompts import build_candidate_system_prompt, build_job_family_prompt, build_job_family_system_prompt
 
 
-def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateProfile, config: WorkerConfig) -> dict[str, Any] | None:
+def _validated_job_family_result(
+    value: JobFamilyExtraction,
+    profile: CandidateProfile,
+    config: WorkerConfig,
+) -> dict[str, Any] | None:
     family = value.job_family.value
     confidence = value.confidence
     if confidence < max(0.0, min(1.0, config.job_family_min_confidence)):
@@ -48,7 +48,12 @@ def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateP
     }
 
 
-def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig, *, client: LLMClient | None = None) -> CandidateProfile:
+def classify_job_family_with_llm(
+    profile: CandidateProfile,
+    config: WorkerConfig,
+    *,
+    client: LLMClient | None = None,
+) -> CandidateProfile:
     provider = config.job_family_provider.lower()
     model = config.job_family_model or config.extraction_model
     if provider in {"off", "disabled"} or not model:
@@ -128,10 +133,14 @@ class LLMProfileExtractor:
         return profile_from_extraction(source, document_text, extracted)
 
 
-def extract_candidate_profile(source: DocumentSource, document_text: DocumentText, config: WorkerConfig) -> CandidateProfile:
+def extract_candidate_profile(
+    source: DocumentSource,
+    document_text: DocumentText,
+    config: WorkerConfig,
+) -> CandidateProfile:
     if source.metadata.get("is_draft"):
-        from .draft_validation import validate_user_overrides_with_llm
-        from .schema import candidate_profile_from_dict
+        from ..draft_validation import validate_user_overrides_with_llm
+        from ..schema import candidate_profile_from_dict
 
         draft_data = source.metadata.get("draft_data", {})
         original_profile = draft_data.get("parsed_profile_json") or {}

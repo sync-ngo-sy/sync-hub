@@ -5,9 +5,14 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_candidate_system_prompt, profile_from_extraction
+from cv_intelligence_worker.candidate_extraction import (
+    build_candidate_prompt,
+    build_candidate_system_prompt,
+    classify_job_family_with_llm,
+    extract_candidate_profile,
+    profile_from_extraction,
+)
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.extraction import classify_job_family_with_llm, extract_candidate_profile
 from cv_intelligence_worker.integrations.llm import LLMResponseError
 from cv_intelligence_worker.integrations.llm.models import CandidateExtraction, JobFamily, JobFamilyExtraction
 from cv_intelligence_worker.schema import CandidateProfile, DocumentSource, DocumentText
@@ -83,7 +88,10 @@ class ExtractionTests(unittest.TestCase):
             job_family_provider="disabled",
         )
 
-        with patch("cv_intelligence_worker.extraction.LLMClient.parse", return_value=self._extraction()) as parse_mock:
+        with patch(
+            "cv_intelligence_worker.candidate_extraction.service.LLMClient.parse",
+            return_value=self._extraction(),
+        ) as parse_mock:
             profile = extract_candidate_profile(source, self._document(source), config)
 
         self.assertEqual(profile.name, "Jane Doe")
@@ -98,7 +106,10 @@ class ExtractionTests(unittest.TestCase):
             job_family_provider="disabled",
         )
 
-        with patch("cv_intelligence_worker.extraction.LLMClient.parse", side_effect=LLMResponseError("model stayed down")):
+        with patch(
+            "cv_intelligence_worker.candidate_extraction.service.LLMClient.parse",
+            side_effect=LLMResponseError("model stayed down"),
+        ):
             with self.assertRaisesRegex(LLMResponseError, "model stayed down"):
                 extract_candidate_profile(source, self._document(source), config)
 
@@ -152,7 +163,7 @@ class ExtractionTests(unittest.TestCase):
             alternate_job_family=None,
         )
 
-        with patch("cv_intelligence_worker.extraction.LLMClient.parse", return_value=result) as parse_mock:
+        with patch("cv_intelligence_worker.candidate_extraction.service.LLMClient.parse", return_value=result) as parse_mock:
             classified = classify_job_family_with_llm(self._profile(), config)
 
         self.assertEqual(classified.metadata["job_family"], "Backend Engineering")
@@ -170,7 +181,7 @@ class ExtractionTests(unittest.TestCase):
             alternate_job_family=None,
         )
 
-        with patch("cv_intelligence_worker.extraction.LLMClient.parse", return_value=result):
+        with patch("cv_intelligence_worker.candidate_extraction.service.LLMClient.parse", return_value=result):
             classified = classify_job_family_with_llm(self._profile(), config)
 
         self.assertEqual(classified.metadata["job_family_llm_status"], "rejected")

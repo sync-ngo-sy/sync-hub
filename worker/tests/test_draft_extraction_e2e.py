@@ -82,13 +82,13 @@ FULL_ORIGINAL: dict[str, Any] = {
 class TestDraftExtractionE2E:
     """extract_candidate_profile: is_draft merge + validate + classify flow."""
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_merge_preserves_original_when_no_overrides(
         self, mock_validate: MagicMock, mock_classify: MagicMock
     ) -> None:
         """Empty overrides → profile built from original parsed_profile_json."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
 
         config = _make_config()
         overrides: dict[str, Any] = {}
@@ -104,13 +104,13 @@ class TestDraftExtractionE2E:
 
         mock_validate.assert_called_once_with(FULL_ORIGINAL, overrides, config)
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_merge_applies_scalar_overrides(
         self, mock_validate: MagicMock, mock_classify: MagicMock
     ) -> None:
         """User overrides a scalar field → validate receives original + overrides."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
 
         config = _make_config()
         overrides = {"current_title": "Senior Developer"}
@@ -126,13 +126,13 @@ class TestDraftExtractionE2E:
 
         mock_validate.assert_called_once_with(FULL_ORIGINAL, overrides, config)
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_validation_rejection_raises_value_error(
         self, mock_validate: MagicMock, mock_classify: MagicMock
     ) -> None:
         """LLM validation rejects edits → ValueError("AI Validation Rejected: ...")."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
 
         config = _make_config()
         overrides = {"current_title": "Chief Executive Officer"}
@@ -147,13 +147,13 @@ class TestDraftExtractionE2E:
 
         mock_classify.assert_not_called()
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_empty_draft_data_raises_key_error(
         self, mock_validate: MagicMock, mock_classify: MagicMock
     ) -> None:
         """draft_data={} → candidate_profile_from_dict({}) → KeyError on tenant_id."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
 
         config = _make_config()
         source = _make_source({"is_draft": True, "draft_data": {}})
@@ -162,13 +162,13 @@ class TestDraftExtractionE2E:
         with pytest.raises(KeyError):
             extract_candidate_profile(source, _make_document_text(), config)
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_validated_draft_passes_through_classify(
         self, mock_validate: MagicMock, mock_classify: MagicMock
     ) -> None:
         """After successful validation, classify_job_family_with_llm is called."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
 
         config = _make_config()
         overrides = {"skills": ["Rust", "Go"]}
@@ -197,7 +197,7 @@ class TestMergeDraftProfileJson:
 
     def test_recursive_merge_preserves_nested_arrays(self) -> None:
         """Array fields in original are kept when overrides don't touch them."""
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         original = {
             "experience": [{"title": "Developer", "highlights": ["A", "B"]}],
@@ -213,7 +213,7 @@ class TestMergeDraftProfileJson:
 
     def test_override_replaces_array_when_provided(self) -> None:
         """When overrides supplies a new array, it replaces the original."""
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         original = {"skills": ["Python"]}
         overrides = {"skills": ["Rust", "Go"]}
@@ -223,7 +223,7 @@ class TestMergeDraftProfileJson:
         assert merged["skills"] == ["Rust", "Go"]
 
     def test_empty_overrides_returns_original(self) -> None:
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         original = {"name": "Test", "tags": ["a"]}
         merged = _merge_draft_profile_json(original, {})
@@ -231,7 +231,7 @@ class TestMergeDraftProfileJson:
         assert merged == original
 
     def test_new_keys_added_from_overrides(self) -> None:
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         original = {"name": "Test"}
         overrides = {"email": "test@example.com"}
@@ -242,11 +242,11 @@ class TestMergeDraftProfileJson:
         assert merged["email"] == "test@example.com"
 
     def test_scalar_override_replaces_original(self) -> None:
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         assert _merge_draft_profile_json("old", "new") == "new"
 
     def test_none_override_preserves_original(self) -> None:
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         assert _merge_draft_profile_json("keep", None) == "keep"
