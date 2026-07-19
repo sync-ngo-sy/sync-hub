@@ -14,7 +14,7 @@ from cv_intelligence_worker.realtime_extractor import (
     mark_extraction_failed,
     sync_to_supabase_background,
 )
-from cv_intelligence_worker.schema import DocumentText
+from cv_intelligence_worker.domain.models import DocumentText
 from tests.test_helpers.realtime import realtime_extraction
 
 client = TestClient(app)

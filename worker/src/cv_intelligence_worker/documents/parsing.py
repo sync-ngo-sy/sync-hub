@@ -10,8 +10,8 @@ from typing import List
 from xml.etree import ElementTree as ET
 
 
-from ..schema import DocumentSource, DocumentText
-from ..utils import format_error_message
+from ..domain.models import DocumentSource, DocumentText
+from ..core.errors import format_error_message
 
 
 PDF_TEXT_PATTERN = re.compile(r"\((.*?)\)\s*Tj", re.DOTALL)

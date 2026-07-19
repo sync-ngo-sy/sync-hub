@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from cv_intelligence_worker.candidate_normalization import (
     experience_years_from_entries,
 )
-from cv_intelligence_worker.schema import ExperienceEntry
+from cv_intelligence_worker.domain.models import ExperienceEntry
 
 
 def test_overlapping_experience_ranges_are_counted_once() -> None:

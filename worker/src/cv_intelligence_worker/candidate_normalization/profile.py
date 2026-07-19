@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime
 
-from ..schema import CandidateProfile
-from ..utils import compact_whitespace, dedupe_keep_order
+from ..core.text import compact_whitespace, dedupe_keep_order
+from ..domain.models import CandidateProfile
 from .experience import resolve_years_experience
 from .locations import normalize_location
 from .skills import canonical_skill

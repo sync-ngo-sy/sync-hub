@@ -5,7 +5,7 @@ import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.workflows import DraftIngestion
-from cv_intelligence_worker.pipeline import IngestionResult
+from cv_intelligence_worker.workflows import IngestionResult
 
 from dataclasses import replace
 

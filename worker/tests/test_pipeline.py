@@ -7,8 +7,8 @@ from unittest import mock
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.documents import discover_documents
-from cv_intelligence_worker.pipeline import IngestionPipeline
-from cv_intelligence_worker.schema import DocumentSource
+from cv_intelligence_worker.workflows import IngestionPipeline
+from cv_intelligence_worker.domain.models import DocumentSource
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
 
@@ -31,7 +31,7 @@ class IngestionPipelineTests(unittest.TestCase):
                 progress_interval=25,
             )
 
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+            with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = IngestionPipeline(config, embedder=FakeEmbedder(), artifact_generator=FakeArtifactGenerator()).ingest_sources(
                     sources,
                     tenant_id="tenant-1",

@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 from ...config import WorkerConfig
-from ...utils import urlopen
+from ...core.http import urlopen
 
 
 METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"

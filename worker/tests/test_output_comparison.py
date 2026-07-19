@@ -215,7 +215,7 @@ class TestOutputComparison:
         """Given the same deterministic CV file,
         When both normal ingestion and realtime parsing extract the profile,
         Then name, current_title, skills, and experience match field by field."""
-        from cv_intelligence_worker.pipeline import IngestionPipeline
+        from cv_intelligence_worker.workflows import IngestionPipeline
 
         tenant_id = str(uuid.uuid4())
         user_id = _create_auth_user()
@@ -236,7 +236,7 @@ class TestOutputComparison:
             assert normal_result.bundles, (
                 "Normal pipeline produced no bundles — LLM extraction may have failed"
             )
-            from cv_intelligence_worker.schema import dataclass_to_dict
+            from cv_intelligence_worker.domain.models import dataclass_to_dict
 
             normal_profile = dataclass_to_dict(normal_result.bundles[0].profile)
 

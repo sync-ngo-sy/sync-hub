@@ -8,7 +8,7 @@ from unittest import mock
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.documents import stable_document_id
 from cv_intelligence_worker.integrations.supabase import build_bundle_rows
-from cv_intelligence_worker.pipeline import IngestionPipeline
+from cv_intelligence_worker.workflows import IngestionPipeline
 from cv_intelligence_worker.integrations.supabase import SupabaseClient
 from tests.test_helpers.profiles import FakeArtifactGenerator, FakeEmbedder, build_test_profile
 
@@ -109,7 +109,7 @@ class SupabaseClientTests(unittest.TestCase):
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
             pipeline = IngestionPipeline(config, embedder=FakeEmbedder(), artifact_generator=FakeArtifactGenerator())
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+            with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
             client = RecordingSupabaseClient(config)
@@ -140,7 +140,7 @@ class SupabaseClientTests(unittest.TestCase):
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
             pipeline = IngestionPipeline(config, embedder=FakeEmbedder(), artifact_generator=FakeArtifactGenerator())
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+            with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
             first_rows = build_bundle_rows(
@@ -179,7 +179,7 @@ class SupabaseClientTests(unittest.TestCase):
                 supabase_batch_size=50,
             )
             pipeline = IngestionPipeline(config, embedder=FakeEmbedder(), artifact_generator=FakeArtifactGenerator())
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
+            with mock.patch("cv_intelligence_worker.workflows.ingestion_pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             client = FlakySupabaseClient(config)
             client.sync_bundle(result.bundles[0])
