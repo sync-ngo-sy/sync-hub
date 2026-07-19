@@ -23,6 +23,17 @@ class SupabaseRequest(Protocol):
     ) -> Any: ...
 
 
+class SupabaseRequestWithHeaders(Protocol):
+    def __call__(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: Any | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[Any, dict[str, str]]: ...
+
+
 def build_supabase_headers(
     config: WorkerConfig,
     extra: dict[str, str] | None = None,

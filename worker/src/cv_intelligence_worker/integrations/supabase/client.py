@@ -10,11 +10,11 @@ from ...core.http import urlopen
 from ...core.text import normalize_email
 from ...domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
 from .batching import SupabaseBatchWriter
+from .capacity import SupabaseCapacityService, SupabaseCapacitySnapshot
 from .candidate_drafts import CandidateDraftRepository
 from .helpers import (
     chunks,
     dedupe_rows,
-    format_bytes,
     json_payload_size,
 )
 from .manatal import ManatalRepository
@@ -22,14 +22,6 @@ from .public_applications import PublicApplicationRepository
 from .rows import build_bundle_rows
 from .storage import SupabaseStorageClient
 from .transport import SupabaseRestTransport
-
-
-@dataclass(frozen=True)
-class SupabaseCapacitySnapshot:
-    database_bytes: int = 0
-    storage_bytes: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    source: str = "unavailable"
 
 
 @dataclass(frozen=True)
@@ -57,6 +49,11 @@ class SupabaseClient:
             request=self._request,
             select_rows=self._select_in,
             upsert_many=self.upsert_many,
+        )
+        self._capacity = SupabaseCapacityService(
+            config,
+            request=self._request,
+            request_with_headers=self._request_with_headers,
         )
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -130,72 +127,17 @@ class SupabaseClient:
         )
 
     def _count_table(self, table: str, tenant_id: str | None = None) -> int:
-        query_args = {"select": "id", "limit": "1"}
-        if tenant_id:
-            query_args["tenant_id"] = f"eq.{tenant_id}"
-        query = urllib.parse.urlencode(query_args)
-        _result, headers = self._request_with_headers(
-            "GET",
-            f"/rest/v1/{table}?{query}",
-            headers={"Prefer": "count=exact", "Range": "0-0"},
-        )
-        content_range = headers.get("Content-Range") or headers.get("content-range") or ""
-        if "/" not in content_range:
-            return 0
-        total = content_range.rsplit("/", 1)[-1]
-        return int(total) if total.isdigit() else 0
+        return self._capacity.count_table(table, tenant_id)
 
     def capacity_snapshot(self, tenant_id: str | None = None) -> SupabaseCapacitySnapshot:
-        try:
-            payload = {"p_tenant_id": tenant_id, "p_storage_bucket": self.config.supabase_storage_bucket} if tenant_id else {"p_storage_bucket": self.config.supabase_storage_bucket}
-            result = self._request("POST", "/rest/v1/rpc/ingestion_capacity_snapshot_v1", data=payload)
-            row = result[0] if isinstance(result, list) and result else result if isinstance(result, dict) else {}
-            if isinstance(row, dict):
-                table_counts = row.get("table_counts")
-                return SupabaseCapacitySnapshot(
-                    database_bytes=int(row.get("database_bytes") or 0),
-                    storage_bytes=int(row.get("storage_bytes") or 0),
-                    table_counts=dict(table_counts) if isinstance(table_counts, dict) else {},
-                    source="rpc",
-                )
-        except RuntimeError:
-            pass
-
-        tables = ["source_documents", "candidates", "candidate_profiles", "candidate_summaries", "candidate_skill_map", "candidate_chunks", "processing_runs"]
-        counts: dict[str, int] = {}
-        for table in tables:
-            try:
-                counts[table] = self._count_table(table, tenant_id=tenant_id)
-            except RuntimeError:
-                counts[table] = 0
-        return SupabaseCapacitySnapshot(table_counts=counts, source="rest-counts")
+        return self._capacity.snapshot(tenant_id)
 
     def capacity_warnings(self, tenant_id: str, estimated_database_bytes: int = 0, estimated_storage_bytes: int = 0) -> list[str]:
-        warnings: list[str] = []
-        threshold = self.config.supabase_limit_warning_threshold
-        snapshot = self.capacity_snapshot(tenant_id)
-        if self.config.supabase_database_limit_bytes and snapshot.database_bytes:
-            projected_database_bytes = snapshot.database_bytes + int(estimated_database_bytes * self.config.supabase_database_expansion_factor)
-            ratio = projected_database_bytes / self.config.supabase_database_limit_bytes
-            if ratio >= threshold:
-                warnings.append(
-                    "Supabase database usage is near the configured limit: "
-                    f"projected {format_bytes(projected_database_bytes)} of {format_bytes(self.config.supabase_database_limit_bytes)} "
-                    f"({ratio:.1%}, source={snapshot.source})."
-                )
-        if self.config.supabase_storage_limit_bytes:
-            projected_storage_bytes = snapshot.storage_bytes + estimated_storage_bytes
-            if projected_storage_bytes:
-                ratio = projected_storage_bytes / self.config.supabase_storage_limit_bytes
-                if ratio >= threshold:
-                    warnings.append(
-                        "Supabase storage usage is near the configured limit: "
-                        f"projected {format_bytes(projected_storage_bytes)} of {format_bytes(self.config.supabase_storage_limit_bytes)} "
-                        f"({ratio:.1%}, source={snapshot.source})."
-                    )
-        if snapshot.source == "rest-counts":
-            warnings.append("Supabase capacity RPC is not available; limit checks used table counts only and cannot read exact database or storage size.")
-        return warnings
+        return self._capacity.warnings(
+            tenant_id,
+            estimated_database_bytes,
+            estimated_storage_bytes,
+        )
 
     def public_source_uri(self, local_source_path: str) -> str:
         return self.config.public_source_uri or local_source_path
