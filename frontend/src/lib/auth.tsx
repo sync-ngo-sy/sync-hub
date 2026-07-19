@@ -2,7 +2,8 @@ import type { PropsWithChildren } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { appQueryClient } from "@/lib/queryClient";
-import { hasSupabaseConfig, supabase } from "@/lib/supabaseClient";
+import { invokePlatform } from "@/lib/api/platformClient";
+import { hasSupabaseConfig, supabaseAuth } from "@/lib/supabaseClient";
 
 const SELECTED_TENANT_KEY = "cv-intelligence.selected-tenant-id";
 
@@ -105,24 +106,6 @@ function dedupeTenantMemberships(memberships: TenantMembership[]) {
   return Array.from(membershipByTenantId.values());
 }
 
-async function invokePlatform<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
-  if (!supabase) {
-    throw new Error("Missing Supabase browser client configuration.");
-  }
-  const { data, error } = await supabase.functions.invoke("platform", {
-    body: { action, ...body },
-  });
-  if (error) {
-    const response = typeof error === "object" && error !== null && "context" in error ? (error as { context?: Response }).context : null;
-    if (response instanceof Response) {
-      const payload = await response.clone().json().catch(() => null) as { details?: string; error?: string } | null;
-      throw new Error(payload?.details || payload?.error || response.statusText);
-    }
-    throw error;
-  }
-  return data as T;
-}
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(hasSupabaseConfig);
   const [session, setSession] = useState<Session | null>(null);
@@ -134,7 +117,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const lastSessionAccessTokenRef = useRef<string | null>(null);
 
   const refreshTenantState = useCallback(async () => {
-    if (!supabase) {
+    if (!supabaseAuth) {
       setLoading(false);
       setSession(null);
       setMemberships([]);
@@ -146,7 +129,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const {
       data: { session: nextSession },
       error: sessionError,
-    } = await supabase.auth.getSession();
+    } = await supabaseAuth.auth.getSession();
 
     if (sessionError) {
       setAuthError(sessionError.message);
@@ -201,7 +184,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (!supabase) {
+    if (!supabaseAuth) {
       setLoading(false);
       return;
     }
@@ -211,7 +194,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    } = supabaseAuth.auth.onAuthStateChange((event, nextSession) => {
       if (!active) {
         return;
       }
@@ -267,11 +250,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [refreshTenantState]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) {
+    if (!supabaseAuth) {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabaseAuth.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -284,11 +267,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const requestPasswordReset = useCallback(async (email: string) => {
-    if (!supabase) {
+    if (!supabaseAuth) {
       return;
     }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    const { error } = await supabaseAuth.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: resolvePasswordResetRedirect(),
     });
 
@@ -299,11 +282,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const updatePassword = useCallback(
     async (password: string) => {
-      if (!supabase) {
+      if (!supabaseAuth) {
         return;
       }
 
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await supabaseAuth.auth.updateUser({ password });
       if (error) {
         throw error;
       }
@@ -315,11 +298,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 
   const signOut = useCallback(async () => {
-    if (!supabase) {
+    if (!supabaseAuth) {
       return;
     }
 
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabaseAuth.auth.signOut();
     if (error) {
       throw error;
     }

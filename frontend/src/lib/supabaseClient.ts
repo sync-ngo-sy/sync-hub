@@ -5,7 +5,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
 export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
-export const supabase = hasSupabaseConfig
+/**
+ * Browser auth client only. Do not use for PostgREST, RPC, or Storage —
+ * all application data must flow through Edge Functions (see platformClient).
+ */
+export const supabaseAuth = hasSupabaseConfig
   ? createClient(supabaseUrl as string, supabaseAnonKey as string, {
       auth: {
         autoRefreshToken: true,
@@ -19,3 +23,6 @@ export const supabase = hasSupabaseConfig
       },
     })
   : null;
+
+/** @deprecated Use supabaseAuth for session management only. */
+export const supabase = supabaseAuth;
