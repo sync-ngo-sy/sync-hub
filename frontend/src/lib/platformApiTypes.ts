@@ -21,6 +21,10 @@ import type {
   InsightReportRunDetail,
   IndexingWorkbench,
   JobApplication,
+  JobApplicationLink,
+  JobApplicationLinkInput,
+  JobApplicationSourceCategory,
+  JobApplicationSourceCategoryInput,
   JobApplicationStatus,
   JobExtractionResult,
   JobMatchingRun,
@@ -109,6 +113,10 @@ export type PlatformApi = {
   saveJobShortlist: (input: JobShortlistInput) => Promise<JobShortlistDetail>;
   listJobApplications: (jobId: string) => Promise<JobApplication[]>;
   updateJobApplicationStatus: (applicationId: string, status: JobApplicationStatus) => Promise<JobApplication>;
+  listJobApplicationSourceCategories: (tenantId: string) => Promise<JobApplicationSourceCategory[]>;
+  saveJobApplicationSourceCategory: (input: JobApplicationSourceCategoryInput) => Promise<JobApplicationSourceCategory>;
+  listJobApplicationLinks: (jobId: string) => Promise<JobApplicationLink[]>;
+  saveJobApplicationLink: (input: JobApplicationLinkInput) => Promise<JobApplicationLink>;
   listPublicJobPostings: () => Promise<PublicJobPosting[]>;
   getPublicJobPosting: (slug: string) => Promise<PublicJobPosting>;
   submitPublicJobApplication: (slug: string, application: PublicJobApplicationInput) => Promise<PublicJobApplicationReceipt>;

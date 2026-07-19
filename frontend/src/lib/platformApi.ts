@@ -66,6 +66,8 @@ import {
   jobPostingPayload,
   mapPublicReceipt,
   mapRemoteJobApplication,
+  mapRemoteJobApplicationLink,
+  mapRemoteJobApplicationSourceCategory,
   mapRemoteJobExtraction,
   mapRemoteJobMatchingRun,
   mapRemoteJobMatchingRunDetail,
@@ -990,6 +992,57 @@ function createRemoteApi(): PlatformApi {
       );
       return mapRemoteJobApplication(row);
     },
+    async listJobApplicationSourceCategories(tenantId) {
+      if (!hasSupabaseConfig) {
+        return mock.listJobApplicationSourceCategories(tenantId);
+      }
+      const rows = await invokePlatform<unknown[]>("job_application_source_categories", {
+        tenant_id: tenantId,
+      });
+      return (rows ?? []).map(mapRemoteJobApplicationSourceCategory);
+    },
+    async saveJobApplicationSourceCategory(input) {
+      if (!hasSupabaseConfig) {
+        return mock.saveJobApplicationSourceCategory(input);
+      }
+      const row = await invokePlatform<unknown>("save_job_application_source_category", {
+        tenant_id: input.tenantId,
+        category_id: input.categoryId ?? null,
+        name: input.name,
+        description: input.description ?? "",
+        is_active: input.isActive !== false,
+      });
+      return mapRemoteJobApplicationSourceCategory(row);
+    },
+    async listJobApplicationLinks(jobId) {
+      if (!hasSupabaseConfig) {
+        return mock.listJobApplicationLinks(jobId);
+      }
+      const rows = await invokePlatform<unknown[]>("job_application_links", {
+        job_id: jobId,
+      });
+      return (rows ?? []).map(mapRemoteJobApplicationLink);
+    },
+    async saveJobApplicationLink(input) {
+      if (!hasSupabaseConfig) {
+        return mock.saveJobApplicationLink(input);
+      }
+      const row = await invokePlatform<unknown>("save_job_application_link", {
+        job_id: input.jobId,
+        link_id: input.linkId ?? null,
+        source_category_id: input.sourceCategoryId,
+        label: input.label ?? "",
+        source_detail: input.sourceDetail ?? "",
+        campaign_name: input.campaignName ?? "",
+        utm_source: input.utmSource ?? null,
+        utm_medium: input.utmMedium ?? null,
+        utm_campaign: input.utmCampaign ?? null,
+        utm_term: input.utmTerm ?? null,
+        utm_content: input.utmContent ?? null,
+        is_active: input.isActive !== false,
+      });
+      return mapRemoteJobApplicationLink(row);
+    },
     async listPublicJobPostings() {
       if (!hasSupabaseConfig) {
         return mock.listPublicJobPostings();
@@ -1026,6 +1079,7 @@ function createRemoteApi(): PlatformApi {
         {
           action: "apply",
           slug,
+          ref_token: application.refToken ?? null,
           application: publicApplicationPayload(application),
         },
         { requireSession: false },

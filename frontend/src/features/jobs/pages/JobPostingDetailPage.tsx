@@ -8,20 +8,22 @@ import { EmptyState, Panel, Tag } from "@/components/ui";
 import type { JobApplicationStatus, JobPosting } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
 import { applicationStatusOptions } from "@/features/jobs/jobForm";
-import { formatDate, ingestionTone, locationLabel, publicJobHref, statusTone } from "@/features/jobs/jobPresentation";
+import { JobApplicationLinksPanel } from "@/features/jobs/components/JobApplicationLinksPanel";
+import { applicationSourceLabel, formatDate, ingestionTone, locationLabel, publicJobHref, statusTone } from "@/features/jobs/jobPresentation";
 import { mockJobPosting } from "@/features/jobs/jobMocks";
 import bookmarkIcon from "@/assets/save.svg";
 import openLinkIcon from "@/assets/open_link.svg";
 import findMatchesIcon from "@/assets/find_matches.svg";
 import editNoteIcon from "@/assets/edit_note.svg";
 
-type DetailTab = "runs" | "applicants" | "shortlists";
+type DetailTab = "runs" | "applicants" | "source-links" | "shortlists";
 
 export function JobPostingDetailPage() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<DetailTab>("runs");
+  const [sourceFilter, setSourceFilter] = useState("all");
 
   const isDummy = jobId === "dummy-job-id";
 
@@ -68,6 +70,12 @@ export function JobPostingDetailPage() {
     },
   });
   const job = jobQuery.data;
+  const sourceFilterOptions = Array.from(new Set(
+    (applicationsQuery.data ?? []).map((application) => applicationSourceLabel(application)),
+  )).sort((left, right) => left.localeCompare(right));
+  const filteredApplications = (applicationsQuery.data ?? []).filter((application) =>
+    sourceFilter === "all" || applicationSourceLabel(application) === sourceFilter,
+  );
 
   const handleDivKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, action: () => void) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -168,8 +176,14 @@ export function JobPostingDetailPage() {
 
         {/* Full Width Tab Navigation */}
         <div className="flex items-center gap-2 w-full">
-          {(["runs", "applicants", "shortlists"] as DetailTab[]).map((tab) => {
-            const label = tab === "runs" ? "Matching Runs" : tab === "applicants" ? "Applicants" : "Shortlists";
+          {(["runs", "applicants", "source-links", "shortlists"] as DetailTab[]).map((tab) => {
+            const label = tab === "runs"
+              ? "Matching Runs"
+              : tab === "applicants"
+              ? "Applicants"
+              : tab === "source-links"
+              ? "Source Links"
+              : "Shortlists";
             return (
               <div
                 key={tab}
@@ -221,12 +235,27 @@ export function JobPostingDetailPage() {
             <div className="p-6">
               {applicationsQuery.data?.length ? (
                 <div className="flex flex-col gap-4">
-                  {applicationsQuery.data.map((application) => (
+                  <label className="search-field h-9 w-full max-w-xs transition-all duration-300 ease-in-out focus-within:ring-4 focus-within:ring-[var(--primary)]/20 !rounded-full pl-3 pr-2 relative flex items-center outline-none">
+                    <span className="text-xs text-[var(--text-muted)] mr-2 shrink-0">Source</span>
+                    <select
+                      className="bg-transparent border-none outline-none w-full text-sm text-[var(--text)] p-0 h-full appearance-none cursor-pointer"
+                      value={sourceFilter}
+                      onChange={(event) => setSourceFilter(event.target.value)}
+                      aria-label="Filter applicants by source"
+                    >
+                      <option value="all">All sources</option>
+                      {sourceFilterOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {filteredApplications.map((application) => (
                     <div key={application.id} className="flex items-center gap-4 p-4 bg-[var(--border)] rounded-2xl">
                       <Mail size={18} className="text-[var(--text-muted)] shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <strong className="text-sm text-[var(--text)]">{application.applicantName}</strong>
+                          <Tag>{applicationSourceLabel(application)}</Tag>
                           <span className="text-xs text-[var(--text-muted)] truncate">
                             {application.applicantEmail} · {formatDate(application.submittedAt)}
                             {application.resumeOriginalFilename ? ` · ${application.resumeOriginalFilename}` : ""}
@@ -254,6 +283,9 @@ export function JobPostingDetailPage() {
                       </label>
                     </div>
                   ))}
+                  {!filteredApplications.length ? (
+                    <p className="text-sm text-[var(--text-muted)]">No applicants match the selected source.</p>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-[var(--text-muted)]">No public applications captured for this job yet.</p>
@@ -261,6 +293,8 @@ export function JobPostingDetailPage() {
             </div>
           </Panel>
         )}
+
+        {activeTab === "source-links" && <JobApplicationLinksPanel job={job} />}
 
         {activeTab === "shortlists" && (
           <Panel className="!border-none relative overflow-hidden rounded-[var(--radius,22px)]">

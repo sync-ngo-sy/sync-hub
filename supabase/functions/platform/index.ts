@@ -3384,6 +3384,7 @@ const jobApplicationSelect = [
   "consent_given",
   "status",
   "source",
+  "application_link_id",
   "submitted_at",
   "reviewed_by_user_id",
   "reviewed_at",
@@ -3391,6 +3392,44 @@ const jobApplicationSelect = [
   "created_at",
   "updated_at",
 ].join(", ");
+
+const jobApplicationSourceCategorySelect = [
+  "id",
+  "tenant_id",
+  "name",
+  "description",
+  "is_active",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+const jobApplicationLinkSelect = [
+  "id",
+  "tenant_id",
+  "job_posting_id",
+  "source_category_id",
+  "token",
+  "label",
+  "source_detail",
+  "campaign_name",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "is_active",
+  "created_by_user_id",
+  "created_at",
+  "updated_at",
+].join(", ");
+
+function generateApplicationLinkToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
 
 function clampInteger(
   value: unknown,
@@ -4626,6 +4665,152 @@ async function updateJobApplicationStatus(
   return data;
 }
 
+async function listJobApplicationSourceCategories(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const tenantId = asString(body.tenant_id);
+  if (!tenantId) {
+    throw new Error("tenant_id is required");
+  }
+  const { data, error } = await supabase
+    .from("job_application_source_categories")
+    .select(jobApplicationSourceCategorySelect)
+    .eq("tenant_id", tenantId)
+    .order("name", { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+async function saveJobApplicationSourceCategory(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const tenantId = asString(body.tenant_id);
+  const name = asString(body.name);
+  if (!tenantId || !name) {
+    throw new Error("tenant_id and name are required");
+  }
+  const categoryId = asString(body.category_id ?? body.id);
+  const payload = {
+    tenant_id: tenantId,
+    name,
+    description: asString(body.description) ?? "",
+    is_active: body.is_active !== false && body.isActive !== false,
+  };
+  if (categoryId) {
+    const { data, error } = await supabase
+      .from("job_application_source_categories")
+      .update(payload)
+      .eq("id", categoryId)
+      .eq("tenant_id", tenantId)
+      .select(jobApplicationSourceCategorySelect)
+      .single();
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("job_application_source_categories")
+    .insert(payload)
+    .select(jobApplicationSourceCategorySelect)
+    .single();
+  if (error) {
+    throw error;
+  }
+  return data;
+}
+
+async function listJobApplicationLinks(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const jobId = asString(body.job_id);
+  if (!jobId) {
+    throw new Error("job_id is required");
+  }
+  const { data, error } = await supabase
+    .from("job_application_links")
+    .select(
+      `${jobApplicationLinkSelect}, source_category:job_application_source_categories(id, name, is_active)`,
+    )
+    .eq("job_posting_id", jobId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return data ?? [];
+}
+
+async function saveJobApplicationLink(
+  supabase: ReturnType<typeof createAuthedClient>,
+  body: JsonRecord,
+) {
+  const userId = await getCurrentUserId(supabase);
+  const jobId = asString(body.job_id);
+  const sourceCategoryId = asString(
+    body.source_category_id ?? body.sourceCategoryId,
+  );
+  if (!jobId || !sourceCategoryId) {
+    throw new Error("job_id and source_category_id are required");
+  }
+  const job = (await getJobPosting(supabase, jobId)) as unknown as JsonRecord;
+  const linkId = asString(body.link_id ?? body.id);
+  const payload = {
+    tenant_id: job.tenant_id,
+    job_posting_id: jobId,
+    source_category_id: sourceCategoryId,
+    label: asString(body.label) ?? "",
+    source_detail: asString(body.source_detail ?? body.sourceDetail) ?? "",
+    campaign_name: asString(body.campaign_name ?? body.campaignName) ?? "",
+    utm_source: asString(body.utm_source ?? body.utmSource),
+    utm_medium: asString(body.utm_medium ?? body.utmMedium),
+    utm_campaign: asString(body.utm_campaign ?? body.utmCampaign),
+    utm_term: asString(body.utm_term ?? body.utmTerm),
+    utm_content: asString(body.utm_content ?? body.utmContent),
+    is_active: body.is_active !== false && body.isActive !== false,
+  };
+  if (linkId) {
+    const { data, error } = await supabase
+      .from("job_application_links")
+      .update(payload)
+      .eq("id", linkId)
+      .eq("job_posting_id", jobId)
+      .select(
+        `${jobApplicationLinkSelect}, source_category:job_application_source_categories(id, name, is_active)`,
+      )
+      .single();
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = generateApplicationLinkToken();
+    const { data, error } = await supabase
+      .from("job_application_links")
+      .insert({
+        ...payload,
+        token,
+        created_by_user_id: userId,
+      })
+      .select(
+        `${jobApplicationLinkSelect}, source_category:job_application_source_categories(id, name, is_active)`,
+      )
+      .single();
+    if (!error) {
+      return data;
+    }
+    if (error.code !== "23505") {
+      throw error;
+    }
+  }
+  throw new Error("Unable to generate a unique application link token.");
+}
+
 async function listJobShortlists(
   supabase: ReturnType<typeof createAuthedClient>,
   body: JsonRecord,
@@ -4941,6 +5126,20 @@ Deno.serve(async (req) => {
           200,
           await updateJobApplicationStatus(supabase, body),
         );
+      case "job_application_source_categories":
+        return jsonResponse(
+          200,
+          await listJobApplicationSourceCategories(supabase, body),
+        );
+      case "save_job_application_source_category":
+        return jsonResponse(
+          200,
+          await saveJobApplicationSourceCategory(supabase, body),
+        );
+      case "job_application_links":
+        return jsonResponse(200, await listJobApplicationLinks(supabase, body));
+      case "save_job_application_link":
+        return jsonResponse(200, await saveJobApplicationLink(supabase, body));
       case "job_shortlists":
         return jsonResponse(200, await listJobShortlists(supabase, body));
       case "job_shortlist":

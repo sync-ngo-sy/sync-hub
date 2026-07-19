@@ -31,6 +31,35 @@ export function publicJobHref(job: JobPosting) {
   return job.publicSlug ? `#/careers/${job.publicSlug}` : null;
 }
 
+export function trackedApplicationLinkHref(job: JobPosting, token: string) {
+  return job.publicSlug ? `#/careers/${job.publicSlug}?ref=${encodeURIComponent(token)}` : null;
+}
+
+export function applicationSourceLabel(application: {
+  source: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const attribution = asRecord(application.metadata?.sourceAttribution);
+  const categoryName = typeof attribution.categoryName === "string" ? attribution.categoryName : "";
+  const sourceDetail = typeof attribution.sourceDetail === "string" ? attribution.sourceDetail : "";
+  if (categoryName && sourceDetail) {
+    return `${categoryName} · ${sourceDetail}`;
+  }
+  if (categoryName) {
+    return categoryName;
+  }
+  if (application.source && application.source !== "public_job_board") {
+    return application.source;
+  }
+  return "Direct / untracked";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 export function locationLabel(job: JobPosting) {
   return [job.locationInfo.city, job.locationInfo.country || job.employerCountry].filter(Boolean).join(", ") || "Location not set";
 }

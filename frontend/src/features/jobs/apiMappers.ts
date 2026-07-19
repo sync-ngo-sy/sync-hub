@@ -1,6 +1,8 @@
 import type {
   EmployerRegion,
   JobApplication,
+  JobApplicationLink,
+  JobApplicationSourceCategory,
   JobApplicationStatus,
   JobCandidateMatch,
   JobExtractionResult,
@@ -282,6 +284,7 @@ export function mapRemoteJobApplication(row: unknown): JobApplication {
     consentGiven: Boolean(record.consent_given ?? record.consentGiven),
     status: normalizeJobApplicationStatus(record.status),
     source: String(record.source ?? "public_job_board"),
+    applicationLinkId: nullableString(record.application_link_id ?? record.applicationLinkId),
     submittedAt: String(record.submitted_at ?? record.submittedAt ?? ""),
     reviewedByUserId: nullableString(record.reviewed_by_user_id ?? record.reviewedByUserId),
     reviewedAt: nullableString(record.reviewed_at ?? record.reviewedAt),
@@ -339,5 +342,43 @@ export function mapPublicReceipt(payload: unknown): PublicJobApplicationReceipt 
     duplicate: Boolean(receipt.duplicate),
     applicationId: nullableString(receipt.applicationId ?? receipt.application_id) ?? undefined,
     submittedAt: nullableString(receipt.submittedAt ?? receipt.submitted_at) ?? undefined,
+  };
+}
+
+export function mapRemoteJobApplicationSourceCategory(row: unknown): JobApplicationSourceCategory {
+  const record = asRecord(row);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    name: String(record.name ?? ""),
+    description: String(record.description ?? ""),
+    isActive: record.is_active !== false && record.isActive !== false,
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
+  };
+}
+
+export function mapRemoteJobApplicationLink(row: unknown): JobApplicationLink {
+  const record = asRecord(row);
+  const sourceCategory = asRecord(record.source_category ?? record.sourceCategory);
+  return {
+    id: String(record.id ?? ""),
+    tenantId: String(record.tenant_id ?? record.tenantId ?? ""),
+    jobPostingId: String(record.job_posting_id ?? record.jobPostingId ?? ""),
+    sourceCategoryId: String(record.source_category_id ?? record.sourceCategoryId ?? sourceCategory.id ?? ""),
+    sourceCategoryName: String(sourceCategory.name ?? record.source_category_name ?? record.sourceCategoryName ?? ""),
+    token: String(record.token ?? ""),
+    label: String(record.label ?? ""),
+    sourceDetail: String(record.source_detail ?? record.sourceDetail ?? ""),
+    campaignName: String(record.campaign_name ?? record.campaignName ?? ""),
+    utmSource: nullableString(record.utm_source ?? record.utmSource),
+    utmMedium: nullableString(record.utm_medium ?? record.utmMedium),
+    utmCampaign: nullableString(record.utm_campaign ?? record.utmCampaign),
+    utmTerm: nullableString(record.utm_term ?? record.utmTerm),
+    utmContent: nullableString(record.utm_content ?? record.utmContent),
+    isActive: record.is_active !== false && record.isActive !== false,
+    createdByUserId: nullableString(record.created_by_user_id ?? record.createdByUserId),
+    createdAt: String(record.created_at ?? record.createdAt ?? ""),
+    updatedAt: String(record.updated_at ?? record.updatedAt ?? ""),
   };
 }

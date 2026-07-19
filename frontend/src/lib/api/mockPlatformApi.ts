@@ -6,6 +6,10 @@ import type {
   CandidateListResponse,
   CandidateShortlistItem,
   JobApplication,
+  JobApplicationLink,
+  JobApplicationLinkInput,
+  JobApplicationSourceCategory,
+  JobApplicationSourceCategoryInput,
   JobPosting,
 } from "@/lib/contracts";
 import {
@@ -43,7 +47,13 @@ function wait(ms: number) {
 const mockShortlistItems = new Map<string, CandidateShortlistItem>();
 const mockJobPostings = new Map<string, JobPosting>();
 const mockJobApplications = new Map<string, JobApplication>();
+const mockJobApplicationSourceCategories = new Map<string, JobApplicationSourceCategory>();
+const mockJobApplicationLinks = new Map<string, JobApplicationLink>();
 const mockInsightReportRuns = new Map<string, InsightReportRunDetail>();
+
+function generateMockLinkToken() {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 22);
+}
 
 async function createMockInsightReportRun(
   input: InsightReportInput,
@@ -547,6 +557,64 @@ export function createMockApi(): PlatformApi {
       mockJobApplications.set(applicationId, updated);
       return updated;
     },
+    async listJobApplicationSourceCategories(tenantId) {
+      return Array.from(mockJobApplicationSourceCategories.values())
+        .filter((category) => category.tenantId === tenantId)
+        .sort((left, right) => left.name.localeCompare(right.name));
+    },
+    async saveJobApplicationSourceCategory(input: JobApplicationSourceCategoryInput) {
+      const existingId = input.categoryId;
+      const id = existingId ?? crypto.randomUUID();
+      const category: JobApplicationSourceCategory = {
+        id,
+        tenantId: input.tenantId,
+        name: input.name,
+        description: input.description ?? "",
+        isActive: input.isActive !== false,
+        createdAt: existingId
+          ? mockJobApplicationSourceCategories.get(existingId)?.createdAt ?? new Date().toISOString()
+          : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockJobApplicationSourceCategories.set(id, category);
+      return category;
+    },
+    async listJobApplicationLinks(jobId) {
+      return Array.from(mockJobApplicationLinks.values())
+        .filter((link) => link.jobPostingId === jobId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    },
+    async saveJobApplicationLink(input: JobApplicationLinkInput) {
+      const category = mockJobApplicationSourceCategories.get(input.sourceCategoryId);
+      if (!category) {
+        throw new Error("Source category was not found.");
+      }
+      const existingId = input.linkId;
+      const id = existingId ?? crypto.randomUUID();
+      const existing = existingId ? mockJobApplicationLinks.get(existingId) : null;
+      const link: JobApplicationLink = {
+        id,
+        tenantId: category.tenantId,
+        jobPostingId: input.jobId,
+        sourceCategoryId: input.sourceCategoryId,
+        sourceCategoryName: category.name,
+        token: existing?.token ?? generateMockLinkToken(),
+        label: input.label ?? "",
+        sourceDetail: input.sourceDetail ?? "",
+        campaignName: input.campaignName ?? "",
+        utmSource: input.utmSource ?? null,
+        utmMedium: input.utmMedium ?? null,
+        utmCampaign: input.utmCampaign ?? null,
+        utmTerm: input.utmTerm ?? null,
+        utmContent: input.utmContent ?? null,
+        isActive: input.isActive !== false,
+        createdByUserId: null,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockJobApplicationLinks.set(id, link);
+      return link;
+    },
     async listPublicJobPostings() {
       return Array.from(mockJobPostings.values()).filter((job) => job.status === "active" && job.isPublic).map((job) => ({
         id: job.publicSlug ?? job.id,
@@ -575,7 +643,32 @@ export function createMockApi(): PlatformApi {
     },
     async submitPublicJobApplication(slug, application) {
       const publicJob = await this.getPublicJobPosting(slug);
+      const resolvedLink = application.refToken
+        ? Array.from(mockJobApplicationLinks.values()).find((link) =>
+          link.token === application.refToken && link.isActive && link.jobPostingId === publicJob.id
+        ) ?? null
+        : null;
+      if (application.refToken && !resolvedLink) {
+        throw new Error("This application link is invalid or inactive.");
+      }
       const id = crypto.randomUUID();
+      const sourceAttribution = resolvedLink
+        ? {
+          linkId: resolvedLink.id,
+          categoryId: resolvedLink.sourceCategoryId,
+          categoryName: resolvedLink.sourceCategoryName,
+          label: resolvedLink.label,
+          sourceDetail: resolvedLink.sourceDetail,
+          campaignName: resolvedLink.campaignName,
+          utm: {
+            source: resolvedLink.utmSource,
+            medium: resolvedLink.utmMedium,
+            campaign: resolvedLink.utmCampaign,
+            term: resolvedLink.utmTerm,
+            content: resolvedLink.utmContent,
+          },
+        }
+        : null;
       mockJobApplications.set(id, {
         id,
         tenantId: "mock-tenant",
@@ -597,11 +690,12 @@ export function createMockApi(): PlatformApi {
         coverNote: application.coverNote ?? "",
         consentGiven: application.consent,
         status: "new",
-        source: "public_job_board",
+        source: resolvedLink?.sourceCategoryName ?? "public_job_board",
+        applicationLinkId: resolvedLink?.id ?? null,
         submittedAt: new Date().toISOString(),
         reviewedByUserId: null,
         reviewedAt: null,
-        metadata: {},
+        metadata: sourceAttribution ? { sourceAttribution } : {},
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });

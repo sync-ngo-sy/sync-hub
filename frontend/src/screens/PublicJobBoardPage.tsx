@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, BriefcaseBusiness, CheckCircle2, Send } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, Panel, Tag } from "@/components/ui";
 import type { PublicJobApplicationInput, PublicJobPosting } from "@/lib/contracts";
 import { platformApi } from "@/lib/platformApi";
@@ -20,6 +20,26 @@ const ALLOWED_RESUME_TYPES = new Set([
 ]);
 const ALLOWED_RESUME_EXTENSIONS = [".pdf", ".docx", ".txt"];
 const seniorityOptions = ["Intern", "Junior", "Mid", "Senior", "Lead", "Principal", "Executive"];
+
+function applicationRefStorageKey(slug: string) {
+  return `careers-ref:${slug}`;
+}
+
+function readStoredRefToken(slug: string) {
+  try {
+    return sessionStorage.getItem(applicationRefStorageKey(slug)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeRefToken(slug: string, token: string) {
+  try {
+    sessionStorage.setItem(applicationRefStorageKey(slug), token);
+  } catch {
+    // Ignore storage failures and rely on the current URL ref when available.
+  }
+}
 
 function isAllowedResumeFile(file: File) {
   const name = file.name.toLowerCase();
@@ -102,6 +122,8 @@ export function PublicJobBoardPage() {
 
 export function PublicJobDetailPage() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
+  const [refToken, setRefToken] = useState<string | undefined>(undefined);
   const [jobState, setJobState] = useState<{ isLoading: boolean; job: PublicJobPosting | null; error: string | null }>({
     isLoading: true,
     job: null,
@@ -130,6 +152,19 @@ export function PublicJobDetailPage() {
     idempotencyKey: crypto.randomUUID?.() ?? String(Date.now()),
   });
   const job = jobState.job;
+
+  useEffect(() => {
+    if (!slug) {
+      return;
+    }
+    const urlRef = searchParams.get("ref")?.trim();
+    if (urlRef) {
+      storeRefToken(slug, urlRef);
+      setRefToken(urlRef);
+      return;
+    }
+    setRefToken(readStoredRefToken(slug));
+  }, [searchParams, slug]);
 
   useEffect(() => {
     let active = true;
@@ -211,7 +246,11 @@ export function PublicJobDetailPage() {
         sizeBytes: resumeFile.size,
         base64: await fileToBase64(resumeFile),
       };
-      await platformApi.submitPublicJobApplication(slug, { ...form, resumeFile: resumePayload });
+      await platformApi.submitPublicJobApplication(slug, {
+        ...form,
+        resumeFile: resumePayload,
+        refToken,
+      });
       setSubmitState({ isSubmitting: false, success: true, error: null });
     } catch (error) {
       setSubmitState({ isSubmitting: false, success: false, error: error instanceof Error ? error.message : String(error) });

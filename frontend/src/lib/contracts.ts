@@ -425,12 +425,83 @@ export type JobApplication = {
   consentGiven: boolean;
   status: JobApplicationStatus;
   source: string;
+  applicationLinkId: string | null;
   submittedAt: string;
   reviewedByUserId: string | null;
   reviewedAt: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type JobApplicationSourceAttribution = {
+  linkId?: string;
+  categoryId?: string;
+  categoryName?: string;
+  label?: string;
+  sourceDetail?: string;
+  campaignName?: string;
+  utm?: {
+    source?: string | null;
+    medium?: string | null;
+    campaign?: string | null;
+    term?: string | null;
+    content?: string | null;
+  };
+};
+
+export type JobApplicationSourceCategory = {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type JobApplicationSourceCategoryInput = {
+  tenantId: string;
+  categoryId?: string;
+  name: string;
+  description?: string;
+  isActive?: boolean;
+};
+
+export type JobApplicationLink = {
+  id: string;
+  tenantId: string;
+  jobPostingId: string;
+  sourceCategoryId: string;
+  sourceCategoryName: string;
+  token: string;
+  label: string;
+  sourceDetail: string;
+  campaignName: string;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+  isActive: boolean;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type JobApplicationLinkInput = {
+  jobId: string;
+  linkId?: string;
+  sourceCategoryId: string;
+  label?: string;
+  sourceDetail?: string;
+  campaignName?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmTerm?: string;
+  utmContent?: string;
+  isActive?: boolean;
 };
 
 export type PublicJobPosting = {
@@ -472,6 +543,7 @@ export type PublicJobApplicationInput = {
   coverNote?: string;
   consent: boolean;
   idempotencyKey?: string;
+  refToken?: string;
 };
 
 export type PublicJobApplicationReceipt = {

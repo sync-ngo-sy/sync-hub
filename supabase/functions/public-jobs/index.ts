@@ -371,6 +371,77 @@ async function upsertCandidateShell(
   };
 }
 
+type ResolvedApplicationLink = {
+  id: string;
+  sourceCategoryId: string;
+  categoryName: string;
+  label: string;
+  sourceDetail: string;
+  campaignName: string;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmTerm: string | null;
+  utmContent: string | null;
+};
+
+async function resolveApplicationLink(
+  supabase: ReturnType<typeof createServiceClient>,
+  refToken: string,
+  jobPostingId: string,
+): Promise<ResolvedApplicationLink | null> {
+  const { data, error } = await supabase
+    .from("job_application_links")
+    .select(
+      "id, source_category_id, label, source_detail, campaign_name, utm_source, utm_medium, utm_campaign, utm_term, utm_content, is_active, source_category:job_application_source_categories(id, name, is_active)",
+    )
+    .eq("token", refToken)
+    .eq("job_posting_id", jobPostingId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (!data || data.is_active === false) {
+    return null;
+  }
+  const category = asRecord(data.source_category);
+  const categoryName = asString(category.name);
+  if (!categoryName || category.is_active === false) {
+    return null;
+  }
+  return {
+    id: String(data.id),
+    sourceCategoryId: String(data.source_category_id),
+    categoryName,
+    label: asString(data.label) ?? "",
+    sourceDetail: asString(data.source_detail) ?? "",
+    campaignName: asString(data.campaign_name) ?? "",
+    utmSource: asString(data.utm_source),
+    utmMedium: asString(data.utm_medium),
+    utmCampaign: asString(data.utm_campaign),
+    utmTerm: asString(data.utm_term),
+    utmContent: asString(data.utm_content),
+  };
+}
+
+function buildSourceAttribution(link: ResolvedApplicationLink) {
+  return {
+    linkId: link.id,
+    categoryId: link.sourceCategoryId,
+    categoryName: link.categoryName,
+    label: link.label,
+    sourceDetail: link.sourceDetail,
+    campaignName: link.campaignName,
+    utm: {
+      source: link.utmSource,
+      medium: link.utmMedium,
+      campaign: link.utmCampaign,
+      term: link.utmTerm,
+      content: link.utmContent,
+    },
+  };
+}
+
 function assertApplication(input: JsonRecord) {
   const name = asString(input.name);
   const email = asString(input.email)?.toLowerCase();
@@ -485,12 +556,23 @@ Deno.serve(async (req) => {
         return jsonResponse(409, { error: "applications_closed" });
       }
       const application = assertApplication(asRecord(body.application));
+      const refToken = asString(body.ref_token ?? body.refToken);
+      const resolvedLink = refToken
+        ? await resolveApplicationLink(supabase, refToken, String(jobRecord.id))
+        : null;
+      if (refToken && !resolvedLink) {
+        return jsonResponse(409, { error: "invalid_application_link" });
+      }
+      const sourceAttribution = resolvedLink
+        ? buildSourceAttribution(resolvedLink)
+        : null;
+      const applicationSource = resolvedLink?.categoryName ??
+        "public_job_board";
       const { data: existingApplication, error: existingError } = await supabase
         .from("job_applications")
         .select("id, submitted_at")
         .eq("job_posting_id", jobRecord.id)
         .eq("applicant_email", application.email)
-        .eq("source", "public_job_board")
         .neq("status", "withdrawn")
         .order("submitted_at", { ascending: false })
         .limit(1)
@@ -655,7 +737,9 @@ Deno.serve(async (req) => {
           candidate_hub_visibility: "platform",
           cover_note: application.coverNote,
           consent_given: true,
-          source: "public_job_board",
+          source: applicationSource,
+          application_link_id: resolvedLink?.id ?? null,
+          metadata_json: sourceAttribution ? { sourceAttribution } : {},
           idempotency_key: application.idempotencyKey,
           ip_hash: ipHash,
           user_agent_hash: userAgentHash,
@@ -685,7 +769,6 @@ Deno.serve(async (req) => {
           .select("id, submitted_at")
           .eq("job_posting_id", jobRecord.id)
           .eq("applicant_email", application.email)
-          .eq("source", "public_job_board")
           .neq("status", "withdrawn")
           .order("submitted_at", { ascending: false })
           .limit(1)
@@ -699,7 +782,6 @@ Deno.serve(async (req) => {
             .select("id, submitted_at")
             .eq("job_posting_id", jobRecord.id)
             .eq("idempotency_key", application.idempotencyKey)
-            .eq("source", "public_job_board")
             .neq("status", "withdrawn")
             .order("submitted_at", { ascending: false })
             .limit(1)
@@ -768,7 +850,9 @@ Deno.serve(async (req) => {
           actor_user_id: null,
           event_type: "APPLICATION_SUBMITTED",
           payload: {
-            source: "public_job_board",
+            source: applicationSource,
+            application_link_id: resolvedLink?.id ?? null,
+            source_attribution: sourceAttribution,
             candidate_id: linkedCandidateId,
           },
         });
