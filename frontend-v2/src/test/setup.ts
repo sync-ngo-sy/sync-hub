@@ -15,6 +15,17 @@ class NoopResizeObserver {
 
 globalThis.ResizeObserver ??= NoopResizeObserver
 
+window.matchMedia ??= (query) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addListener: () => undefined,
+  removeListener: () => undefined,
+  addEventListener: () => undefined,
+  removeEventListener: () => undefined,
+  dispatchEvent: () => false,
+})
+
 // jsdom doesn't implement scrollIntoView either — cmdk calls it to keep
 // the highlighted item visible. No-op is correct: there's no real
 // viewport to scroll in this test environment.
