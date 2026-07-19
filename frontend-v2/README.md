@@ -26,6 +26,10 @@ lists only the vars this app reads) to `../.env` and fill in:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+Set `VITE_SITE_URL` for production builds. The build uses it as the sitemap
+origin and reads the public `public-jobs` Edge Function to include each live
+`/careers/:slug` URL in `dist/sitemap.xml`.
+
 ## Scripts
 
 - `npm run dev` — start the dev server

@@ -47,11 +47,14 @@ function lazyPlaceholder(title: string, detail?: string) {
 
 const authScreens = () => import('@/features/auth/pages/AuthScreens')
 const SignInPage = lazyNamed(authScreens, 'SignInScreen')
-const CareersPage = lazyPlaceholder(
-  'Careers',
-  'Browse current openings and learn more about working with us.',
+const CareersPage = lazyNamed(
+  () => import('@/features/careers/pages/CareersListPage'),
+  'CareersListPage',
 )
-const CareerDetailPage = lazyPlaceholder('Open position')
+const CareerDetailPage = lazyNamed(
+  () => import('@/features/careers/pages/CareerDetailPage'),
+  'CareerDetailPage',
+)
 const CandidatePage = lazyPlaceholder('Candidate directory')
 const SearchPage = lazyPlaceholder('Talent pool')
 const JobsPage = lazyPlaceholder('Job postings')

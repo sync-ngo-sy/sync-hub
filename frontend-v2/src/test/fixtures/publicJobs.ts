@@ -1,0 +1,17 @@
+export const publicJobFixture = {
+  id: 'senior-platform-engineer',
+  slug: 'senior-platform-engineer',
+  title: 'Senior Platform Engineer',
+  summary: 'Build dependable systems for recruiting teams.',
+  description: 'Own the platform services behind candidate intelligence.',
+  location: 'Cairo, Egypt',
+  remotePolicy: 'Hybrid',
+  seniorityLevel: 'Senior',
+  employmentType: 'Full-time',
+  requiredSkills: ['TypeScript', 'PostgreSQL'],
+  preferredSkills: ['Supabase'],
+  keyResponsibilities: ['Design resilient services'],
+  applicationDeadline: '2026-08-31',
+  applyEnabled: true,
+  publishedAt: '2026-07-20T00:00:00.000Z',
+}
