@@ -14,6 +14,7 @@ import pytest
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.integrations.llm import LLMResponseError
 from cv_intelligence_worker.integrations.llm.models import DraftValidationExtraction
+from cv_intelligence_worker.integrations.supabase import SupabaseResponseError
 from cv_intelligence_worker.schema import (
     CandidateProfile,
     DocumentSource,
@@ -476,10 +477,24 @@ class TestSupabaseDraftOps:
         client = SupabaseClient(config)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps([
-            {"id": "d1", "user_id": "u1", "parse_status": "pending_validation"},
-            {"id": "d2", "user_id": "u2", "parse_status": "pending_validation"},
-        ]).encode()
+        mock_response.read.return_value = json.dumps(
+            [
+                {
+                    "id": draft_id,
+                    "user_id": user_id,
+                    "parsed_profile_json": {},
+                    "user_overrides_json": {},
+                    "cv_storage_path": None,
+                    "cv_original_filename": None,
+                    "cv_mime_type": None,
+                    "cv_size_bytes": None,
+                    "primary_specialization": None,
+                    "parse_status": "pending_validation",
+                    "updated_at": "2026-07-19T12:00:00Z",
+                }
+                for draft_id, user_id in (("d1", "u1"), ("d2", "u2"))
+            ]
+        ).encode()
         mock_response.headers = {}
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
@@ -506,7 +521,7 @@ class TestSupabaseDraftOps:
         assert drafts == []
 
     @patch("cv_intelligence_worker.supabase.urlopen")
-    def test_queued_candidate_drafts_non_list_returns_empty(self, mock_urlopen):
+    def test_queued_candidate_drafts_rejects_non_list_response(self, mock_urlopen):
         from cv_intelligence_worker.supabase import SupabaseClient
         config = _make_config()
         client = SupabaseClient(config)
@@ -518,8 +533,8 @@ class TestSupabaseDraftOps:
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        drafts = client.queued_candidate_drafts()
-        assert drafts == []
+        with pytest.raises(SupabaseResponseError, match="invalid response shape"):
+            client.queued_candidate_drafts()
 
     @patch("cv_intelligence_worker.supabase.urlopen")
     def test_update_candidate_draft_calls_patch(self, mock_urlopen):
