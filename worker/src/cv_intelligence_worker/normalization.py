@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime
 
@@ -12,6 +10,11 @@ from .candidate_normalization.experience import (
     infer_years_experience,
 )
 from .candidate_normalization.locations import normalize_location as normalize_location
+from .candidate_normalization.roles import (
+    infer_job_family as infer_job_family,
+    infer_role_tags as infer_role_tags,
+    infer_seniority as infer_seniority,
+)
 from .candidate_normalization.skills import (
     canonical_skill as canonical_skill,
     infer_additional_skills as infer_additional_skills,
@@ -21,148 +24,10 @@ from .candidate_normalization.titles import (
 )
 from .candidate_normalization.titles import is_title_like as _is_title_like
 from .schema import CandidateProfile
-from .utils import compact_whitespace, dedupe_keep_order, slugify
+from .utils import compact_whitespace, dedupe_keep_order
 from .normalization_constants import (
-    JOB_FAMILY_RULES,
     JOB_FAMILY_TAXONOMY_VERSION,
-    JUNIOR_SIGNAL_RE,
-    ROLE_PATTERNS,
-    ROLE_TAG_ALIASES,
-    SENIORITY_ALIASES,
-    SENIOR_SIGNAL_RE,
 )
-
-
-def _normalize_role_tag(value: object) -> str:
-    if not isinstance(value, str):
-        return ""
-    token = slugify(value)
-    return ROLE_TAG_ALIASES.get(token, "")
-
-
-def _normalize_seniority_label(value: object) -> str:
-    if not isinstance(value, str):
-        return "unclassified"
-    lowered = compact_whitespace(value).lower()
-    if not lowered:
-        return "unclassified"
-    token = slugify(lowered)
-    if token in SENIORITY_ALIASES:
-        return SENIORITY_ALIASES[token]
-    if any(term in lowered for term in ("principal", "staff", "lead", "architect", "head of")):
-        return "staff-plus"
-    if "senior" in lowered or lowered.startswith("sr"):
-        return "senior"
-    if "mid" in lowered:
-        return "mid"
-    if "junior" in lowered or "intern" in lowered or "entry" in lowered:
-        return "junior"
-    return "unclassified"
-
-
-def infer_seniority(profile: CandidateProfile, years_experience: float) -> str:
-    explicit = _normalize_seniority_label(profile.seniority)
-    haystack = f"{profile.current_title} {profile.headline} {' '.join(skill.lower() for skill in profile.skills)} {profile.summary}".lower()
-    has_senior_signal = bool(SENIOR_SIGNAL_RE.search(haystack))
-    has_junior_signal = bool(JUNIOR_SIGNAL_RE.search(haystack))
-    experience_entry_count = len(profile.experience)
-
-    if explicit != "unclassified":
-        if explicit in {"senior", "staff-plus"} and years_experience <= 0 and not has_senior_signal:
-            explicit = "mid" if experience_entry_count >= 2 else "unclassified"
-        elif explicit in {"senior", "staff-plus"} and 0 < years_experience < 6:
-            if not has_senior_signal:
-                explicit = "mid"
-        if explicit == "junior" and years_experience >= 4:
-            if not has_junior_signal:
-                explicit = "mid"
-        return explicit
-
-    if re.search(r"\b(principal|staff|lead|architect|head of)\b", haystack):
-        return "staff-plus"
-    if re.search(r"\bsenior\b", haystack) or years_experience >= 6:
-        return "senior"
-    if has_junior_signal or (0 < years_experience < 2):
-        return "junior"
-    if "mid" in haystack or years_experience >= 3:
-        return "mid"
-    return "unclassified"
-
-
-def _role_signal_score(text: str, patterns: list[str], weight: float) -> float:
-    normalized = text.lower()
-    score = 0.0
-    for pattern in patterns:
-        expression = re.compile(rf"(^|[^a-z0-9+#.]){re.escape(pattern.lower())}([^a-z0-9+#.]|$)")
-        if expression.search(normalized):
-            score += weight
-    return score
-
-
-def infer_role_tags(profile: CandidateProfile) -> list[str]:
-    scores: dict[str, float] = defaultdict(float)
-    title = compact_whitespace(profile.current_title).lower()
-    headline = compact_whitespace(profile.headline).lower()
-    summary = compact_whitespace(profile.summary).lower()
-    skills = " ".join(profile.skills).lower()
-    experience = " ".join(f"{entry.title} {entry.company} {entry.description}" for entry in profile.experience).lower()
-
-    for role, patterns in ROLE_PATTERNS.items():
-        scores[role] += _role_signal_score(title, patterns, 6.0)
-        scores[role] += _role_signal_score(headline, patterns, 4.0)
-        scores[role] += _role_signal_score(skills, patterns, 2.5)
-        scores[role] += _role_signal_score(experience, patterns, 1.75)
-        scores[role] += _role_signal_score(summary, patterns, 1.25)
-
-    for raw_tag in profile.role_tags:
-        normalized = _normalize_role_tag(raw_tag)
-        if normalized:
-            scores[normalized] += 1.5
-
-    if "engineer" in title and not scores:
-        scores["backend"] += 1.0
-
-    if not scores:
-        return ["generalist"]
-
-    top_score = max(scores.values())
-    threshold = max(2.0, top_score * 0.45)
-    ranked = [
-        role
-        for role, score in sorted(scores.items(), key=lambda item: (-item[1], item[0]))
-        if score >= threshold
-    ]
-    return ranked or ["generalist"]
-
-
-def _contains_any(haystack: str, needles: tuple[str, ...]) -> bool:
-    return any(needle and needle in haystack for needle in needles)
-
-
-def infer_job_family(profile: CandidateProfile) -> tuple[str, float]:
-    role_text = " ".join([*profile.role_tags, profile.current_title, profile.headline]).lower()
-    title_text = " ".join([profile.current_title, profile.headline]).lower()
-    skill_text = " ".join(profile.skills).lower()
-    scores: dict[str, float] = {}
-
-    for family, role_tags, title_signals, skill_signals in JOB_FAMILY_RULES:
-        score = 0.0
-        if _contains_any(role_text, role_tags):
-            score += 90.0
-        if _contains_any(title_text, title_signals):
-            score += 55.0
-        matched_skill_count = sum(1 for skill in skill_signals if skill in skill_text)
-        score += min(60.0, matched_skill_count * 12.0)
-        scores[family] = score
-
-    if "backend" in profile.role_tags and "frontend" in profile.role_tags:
-        scores["Full-Stack Engineering"] = max(scores.get("Full-Stack Engineering", 0.0), 120.0)
-
-    family, score = max(scores.items(), key=lambda item: (item[1], item[0]))
-    if score < 40.0:
-        return "Unclassified", 0.0
-    confidence = min(0.98, 0.55 + (score / 240.0))
-    return family, round(confidence, 3)
 
 
 def choose_current_title(profile: CandidateProfile) -> str:
