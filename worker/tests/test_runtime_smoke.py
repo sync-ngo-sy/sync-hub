@@ -46,6 +46,20 @@ def test_installed_worker_processes_start_outside_repository(tmp_path) -> None:
     )
     assert prompt.returncode == 0, prompt.stderr
 
+    cleanup = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from cv_intelligence_worker.skill_cleanup import SkillClassifier, build_plan; assert SkillClassifier and build_plan",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert cleanup.returncode == 0, cleanup.stderr
+
     port = _available_port()
     process = subprocess.Popen(
         [
