@@ -7,11 +7,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from .config import WorkerConfig
-from .integrations.gcs import GcsJsonClient
-from .integrations.manatal import ManatalCandidate, ManatalClient
-from .supabase import SupabaseClient
-from .utils import format_error_message
+from ..config import WorkerConfig
+from ..integrations.gcs import GcsJsonClient
+from ..integrations.manatal import ManatalCandidate, ManatalClient
+from ..supabase import SupabaseClient
+from ..utils import format_error_message
 
 
 Progress = Callable[[str], None]

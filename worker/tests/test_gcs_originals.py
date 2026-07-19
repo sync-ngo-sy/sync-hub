@@ -6,16 +6,16 @@ from unittest.mock import Mock, patch
 import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.gcs_originals import ManatalOriginalsBackfill
 from cv_intelligence_worker.integrations.manatal import ManatalCandidate, ManatalResumeDownload
+from cv_intelligence_worker.workflows import ManatalOriginalsBackfill
 
 
 @pytest.fixture
 def backfill() -> ManatalOriginalsBackfill:
     with (
-        patch("cv_intelligence_worker.gcs_originals.SupabaseClient"),
-        patch("cv_intelligence_worker.gcs_originals.ManatalClient"),
-        patch("cv_intelligence_worker.gcs_originals.GcsJsonClient"),
+        patch("cv_intelligence_worker.workflows.manatal_originals.SupabaseClient"),
+        patch("cv_intelligence_worker.workflows.manatal_originals.ManatalClient"),
+        patch("cv_intelligence_worker.workflows.manatal_originals.GcsJsonClient"),
     ):
         return ManatalOriginalsBackfill(WorkerConfig(tenant_id="tenant-1"))
 
