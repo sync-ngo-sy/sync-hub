@@ -4,12 +4,34 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 from ...config import WorkerConfig
 from ...core.http import urlopen
 from ...core.sanitization import strip_nul_bytes
 from .helpers import is_jwt
+
+
+class SupabaseRequest(Protocol):
+    def __call__(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: Any | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any: ...
+
+
+class SupabaseRequestWithHeaders(Protocol):
+    def __call__(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: Any | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[Any, dict[str, str]]: ...
 
 
 def build_supabase_headers(
