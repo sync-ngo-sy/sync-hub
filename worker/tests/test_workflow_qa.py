@@ -274,9 +274,6 @@ class TestDraftIngestionRun:
     @patch("cv_intelligence_worker.draft_ingestion.IngestionPipeline")
     @patch("cv_intelligence_worker.draft_ingestion.SupabaseClient")
     def test_update_draft_failure_outside_try_31(self, mock_sb_cls, mock_pipe_cls):
-        """The outer try (line 31-33) catches update_candidate_draft failures for 'parsing'.
-        But the 'published' update (line 64-66) is ALSO inside a nested try.
-        Test that if 'parsing' update fails, the draft is skipped entirely."""
         from cv_intelligence_worker.draft_ingestion import DraftIngestion
         config = _make_config()
         mock_sb = mock_sb_cls.return_value
@@ -287,7 +284,6 @@ class TestDraftIngestionRun:
 
         result = DraftIngestion(config).run()
         assert result == 0
-        # Pipeline should not even be instantiated for this draft
         mock_pipe_cls.return_value.ingest_sources.assert_not_called()
 
     @patch("cv_intelligence_worker.draft_ingestion.IngestionPipeline")

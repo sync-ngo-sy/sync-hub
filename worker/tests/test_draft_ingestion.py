@@ -1,5 +1,7 @@
-import pytest
+import os
 from unittest.mock import patch
+
+import pytest
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.draft_ingestion import DraftIngestion
@@ -100,3 +102,31 @@ def test_draft_ingestion_db_error_resilience(mock_supabase_cls, mock_pipeline_cl
     published_calls = [call for call in mock_supabase.update_candidate_draft.call_args_list if call[0][1].get("parse_status") == "published"]
     assert len(published_calls) == 1
     assert published_calls[0][0][0] == "user-456"
+
+
+@patch("cv_intelligence_worker.draft_ingestion.IngestionPipeline")
+@patch("cv_intelligence_worker.draft_ingestion.SupabaseClient")
+def test_draft_ingestion_records_download_failure_and_deletes_temp_file(
+    mock_supabase_cls,
+    mock_pipeline_cls,
+    config,
+    tmp_path,
+):
+    mock_supabase = mock_supabase_cls.return_value
+    mock_supabase.queued_candidate_drafts.return_value = [
+        {"user_id": "user-123", "id": "draft-123", "cv_storage_path": "test.pdf"}
+    ]
+    mock_supabase.download_file.side_effect = RuntimeError("download failed")
+    local_path = tmp_path / "download.pdf"
+    file_descriptor = os.open(local_path, os.O_CREAT | os.O_RDWR)
+
+    with patch("cv_intelligence_worker.draft_ingestion.tempfile.mkstemp", return_value=(file_descriptor, str(local_path))):
+        processed = DraftIngestion(config).run()
+
+    assert processed == 0
+    assert not local_path.exists()
+    mock_pipeline_cls.assert_not_called()
+    mock_supabase.update_candidate_draft.assert_any_call(
+        "user-123",
+        {"parse_status": "failed", "parse_error": "download failed"},
+    )
