@@ -43,6 +43,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Caps small button corners from rounding into a pill shape at tiny sizes. */
+  --radius-button-xs: min(var(--radius-md), 10px);
+  --radius-button-sm: min(var(--radius-md), 12px);
 }
 
 :root {
