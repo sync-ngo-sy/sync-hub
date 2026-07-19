@@ -13,7 +13,7 @@ from .candidate_extraction import (
 from .config import WorkerConfig
 from .llm import LLMClient, LLMResponseError
 from .llm_models import CandidateExtraction, JobFamilyExtraction
-from .normalization_constants import JOB_FAMILY_TAXONOMY_VERSION
+from .job_family_taxonomy import JOB_FAMILY_TAXONOMY_VERSION
 from .schema import CandidateProfile, DocumentSource, DocumentText
 from .utils import compact_whitespace, dedupe_keep_order, format_error_message
 

@@ -117,11 +117,13 @@ def test_normalization_marks_job_family_unclassified_until_model_classifies_it()
     assert normalized.metadata["job_family_source"] == "unclassified"
 
 
-def test_normalize_location_canonicalizes_without_inferred_country() -> None:
-    assert normalize_location("Damscus") == "Damascus"
-    assert normalize_location("Damascus syria") == "Damascus, Syria"
-    assert normalize_location("Damascus, syria") == "Damascus, Syria"
+def test_normalize_location_does_not_infer_or_rewrite_places() -> None:
+    assert normalize_location("Damascus") == "Damascus"
+    assert normalize_location("Damascus, Syria") == "Damascus, Syria"
+    assert normalize_location("Springfield, Example Region") == "Springfield, Example Region"
 
 
-def test_normalize_location_discards_non_geographic_values() -> None:
-    assert normalize_location("ERP, CRM") == ""
+def test_normalize_location_discards_structurally_invalid_values() -> None:
+    assert normalize_location("candidate@example.com") == ""
+    assert normalize_location("Damascus/Syria") == ""
+    assert normalize_location("Dubai 2024") == ""

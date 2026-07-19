@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from ...llm_models import CandidateExtraction, JobFamilyExtraction, RealtimeCandidateExtraction
-from ...normalization_constants import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
+from ...job_family_taxonomy import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
 from ...schema import CandidateProfile
 from ...utils import compact_whitespace
 from .loader import load_prompt_template
