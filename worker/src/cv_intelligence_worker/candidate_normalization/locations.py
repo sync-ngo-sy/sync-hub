@@ -10,12 +10,9 @@ from ..normalization_constants import (
     COUNTRY_ALIASES,
     DATE_FRAGMENT_RE,
     GEO_ACRONYMS,
-    IMPLICIT_COUNTRY_BY_CITY,
     LOCATION_CONNECTOR_TOKENS,
     LOCATION_SEGMENT_PATTERN,
     LOCATION_WORD_RE,
-    ROLE_HINT_RE,
-    WORK_EXPERIENCE_TITLE_RE,
 )
 from ..utils import compact_whitespace, slugify
 
@@ -71,8 +68,6 @@ def _is_location_segment(segment: str) -> bool:
     lowered = cleaned.lower()
     if any(phrase in lowered for phrase in BLOCKED_LOCATION_PHRASES):
         return False
-    if ROLE_HINT_RE.search(cleaned) or WORK_EXPERIENCE_TITLE_RE.search(cleaned):
-        return False
     words = LOCATION_WORD_RE.findall(cleaned)
     if not words or len(words) > 5:
         return False
@@ -106,13 +101,6 @@ def _canonicalize_segments(segments: list[str]) -> list[str]:
     return canonical_segments
 
 
-def _with_inferred_country(segments: list[str]) -> list[str]:
-    if len(segments) != 1:
-        return segments
-    inferred_country = IMPLICIT_COUNTRY_BY_CITY.get(slugify(segments[0]))
-    return [*segments, inferred_country] if inferred_country else segments
-
-
 def normalize_location(value: object) -> str:
     if not isinstance(value, str):
         return ""
@@ -123,4 +111,4 @@ def normalize_location(value: object) -> str:
     if not segments or len(segments) > MAX_LOCATION_SEGMENTS:
         return ""
     canonical_segments = _canonicalize_segments(segments)
-    return ", ".join(_with_inferred_country(canonical_segments))
+    return ", ".join(canonical_segments)

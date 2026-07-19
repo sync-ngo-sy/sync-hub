@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 from cv_intelligence_worker.candidate_normalization import (
-    count_work_like_experience_entries,
     experience_years_from_entries,
 )
 from cv_intelligence_worker.schema import ExperienceEntry
@@ -24,14 +23,6 @@ def test_overlapping_experience_ranges_are_counted_once() -> None:
     ]
 
     assert experience_years_from_entries(entries) == 3.0
-
-
-def test_generic_experience_heading_is_not_a_work_entry() -> None:
-    entries = [ExperienceEntry(company="", title="Work Experience", start_date="2020", end_date="2024")]
-
-    assert count_work_like_experience_entries(entries) == 0
-
-
 def test_present_date_uses_explicit_reference_time() -> None:
     entries = [
         ExperienceEntry(

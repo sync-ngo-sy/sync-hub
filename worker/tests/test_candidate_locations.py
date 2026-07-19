@@ -6,7 +6,7 @@ from cv_intelligence_worker.candidate_normalization import normalize_location
 @pytest.mark.parametrize(
     ("raw_location", "expected"),
     [
-        ("Damscus", "Damascus, Syria"),
+        ("Damscus", "Damascus"),
         ("Damascus syria", "Damascus, Syria"),
         ("Damascus, syria", "Damascus, Syria"),
         ("Dubai, UAE", "Dubai, United Arab Emirates"),

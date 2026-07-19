@@ -11,8 +11,7 @@ from ..normalization_constants import (
     SKILL_PHRASE_ALIASES,
     SKILL_ROLE_ONLY_RE,
 )
-from ..schema import CandidateProfile
-from ..utils import compact_whitespace, dedupe_keep_order, skill_slugify
+from ..utils import compact_whitespace, skill_slugify
 
 
 LEADING_BULLET_RE = re.compile(r"^[▪•●◦\-*]+\s*")
@@ -100,24 +99,3 @@ def canonical_skill(value: object) -> str:
     if normalized.isupper() and len(normalized) <= MAX_ACRONYM_LENGTH:
         return normalized
     return normalized
-
-
-def infer_additional_skills(profile: CandidateProfile) -> list[str]:
-    corpus = "\n".join(
-        compact_whitespace(part)
-        for part in (
-            profile.current_title,
-            profile.headline,
-            profile.summary,
-            profile.raw_text,
-            " ".join(entry.title for entry in profile.experience),
-            " ".join(project.name for project in profile.projects),
-        )
-        if isinstance(part, str) and part.strip()
-    ).lower()
-    inferred: list[str] = []
-    for alias, canonical in sorted(SKILL_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
-        expression = re.compile(rf"(^|[^a-z0-9+#.]){re.escape(alias.lower())}([^a-z0-9+#.]|$)")
-        if expression.search(corpus):
-            inferred.append(canonical)
-    return dedupe_keep_order(inferred)

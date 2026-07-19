@@ -38,8 +38,6 @@ def build_job_family_system_prompt() -> str:
 def build_job_family_prompt(profile: CandidateProfile) -> dict[str, Any]:
     return {
         "taxonomy_version": JOB_FAMILY_TAXONOMY_VERSION,
-        "deterministic_job_family": profile.metadata.get("job_family"),
-        "deterministic_confidence": profile.metadata.get("job_family_confidence"),
         "candidate_profile": {
             "current_title": profile.current_title,
             "headline": profile.headline,

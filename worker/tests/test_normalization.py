@@ -1,189 +1,127 @@
 from __future__ import annotations
 
-import unittest
+from datetime import datetime, timezone
 
 from cv_intelligence_worker.normalization import normalize_location, normalize_profile
-from cv_intelligence_worker.schema import CandidateProfile, EducationEntry, ExperienceEntry
+from cv_intelligence_worker.schema import CandidateProfile, ExperienceEntry
 
 
-class NormalizationTests(unittest.TestCase):
-    def _base_profile(self, **overrides: object) -> CandidateProfile:
-        payload = {
-            "tenant_id": "tenant-1",
-            "candidate_id": "candidate-1",
-            "source_document_id": "doc-1",
-            "source_sha256": "sha-1",
-            "name": "Candidate",
-            "current_title": "",
-            "headline": "",
-            "location": "Damascus, Syria",
-            "email": "candidate@example.com",
-            "phone": "",
-            "links": [],
-            "years_experience": 0.0,
-            "seniority": "unclassified",
-            "role_tags": [],
-            "skills": [],
-            "skill_aliases": {},
-            "experience": [],
-            "education": [],
-            "projects": [],
-            "languages": [],
-            "certifications": [],
-            "summary": "",
-            "raw_text": "",
-            "metadata": {},
-            "confidence": 0.8,
-            "missing_fields": [],
-            "parse_warnings": [],
-        }
-        payload.update(overrides)
-        return CandidateProfile(**payload)
+def _profile(**overrides: object) -> CandidateProfile:
+    payload = {
+        "tenant_id": "tenant-1",
+        "candidate_id": "candidate-1",
+        "source_document_id": "doc-1",
+        "source_sha256": "sha-1",
+        "name": "Candidate",
+        "current_title": "Backend Engineer",
+        "headline": "Backend Engineer",
+        "location": "Damascus, Syria",
+        "email": "candidate@example.com",
+        "seniority": "mid",
+        "role_tags": ["backend"],
+        "skills": ["Python"],
+    }
+    payload.update(overrides)
+    return CandidateProfile(**payload)
 
-    def test_normalize_profile_prefers_experience_title_over_location(self) -> None:
-        profile = self._base_profile(
-            current_title="Damascus, Syria",
-            headline="Frontend Developer with 3+ years of experience building production dashboards",
-            years_experience=10.0,
-            seniority="Senior",
-            skills=["React", "Next.js", "TypeScript"],
-            experience=[
-                ExperienceEntry(company="Asmartech", title="Front-End Developer", start_date="2024", end_date="Present"),
-            ],
-            summary="Frontend developer with React and Next.js experience.",
+
+def test_normalization_preserves_explicit_profile_classification() -> None:
+    profile = _profile(
+        current_title="  Principal Platform Engineer  ",
+        headline="  Platform Engineering  ",
+        seniority="staff-plus",
+        role_tags=["Platform", "platform", "Backend"],
+    )
+
+    normalized = normalize_profile(profile)
+
+    assert normalized.current_title == "Principal Platform Engineer"
+    assert normalized.headline == "Platform Engineering"
+    assert normalized.seniority == "staff-plus"
+    assert normalized.role_tags == ["platform", "backend"]
+
+
+def test_normalization_does_not_infer_profile_facts_from_raw_text() -> None:
+    profile = _profile(
+        current_title="",
+        headline="",
+        seniority="unclassified",
+        role_tags=[],
+        skills=[],
+        raw_text="Senior Flutter Developer using Firebase, React, Docker, and Kubernetes.",
+    )
+
+    normalized = normalize_profile(profile)
+
+    assert normalized.current_title == ""
+    assert normalized.headline == ""
+    assert normalized.seniority == "unclassified"
+    assert normalized.role_tags == []
+    assert normalized.skills == []
+
+
+def test_normalization_calculates_years_from_structured_dates() -> None:
+    profile = _profile(
+        years_experience=20,
+        experience=[
+            ExperienceEntry(company="First", title="Engineer", start_date="2020-01", end_date="2021-12"),
+            ExperienceEntry(company="Second", title="Engineer", start_date="2021-01", end_date="2022-12"),
+        ],
+    )
+
+    normalized = normalize_profile(
+        profile,
+        as_of=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    )
+
+    assert normalized.years_experience == 3.0
+
+
+def test_normalization_uses_validated_years_when_roles_have_no_dates() -> None:
+    normalized = normalize_profile(_profile(years_experience=6.5, experience=[]))
+
+    assert normalized.years_experience == 6.5
+
+
+def test_normalization_does_not_copy_location_from_employment() -> None:
+    profile = _profile(
+        location="",
+        experience=[
+            ExperienceEntry(
+                company="Example",
+                title="Engineer",
+                location="Montreal, Canada",
+            )
+        ],
+    )
+
+    normalized = normalize_profile(profile)
+
+    assert normalized.location == ""
+    assert normalized.experience[0].location == "Montreal, Canada"
+
+
+def test_normalization_marks_job_family_unclassified_until_model_classifies_it() -> None:
+    normalized = normalize_profile(
+        _profile(
+            metadata={
+                "job_family": "Backend Engineering",
+                "job_family_confidence": 0.95,
+                "job_family_source": "rules",
+            }
         )
+    )
 
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.current_title, "Front-End Developer")
-        self.assertEqual(normalized.role_tags[0], "frontend")
-        self.assertEqual(normalized.seniority, "mid")
-        self.assertLessEqual(normalized.years_experience, 5.0)
-
-    def test_normalize_profile_prioritizes_mobile_role_for_flutter_candidates(self) -> None:
-        profile = self._base_profile(
-            current_title="Flutter Developer",
-            headline="Flutter Developer and UI/UX Designer",
-            seniority="Mid-Level",
-            skills=["React", "Firebase", "UI/UX"],
-            experience=[
-                ExperienceEntry(company="Devoura", title="Flutter Developer", start_date="2023", end_date="Present"),
-            ],
-            summary="Built iOS and Android apps with Flutter and launched to the App Store.",
-            raw_text="Flutter Developer building mobile apps for iOS and Android with Firebase.",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.role_tags[0], "mobile")
-        self.assertIn("frontend", normalized.role_tags)
-        self.assertIn("Flutter", normalized.skills)
-        self.assertEqual(normalized.seniority, "mid")
-
-    def test_normalize_profile_security_focus_beats_infrastructure_noise(self) -> None:
-        profile = self._base_profile(
-            current_title="Cybersecurity Specialist",
-            headline="Cloud Security Engineer and Cybersecurity Engineer",
-            skills=["AWS", "Docker", "Kubernetes", "SIEM", "Splunk"],
-            summary="Threat detection, vulnerability management, and securing cloud infrastructure.",
-            raw_text="Cybersecurity specialist skilled in SIEM, threat detection, and vulnerability assessment.",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.role_tags[0], "security")
-        self.assertNotEqual(normalized.role_tags[0], "devops")
-
-    def test_normalize_profile_rejects_impossible_staff_plus_without_experience_signal(self) -> None:
-        profile = self._base_profile(
-            current_title="AI & Backend Engineer",
-            headline="AI & Backend Engineer",
-            seniority="staff-plus",
-            years_experience=0.0,
-            skills=["Python", "Laravel", "TensorFlow"],
-            summary="Software engineer focused on backend systems and AI/ML, with experience building scalable applications and clean architectures.",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.seniority, "unclassified")
-
-    def test_normalize_profile_keeps_explicit_senior_when_title_confirms_it(self) -> None:
-        profile = self._base_profile(
-            current_title="Senior Backend Engineer",
-            headline="Senior Backend Engineer",
-            seniority="senior",
-            years_experience=0.0,
-            skills=["Node.js", "GraphQL"],
-            summary="Backend engineer working on APIs and platform services.",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.seniority, "senior")
-
-    def test_normalize_profile_ignores_inflated_years_when_education_overlaps_work_history(self) -> None:
-        profile = self._base_profile(
-            current_title="Front-End Developer with SEO expertise in Information Technology (IT)",
-            headline="Front-End Developer with SEO expertise in Information Technology (IT)",
-            years_experience=10.0,
-            seniority="senior",
-            experience=[
-                ExperienceEntry(
-                    company="Montreal's Leading SEO & Digital Marketing Agency",
-                    title="SEO Developer, Growth-Hacker",
-                    start_date="08/2024",
-                    end_date="Present",
-                    location="Montreal, Canada",
-                ),
-                ExperienceEntry(
-                    company="CREMEDIA GLOBAL - MARKETING AGENCY",
-                    title="Web Developer",
-                    start_date="22/08/2021",
-                    end_date="09/2021",
-                    location="Damascus, Syria",
-                ),
-                ExperienceEntry(
-                    company="CREMEDIA GLOBAL - MARKETING AGENCY",
-                    title="Project Leadership",
-                    start_date="2018-09",
-                    end_date="2023-09",
-                    location="Damascus, Syria",
-                ),
-            ],
-            education=[
-                EducationEntry(
-                    institution="Arab International University",
-                    degree="Bachelor's Degree in Information Technology Engineer - Artificial Intelligence",
-                    start_date="2018-09",
-                    end_date="2023-09",
-                ),
-            ],
-            summary="Front-end developer with over three years of experience building user-friendly websites.",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertLessEqual(normalized.years_experience, 6.0)
-        self.assertNotEqual(normalized.seniority, "senior")
-
-    def test_normalize_profile_discards_invalid_location_terms(self) -> None:
-        profile = self._base_profile(
-            location="ERP, CRM",
-            current_title="Full Stack Developer",
-            headline="Full Stack Developer",
-        )
-
-        normalized = normalize_profile(profile)
-
-        self.assertEqual(normalized.location, "")
-
-    def test_normalize_location_canonicalizes_damascus_variants(self) -> None:
-        self.assertEqual(normalize_location("Damscus"), "Damascus, Syria")
-        self.assertEqual(normalize_location("Damascus syria"), "Damascus, Syria")
-        self.assertEqual(normalize_location("Damascus, syria"), "Damascus, Syria")
-        self.assertEqual(normalize_location("Damascus"), "Damascus, Syria")
+    assert normalized.metadata["job_family"] == "Unclassified"
+    assert normalized.metadata["job_family_confidence"] == 0.0
+    assert normalized.metadata["job_family_source"] == "unclassified"
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_normalize_location_canonicalizes_without_inferred_country() -> None:
+    assert normalize_location("Damscus") == "Damascus"
+    assert normalize_location("Damascus syria") == "Damascus, Syria"
+    assert normalize_location("Damascus, syria") == "Damascus, Syria"
+
+
+def test_normalize_location_discards_non_geographic_values() -> None:
+    assert normalize_location("ERP, CRM") == ""

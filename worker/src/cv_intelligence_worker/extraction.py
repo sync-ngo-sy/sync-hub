@@ -8,9 +8,7 @@ from .candidate_extraction import (
     build_candidate_system_prompt,
     build_job_family_prompt,
     build_job_family_system_prompt,
-    number_value,
     profile_from_extraction,
-    string_value,
 )
 from .config import WorkerConfig
 from .llm import LLMClient, LLMResponseError
@@ -29,16 +27,12 @@ def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateP
     matched_skills = dedupe_keep_order(value.matched_skills)
     if not set(matched_role_tags).issubset(profile.role_tags) or not set(matched_skills).issubset(profile.skills):
         return None
-    deterministic_family = string_value(profile.metadata.get("job_family")) or "Unclassified"
-    deterministic_confidence = number_value(profile.metadata.get("job_family_confidence"))
     auto_accept_confidence = max(config.job_family_min_confidence, min(1.0, config.job_family_auto_accept_confidence))
     review_reasons: list[str] = []
     if confidence < auto_accept_confidence:
         review_reasons.append("llm_confidence_below_auto_accept_threshold")
     if family == "Unclassified":
         review_reasons.append("llm_returned_unclassified")
-    if family != deterministic_family and deterministic_confidence >= 0.78 and confidence < 0.9:
-        review_reasons.append("llm_disagrees_with_high_confidence_rules")
     review_status = "needs_review" if review_reasons else "auto_accepted"
     return {
         "job_family": family,
@@ -47,8 +41,6 @@ def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateP
         "job_family_source": "llm",
         "job_family_review_status": review_status,
         "job_family_review_reason": ",".join(review_reasons) if review_reasons else "accepted",
-        "job_family_rules_baseline": deterministic_family,
-        "job_family_rules_confidence": deterministic_confidence,
         "job_family_rationale": compact_whitespace(value.rationale)[:500],
         "job_family_matched_role_tags": matched_role_tags,
         "job_family_matched_skills": matched_skills,
@@ -59,7 +51,7 @@ def _validated_job_family_result(value: JobFamilyExtraction, profile: CandidateP
 def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig, *, client: LLMClient | None = None) -> CandidateProfile:
     provider = config.job_family_provider.lower()
     model = config.job_family_model or config.extraction_model
-    if provider in {"rules", "deterministic", "off", "disabled"} or not model:
+    if provider in {"off", "disabled"} or not model:
         return profile
 
     try:
@@ -80,8 +72,6 @@ def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig
                     **profile.metadata,
                     "job_family_review_status": "needs_review",
                     "job_family_review_reason": "llm_rejected_invalid_label_or_low_confidence",
-                    "job_family_rules_baseline": profile.metadata.get("job_family"),
-                    "job_family_rules_confidence": profile.metadata.get("job_family_confidence"),
                     "job_family_llm_status": "rejected",
                     "job_family_llm_rejection_reason": "invalid_label_or_low_confidence",
                 },
@@ -98,10 +88,11 @@ def classify_job_family_with_llm(profile: CandidateProfile, config: WorkerConfig
             profile,
             metadata={
                 **profile.metadata,
+                "job_family": "Unclassified",
+                "job_family_confidence": 0.0,
+                "job_family_source": "unclassified",
                 "job_family_review_status": "needs_review",
-                "job_family_review_reason": "llm_failed_rules_fallback",
-                "job_family_rules_baseline": profile.metadata.get("job_family"),
-                "job_family_rules_confidence": profile.metadata.get("job_family_confidence"),
+                "job_family_review_reason": "llm_failed_unclassified",
                 "job_family_llm_status": "failed",
                 "job_family_llm_error": format_error_message(exc)[:300],
             },

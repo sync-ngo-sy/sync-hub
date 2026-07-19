@@ -4,14 +4,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from ..normalization_constants import (
-    DATE_RANGE_PATTERN,
-    MAX_REASONABLE_YEARS_EXPERIENCE,
-    YEARS_PATTERN,
-)
 from ..schema import CandidateProfile, ExperienceEntry
 from ..utils import compact_whitespace
-from .titles import count_work_like_experience_entries, is_countable_experience_entry
 
 
 MONTH_NAME_TO_NUMBER = {
@@ -41,20 +35,8 @@ MONTH_NAME_TO_NUMBER = {
     "december": 12,
 }
 
-NUMBER_WORDS = {
-    "one": 1.0,
-    "two": 2.0,
-    "three": 3.0,
-    "four": 4.0,
-    "five": 5.0,
-    "six": 6.0,
-    "seven": 7.0,
-    "eight": 8.0,
-    "nine": 9.0,
-    "ten": 10.0,
-}
-
 MIN_EXPERIENCE_YEAR = 1980
+MAX_EXPERIENCE_YEARS = 80.0
 
 
 @dataclass(frozen=True)
@@ -128,19 +110,6 @@ def _month_index_from_fragment(
     return None
 
 
-def has_dated_education_entries(
-    profile: CandidateProfile,
-    *,
-    as_of: datetime | None = None,
-) -> bool:
-    reference_time = _resolve_as_of(as_of)
-    for entry in profile.education:
-        dates = (entry.start_date, entry.end_date)
-        if any(_year_from_fragment(value or "", as_of=reference_time) for value in dates):
-            return True
-    return False
-
-
 def experience_years_from_entries(
     entries: list[ExperienceEntry],
     *,
@@ -148,8 +117,7 @@ def experience_years_from_entries(
 ) -> float:
     reference_time = _resolve_as_of(as_of)
     ranges: list[tuple[int, int]] = []
-    work_like_entries = [entry for entry in entries if is_countable_experience_entry(entry)]
-    for entry in work_like_entries or entries:
+    for entry in entries:
         start_month = _month_index_from_fragment(
             entry.start_date or "",
             as_of=reference_time,
@@ -164,22 +132,6 @@ def experience_years_from_entries(
         if start_month is not None and end_month is not None and end_month >= start_month:
             ranges.append((start_month, end_month))
             continue
-        merged = f"{entry.start_date or ''} - {entry.end_date or ''} {entry.description}"
-        match = DATE_RANGE_PATTERN.search(merged)
-        if not match:
-            continue
-        start_month = _month_index_from_fragment(
-            match.group("start"),
-            as_of=reference_time,
-            default_month=1,
-        )
-        end_month = _month_index_from_fragment(
-            match.group("end"),
-            as_of=reference_time,
-            default_month=12,
-        )
-        if start_month is not None and end_month is not None and end_month >= start_month:
-            ranges.append((start_month, end_month))
     if not ranges:
         return 0.0
     ranges.sort()
@@ -194,32 +146,13 @@ def experience_years_from_entries(
     return round(total_months / 12.0, 2)
 
 
-def infer_years_experience(
+def resolve_years_experience(
     profile: CandidateProfile,
     *,
     as_of: datetime | None = None,
 ) -> float:
     reference_time = _resolve_as_of(as_of)
-    explicit_years = profile.years_experience if profile.years_experience > 0 else 0.0
     range_years = experience_years_from_entries(profile.experience, as_of=reference_time)
-    haystack = f"{profile.summary}\n{profile.headline}\n{profile.raw_text}"
-    regex_match = YEARS_PATTERN.search(haystack.lower())
-    regex_years = 0.0
-    if regex_match:
-        count_text = regex_match.group("count").lower()
-        if count_text.isdigit():
-            regex_years = float(count_text)
-        else:
-            regex_years = NUMBER_WORDS.get(count_text, 0.0)
-    valid_experience_count = count_work_like_experience_entries(profile.experience)
-    has_dated_education = has_dated_education_entries(profile, as_of=reference_time)
-
-    candidates = [value for value in (range_years, regex_years) if value > 0]
-    if explicit_years > 0:
-        reference = max(candidates) if candidates else 0.0
-        tolerance = 1.0 if valid_experience_count >= 2 else 5.0
-        if has_dated_education:
-            tolerance = min(tolerance, 1.0)
-        if reference == 0.0 or explicit_years <= reference + tolerance:
-            candidates.append(explicit_years)
-    return min(MAX_REASONABLE_YEARS_EXPERIENCE, max(candidates, default=0.0))
+    if range_years > 0:
+        return min(MAX_EXPERIENCE_YEARS, range_years)
+    return min(MAX_EXPERIENCE_YEARS, max(0.0, profile.years_experience))
