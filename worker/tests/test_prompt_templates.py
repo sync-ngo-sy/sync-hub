@@ -24,9 +24,9 @@ def test_yaml_prompts_preserve_reviewed_content() -> None:
         "skill_classification": SkillClassifier.system_prompt(),
     }
 
-    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "a84cb60c8c80bbbd55ff4cb489c36ebf0ce682ca818726e8656c5fb64c87832e"
+    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "d122d061498451921936f17e8219f6e9a28fa8028bf0d500a86e336c1e640bcc"
     assert hashlib.sha256(prompts["job_family"].encode()).hexdigest() == "73773792339e97d46f6b8b24fc22d99333ebb8d3687ff439ee7d8ca48b7472be"
-    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "f5a8cb06c88dee4804afc3bf9bb830400688ec32cc95c925cd36329e66eae03d"
+    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "eab797b7e33cf2b1285d0d6f117fad8d1c2f26a27da98407917d6ef5f4c4f4f7"
     assert (
         hashlib.sha256(prompts["draft_validation"].encode()).hexdigest()
         == "4dec3b30129e3bc87e207461e7418cfd6b9ef9f4881fb269a255f29bad36c28f"
@@ -44,6 +44,7 @@ def test_candidate_prompt_defines_safety_and_missing_value_contracts() -> None:
     assert "Use the schema's property names exactly" in prompt
     assert "even when its value is null or []" in prompt
     assert "without double-counting overlapping roles" in prompt
+    assert "not candidate quality or suitability" in prompt
 
 
 def test_job_family_prompt_requires_profile_backed_evidence() -> None:

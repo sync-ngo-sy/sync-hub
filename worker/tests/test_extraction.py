@@ -53,6 +53,7 @@ class ExtractionTests(unittest.TestCase):
             "education": [],
             "projects": [],
             "summary": "Senior backend engineer building Python services.",
+            "confidence": 0.9,
         }
         payload.update(overrides)
         return CandidateExtraction.model_validate(payload)
@@ -118,6 +119,10 @@ class ExtractionTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self._extraction(years_experience=81)
 
+    def test_out_of_range_extraction_confidence_is_rejected_at_runtime(self) -> None:
+        with self.assertRaises(ValidationError):
+            self._extraction(confidence=1.1)
+
     def test_email_identity_is_normalized_for_candidate_id(self) -> None:
         first_source = self._source("doc-email-a")
         second_source = self._source("doc-email-b")
@@ -181,6 +186,7 @@ class ExtractionTests(unittest.TestCase):
 
         self.assertEqual(profile.name, "Jane Doe")
         self.assertIn("contact", profile.missing_fields)
+        self.assertEqual(profile.confidence, 0.9)
 
     def test_candidate_prompt_passes_untrusted_cv_text_without_static_reclassification(self) -> None:
         source = self._source("doc-prompt")

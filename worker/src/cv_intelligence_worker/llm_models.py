@@ -63,6 +63,7 @@ class CandidateExtraction(LLMOutput):
     education: list[ExtractedEducation]
     projects: list[ExtractedProject]
     summary: str | None
+    confidence: Annotated[float, Field(ge=0, le=1)]
 
 
 def _enum_member_name(label: str) -> str:

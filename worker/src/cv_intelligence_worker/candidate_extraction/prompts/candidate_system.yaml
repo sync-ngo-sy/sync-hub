@@ -52,6 +52,7 @@ template: |-
   - years_experience should be estimated from experience dates only, without double-counting overlapping roles.
   - seniority should be inferred from role titles and scope only when supported by the CV.
   - summary must be a concise factual synthesis of the source, not an evaluation or recommendation.
+  - confidence must represent extraction certainty from 0 to 1, not candidate quality or suitability.
 
   {response_specific_rules}Output schema:
   {output_schema}

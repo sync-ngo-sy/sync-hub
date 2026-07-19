@@ -30,6 +30,7 @@ def candidate_extraction(**overrides: object) -> CandidateExtraction:
         "education": [],
         "projects": [],
         "summary": None,
+        "confidence": 0.9,
     }
     values.update(overrides)
     return CandidateExtraction.model_validate(values)

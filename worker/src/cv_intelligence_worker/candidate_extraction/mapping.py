@@ -6,7 +6,7 @@ from ..llm_models import CandidateExtraction, ExtractedEducation, ExtractedExper
 from ..normalization import normalize_location, normalize_profile
 from ..schema import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
 from ..utils import compact_whitespace, dedupe_keep_order, normalize_email, stable_uuid
-from .quality import calculate_profile_confidence, missing_profile_fields
+from .quality import missing_profile_fields
 
 
 def profile_from_extraction(
@@ -43,7 +43,7 @@ def profile_from_extraction(
             summary=string_value(extracted.summary),
             raw_text=document_text.raw_text,
             metadata={"extraction_source": "llm"},
-            confidence=0.0,
+            confidence=extracted.confidence,
             missing_fields=[],
             parse_warnings=list(document_text.warnings),
         )
@@ -51,7 +51,6 @@ def profile_from_extraction(
     profile = replace(
         profile,
         missing_fields=missing_profile_fields(profile),
-        confidence=calculate_profile_confidence(profile, document_text),
     )
     _validate_profile(profile)
     return profile

@@ -29,6 +29,7 @@ def realtime_extraction(**overrides: Any) -> RealtimeCandidateExtraction:
         "education": [],
         "projects": [],
         "summary": "Backend engineer.",
+        "confidence": 0.9,
         "field_confidence": {"name": 95},
     }
     values.update(overrides)

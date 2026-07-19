@@ -6,7 +6,7 @@ from .prompts import (
     build_job_family_system_prompt,
     build_realtime_candidate_system_prompt,
 )
-from .quality import calculate_profile_confidence, missing_profile_fields
+from .quality import missing_profile_fields
 
 __all__ = [
     "build_candidate_prompt",
@@ -14,7 +14,6 @@ __all__ = [
     "build_job_family_prompt",
     "build_job_family_system_prompt",
     "build_realtime_candidate_system_prompt",
-    "calculate_profile_confidence",
     "candidate_id_for_profile",
     "missing_profile_fields",
     "profile_from_extraction",
