@@ -17,6 +17,7 @@ from .helpers import (
     format_bytes,
     json_payload_size,
 )
+from .manatal import ManatalRepository
 from .public_applications import PublicApplicationRepository
 from .rows import build_bundle_rows
 from .storage import SupabaseStorageClient
@@ -51,6 +52,12 @@ class SupabaseClient:
         )
         self._public_applications = PublicApplicationRepository(self._request)
         self._candidate_drafts = CandidateDraftRepository(self._request)
+        self._manatal = ManatalRepository(
+            config,
+            request=self._request,
+            select_rows=self._select_in,
+            upsert_many=self.upsert_many,
+        )
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         return self._transport.headers(extra)
@@ -97,81 +104,29 @@ class SupabaseClient:
         return rows
 
     def manatal_sync_states(self, tenant_id: str, manatal_candidate_ids: list[str]) -> dict[str, dict[str, Any]]:
-        rows = self._select_in(
-            self.config.manatal_sync_state_table,
-            tenant_id,
-            "manatal_candidate_id",
-            manatal_candidate_ids,
-            "tenant_id,manatal_candidate_id,manatal_updated_at,manatal_full_name,manatal_email,resume_url,resume_sha256,source_document_id,sync_status,last_synced_at,error_message,metadata_json",
-        )
-        return {
-            str(row.get("manatal_candidate_id")): row
-            for row in rows
-            if row.get("manatal_candidate_id")
-        }
+        return self._manatal.sync_states(tenant_id, manatal_candidate_ids)
 
     def upsert_manatal_sync_states(self, rows: list[dict[str, Any]]) -> int:
-        return self.upsert_many(
-            self.config.manatal_sync_state_table,
-            rows,
-            "tenant_id,manatal_candidate_id",
-        )
+        return self._manatal.upsert_sync_states(rows)
 
     def pending_manatal_candidate_ids(self, tenant_id: str, limit: int = 100) -> list[str]:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "sync_status": "eq.pending",
-                "select": "manatal_candidate_id",
-                "order": "updated_at.asc",
-                "limit": str(max(1, limit)),
-            }
-        )
-        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
-        if not isinstance(result, list):
-            return []
-        return [
-            str(row.get("manatal_candidate_id"))
-            for row in result
-            if isinstance(row, dict) and row.get("manatal_candidate_id")
-        ]
+        return self._manatal.pending_candidate_ids(tenant_id, limit)
 
     def manatal_original_source_rows(self, tenant_id: str, *, offset: int, limit: int) -> list[dict[str, Any]]:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "source_document_id": "not.is.null",
-                "select": "tenant_id,manatal_candidate_id,manatal_full_name,manatal_email,resume_url,source_document_id,resume_sha256,metadata_json",
-                "order": "updated_at.asc",
-                "limit": str(max(1, limit)),
-                "offset": str(max(0, offset)),
-            }
+        return self._manatal.original_source_rows(
+            tenant_id,
+            offset=offset,
+            limit=limit,
         )
-        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
-        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
 
     def source_documents_by_ids(self, tenant_id: str, source_document_ids: list[str]) -> dict[str, dict[str, Any]]:
-        rows = self._select_in(
-            "source_documents",
-            tenant_id,
-            "id",
-            source_document_ids,
-            "id,tenant_id,candidate_id,original_filename,mime_type,source_uri,storage_path,metadata_json",
-        )
-        return {str(row.get("id")): row for row in rows if row.get("id")}
+        return self._manatal.source_documents(tenant_id, source_document_ids)
 
     def update_source_document(self, tenant_id: str, source_document_id: str, values: dict[str, Any]) -> None:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "id": f"eq.{source_document_id}",
-            }
-        )
-        self._request(
-            "PATCH",
-            f"/rest/v1/source_documents?{query}",
-            data=values,
-            headers={"Prefer": "return=minimal"},
+        self._manatal.update_source_document(
+            tenant_id,
+            source_document_id,
+            values,
         )
 
     def _count_table(self, table: str, tenant_id: str | None = None) -> int:
