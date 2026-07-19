@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .schema import CandidateProfile, ChunkRecord
-from .utils import approximate_token_count, stable_uuid
+from ..schema import CandidateProfile, ChunkRecord
+from ..utils import approximate_token_count, stable_uuid
 
 
 MAX_TOKENS = 450
