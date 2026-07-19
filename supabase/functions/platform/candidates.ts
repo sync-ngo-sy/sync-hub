@@ -16,7 +16,12 @@ import { getCurrentUserId } from "../_shared/auth.ts";
 export async function getCandidateDetail(
   supabase: ReturnType<typeof createAuthedClient>,
   candidateId: string,
+  tenantIds: string[],
 ) {
+  if (!tenantIds.length) {
+    return null;
+  }
+
   const [dossier, chunks] = await Promise.all([
     supabase
       .from("candidate_dossier_v1")
@@ -24,11 +29,13 @@ export async function getCandidateDetail(
         "profile_json, timeline_json, skill_matrix_json, confidence, missing_fields, parse_warnings, location, summary_short, long_summary",
       )
       .eq("candidate_id", candidateId)
+      .in("tenant_id", tenantIds)
       .maybeSingle(),
     supabase
       .from("candidate_chunks")
       .select("id, chunk_type, text")
       .eq("candidate_id", candidateId)
+      .in("tenant_id", tenantIds)
       .eq("is_active", true)
       .order("chunk_index", { ascending: true })
       .limit(6),
@@ -64,6 +71,7 @@ export async function getCandidateDetail(
     `,
     )
     .eq("candidate_id", candidateId)
+    .in("tenant_id", tenantIds)
     .maybeSingle();
 
   if (candidateProfileResult.error) {
@@ -249,9 +257,13 @@ export async function getParsingDocument(
 export async function getOriginalDocumentUrl(
   supabase: ReturnType<typeof createAuthedClient>,
   body: JsonRecord,
-  _tenantIds: string[],
+  tenantIds: string[],
 ) {
   await getCurrentUserId(supabase);
+
+  if (!tenantIds.length) {
+    throw new Error("Original CV is not available in the current scope.");
+  }
 
   const documentId = asString(body.document_id);
   const candidateId = asString(body.candidate_id);
@@ -264,7 +276,8 @@ export async function getOriginalDocumentUrl(
     .from("source_documents")
     .select(
       "id, tenant_id, candidate_id, source_uri, storage_path, original_filename",
-    );
+    )
+    .in("tenant_id", tenantIds);
 
   if (documentId) {
     query = query.eq("id", documentId);

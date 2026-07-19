@@ -12,7 +12,8 @@ const columns = [
 ]
 
 function csvCell(value: string | number): string {
-  const text = String(value)
+  const rawText = String(value)
+  const text = /^[\t\r ]*[=+\-@]/.test(rawText) ? `'${rawText}` : rawText
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 

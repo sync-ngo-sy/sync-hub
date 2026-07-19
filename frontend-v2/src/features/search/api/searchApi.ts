@@ -149,7 +149,7 @@ export function parseSearchResponse(raw: unknown): SearchResponse {
     })),
     nextCursor: wire.next_cursor,
     meta: {
-      count: wire.meta.count,
+      pageCount: wire.meta.count,
       rankVersion: wire.meta.rank_version,
       intentSource: wire.meta.intent_source,
     },

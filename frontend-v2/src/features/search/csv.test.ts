@@ -20,4 +20,21 @@ describe('search CSV export', () => {
       'Name,Title,Location,Years Experience,Seniority,Primary Role,Match Rate,Top Skills\r\n"Hassan, Maya","Senior ""Platform"" Engineer","Cairo\nEgypt",9,senior,platform-engineering,92%,"Kubernetes, TypeScript"',
     )
   })
+
+  it('neutralizes spreadsheet formulas in candidate-controlled cells', () => {
+    expect(
+      toCsv([
+        {
+          name: '=HYPERLINK("https://example.test")',
+          currentTitle: '+cmd',
+          location: '@remote',
+          yearsExperience: 9,
+          seniority: '-senior',
+          primaryRole: 'platform-engineering',
+          matchRate: 92,
+          topSkills: ['Kubernetes'],
+        },
+      ]),
+    ).toContain('"\'=HYPERLINK(""https://example.test"")",\'+cmd,\'@remote,9,\'-senior')
+  })
 })

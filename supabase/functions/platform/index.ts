@@ -140,6 +140,7 @@ Deno.serve(async (req) => {
         const result = await getCandidateDetail(
           supabase,
           asString(body.candidate_id) ?? "",
+          tenantIds,
         );
 
         if (!result) {

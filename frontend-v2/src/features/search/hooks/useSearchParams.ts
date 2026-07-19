@@ -19,23 +19,24 @@ const skillsUrlSchema = z.string().transform((value) =>
   ).slice(0, 20),
 )
 
-const positiveIntegerSchema = z.preprocess(
-  (value) => (typeof value === 'string' ? Number.parseInt(value, 10) : value),
-  z.number().int().positive().max(10_000),
-)
+const positiveIntegerSchema = z
+  .string()
+  .regex(/^[1-9]\d*$/)
+  .transform(Number)
+  .pipe(z.number().int().positive().max(10_000))
 
-const pageSizeUrlSchema = z.preprocess(
-  (value) => (typeof value === 'string' ? Number.parseInt(value, 10) : value),
-  z.union([z.literal(20), z.literal(50)]),
-)
+const pageSizeUrlSchema = z
+  .enum(['20', '50'])
+  .transform(Number)
+  .pipe(z.union([z.literal(20), z.literal(50)]))
 
 export const searchUrlStateSchema = z
   .object({
-    q: z.string().catch(''),
+    q: z.string().trim().max(300).catch(''),
     skills: skillsUrlSchema.catch([]),
-    location: z.string().catch(''),
-    seniority: z.string().catch(''),
-    company: z.string().catch(''),
+    location: z.string().trim().max(180).catch(''),
+    seniority: z.string().trim().max(80).catch(''),
+    company: z.string().trim().max(180).catch(''),
     sort: searchSortSchema.catch('matchRate'),
     direction: searchDirectionSchema.catch('desc'),
     page: positiveIntegerSchema.catch(1),

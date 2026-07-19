@@ -139,9 +139,6 @@ export function SearchResultsTable({
     getSortedRowModel: getSortedRowModel(),
     getRowId: (row) => `${row.tenantId}:${row.candidateId}`,
   })
-  const start = (params.page - 1) * params.pageSize + 1
-  const end = start + response.results.length - 1
-
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="flex-row items-center justify-between border-b py-4">
@@ -150,7 +147,7 @@ export function SearchResultsTable({
           <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
             {isFetching
               ? 'Refreshing…'
-              : `${response.meta.count.toLocaleString()} candidates found`}
+              : `${response.meta.pageCount.toLocaleString()} ${response.meta.pageCount === 1 ? 'candidate' : 'candidates'} on this page`}
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -198,9 +195,7 @@ export function SearchResultsTable({
         </Table>
       </CardContent>
       <div className="flex flex-col gap-3 border-t bg-muted/20 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-        <span>
-          Showing {start}–{end} of {response.meta.count.toLocaleString()}
-        </span>
+        <span>Current page sorted by {params.sort.replace(/([A-Z])/g, ' $1').toLowerCase()}</span>
         <div className="flex items-center gap-2">
           <Button
             type="button"

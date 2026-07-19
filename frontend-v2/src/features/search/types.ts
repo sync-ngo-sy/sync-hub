@@ -43,7 +43,7 @@ export const searchResponseSchema = z
     nextCursor: z.number().int().nonnegative().nullable(),
     meta: z
       .object({
-        count: z.number().int().nonnegative(),
+        pageCount: z.number().int().nonnegative(),
         rankVersion: z.string().min(1),
         intentSource: z.enum(['llm', 'explicit']),
       })

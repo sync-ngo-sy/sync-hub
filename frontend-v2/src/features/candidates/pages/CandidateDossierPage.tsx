@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -35,6 +35,12 @@ const tabs: { id: DossierTab; label: string }[] = [
   { id: 'skills', label: 'Skills' },
   { id: 'evidence', label: 'Evidence' },
 ]
+
+const externalProfileLabels: Record<string, string> = {
+  linkedin: 'LinkedIn',
+  github: 'GitHub',
+  portfolio: 'Portfolio',
+}
 
 function initials(name: string): string {
   return name
@@ -77,61 +83,147 @@ function DossierSkeleton() {
 
 function ProfileSummary({ candidate }: { candidate: CandidateDossier }) {
   const summary = candidate.aiProfileSummary ?? candidate.summary
+  const salary = candidate.expectedSalary
+    ? `${candidate.expectedSalary.currency} ${candidate.expectedSalary.amount.toLocaleString()}`
+    : 'Not specified'
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.6fr)]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Grounded profile</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="leading-relaxed text-muted-foreground">
-            {summary || 'No profile summary is available.'}
-          </p>
-          {candidate.aiProfileSummary && candidate.summary !== candidate.aiProfileSummary ? (
-            <p className="border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground">
-              {candidate.summary}
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.6fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Grounded profile</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="leading-relaxed text-muted-foreground">
+              {summary || 'No profile summary is available.'}
             </p>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            {candidate.primarySkills.map((skill) => (
-              <Badge key={skill} variant="secondary">
-                {skill}
-              </Badge>
+            {candidate.aiProfileSummary && candidate.summary !== candidate.aiProfileSummary ? (
+              <p className="border-l border-border pl-3 text-sm leading-relaxed text-muted-foreground">
+                {candidate.summary}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {candidate.primarySkills.map((skill) => (
+                <Badge key={skill} variant="secondary">
+                  {skill}
+                </Badge>
+              ))}
+            </div>
+            {candidate.internalVettingNotes ? (
+              <Alert>
+                <CheckCircle2 aria-hidden="true" />
+                <AlertTitle>Recruiter note</AlertTitle>
+                <AlertDescription>{candidate.internalVettingNotes}</AlertDescription>
+              </Alert>
+            ) : null}
+          </CardContent>
+        </Card>
+        <aside className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1" aria-label="Profile details">
+          <Card size="sm">
+            <CardContent className="space-y-1">
+              <p className="caption-label">Readiness</p>
+              <p className="text-xl font-medium">{candidate.jobReadinessLevel}</p>
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardContent className="space-y-1">
+              <p className="caption-label">Work preference</p>
+              <p className="text-base font-medium">
+                {candidate.preferredWorkMode ?? 'Not specified'}
+              </p>
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardContent className="space-y-1">
+              <p className="caption-label">English</p>
+              <p className="text-base font-medium">
+                {candidate.englishProficiency ?? 'Not specified'}
+              </p>
+            </CardContent>
+          </Card>
+        </aside>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Education</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {candidate.education.map((entry) => (
+              <article key={entry.key}>
+                <h3 className="font-medium">{entry.institution}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {[entry.degree, entry.field].filter(Boolean).join(' · ') ||
+                    'Program not specified'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {[entry.start, entry.end].filter(Boolean).join(' – ') || 'Dates not specified'}
+                </p>
+              </article>
             ))}
-          </div>
-          {candidate.internalVettingNotes ? (
-            <Alert>
-              <CheckCircle2 aria-hidden="true" />
-              <AlertTitle>Recruiter note</AlertTitle>
-              <AlertDescription>{candidate.internalVettingNotes}</AlertDescription>
-            </Alert>
-          ) : null}
-        </CardContent>
-      </Card>
-      <aside className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1" aria-label="Profile details">
-        <Card size="sm">
-          <CardContent className="space-y-1">
-            <p className="caption-label">Readiness</p>
-            <p className="text-xl font-medium">{candidate.jobReadinessLevel}</p>
+            {candidate.education.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No education history was parsed.</p>
+            ) : null}
           </CardContent>
         </Card>
-        <Card size="sm">
-          <CardContent className="space-y-1">
-            <p className="caption-label">Work preference</p>
-            <p className="text-base font-medium">
-              {candidate.preferredWorkMode ?? 'Not specified'}
-            </p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Projects</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {candidate.projects.map((project) => (
+              <article key={project.key}>
+                <h3 className="font-medium">{project.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {project.technologies.map((technology) => (
+                    <Badge key={technology} variant="outline">
+                      {technology}
+                    </Badge>
+                  ))}
+                </div>
+              </article>
+            ))}
+            {candidate.projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No projects were parsed.</p>
+            ) : null}
           </CardContent>
         </Card>
-        <Card size="sm">
-          <CardContent className="space-y-1">
-            <p className="caption-label">English</p>
-            <p className="text-base font-medium">
-              {candidate.englishProficiency ?? 'Not specified'}
-            </p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Preferences and links</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="caption-label">Expected salary</p>
+              <p className="mt-1">{salary}</p>
+            </div>
+            <div>
+              <p className="caption-label">Employment</p>
+              <p className="mt-1">
+                {candidate.employmentTypePreference.length
+                  ? candidate.employmentTypePreference.join(', ').replaceAll('_', ' ')
+                  : 'Not specified'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(candidate.externalProfiles).map(([provider, url]) =>
+                url ? (
+                  <a
+                    key={provider}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {externalProfileLabels[provider] ?? provider}
+                  </a>
+                ) : null,
+              )}
+            </div>
           </CardContent>
         </Card>
-      </aside>
+      </div>
     </div>
   )
 }
@@ -231,8 +323,33 @@ export function CandidateDossierPage() {
   const originalDocument = useOriginalDocumentMutation(candidateId ?? '')
 
   async function openOriginalDocument() {
-    const url = await originalDocument.mutateAsync()
-    window.open(url, '_blank', 'noopener,noreferrer')
+    const target = window.open('about:blank', '_blank')
+    if (target) target.opener = null
+
+    try {
+      const url = await originalDocument.mutateAsync()
+      if (target) target.location.replace(url)
+      else window.location.assign(url)
+    } catch (error) {
+      target?.close()
+      throw error
+    }
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, tabId: DossierTab) {
+    const currentIndex = tabs.findIndex((tab) => tab.id === tabId)
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = tabs.length - 1
+    if (nextIndex === null) return
+
+    event.preventDefault()
+    const nextTab = tabs[nextIndex]
+    if (!nextTab) return
+    setActiveTab(nextTab.id)
+    document.getElementById(`candidate-dossier-tab-${nextTab.id}`)?.focus()
   }
 
   if (!candidateId) {
@@ -396,21 +513,32 @@ export function CandidateDossierPage() {
           {tabs.map((tab) => (
             <Button
               key={tab.id}
+              id={`candidate-dossier-tab-${tab.id}`}
               type="button"
               role="tab"
+              aria-controls={`candidate-dossier-panel-${tab.id}`}
               aria-selected={activeTab === tab.id}
+              tabIndex={activeTab === tab.id ? 0 : -1}
               variant={activeTab === tab.id ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTab(tab.id)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             >
               {tab.label}
             </Button>
           ))}
         </div>
-        {activeTab === 'overview' ? <ProfileSummary candidate={candidate} /> : null}
-        {activeTab === 'timeline' ? <Timeline candidate={candidate} /> : null}
-        {activeTab === 'skills' ? <Skills candidate={candidate} /> : null}
-        {activeTab === 'evidence' ? <Evidence candidate={candidate} /> : null}
+        <div
+          id={`candidate-dossier-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`candidate-dossier-tab-${activeTab}`}
+          tabIndex={0}
+        >
+          {activeTab === 'overview' ? <ProfileSummary candidate={candidate} /> : null}
+          {activeTab === 'timeline' ? <Timeline candidate={candidate} /> : null}
+          {activeTab === 'skills' ? <Skills candidate={candidate} /> : null}
+          {activeTab === 'evidence' ? <Evidence candidate={candidate} /> : null}
+        </div>
       </section>
 
       <section

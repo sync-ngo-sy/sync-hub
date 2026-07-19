@@ -12,7 +12,19 @@ export function hasSearchCriteria(params: SearchParams): boolean {
 export function useSearchResultsQuery(params: SearchParams) {
   const scope = useTenantScope()
   const query = useQuery({
-    queryKey: [scope.scopeKey, 'search-results', params],
+    queryKey: [
+      scope.scopeKey,
+      'search-results',
+      {
+        query: params.query,
+        skills: params.skills,
+        location: params.location,
+        seniority: params.seniority,
+        company: params.company,
+        page: params.page,
+        pageSize: params.pageSize,
+      },
+    ],
     queryFn: () => fetchSearchResults(scope.resolvedTenantIds, params),
     enabled: hasSearchCriteria(params),
   })

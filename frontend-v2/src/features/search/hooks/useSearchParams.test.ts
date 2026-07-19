@@ -31,19 +31,23 @@ describe('search URL state', () => {
   it('falls back safely when URL state is malformed', () => {
     expect(
       searchUrlStateSchema.parse({
-        q: '',
+        q: 'q'.repeat(301),
         skills: '',
-        location: '',
-        seniority: '',
-        company: '',
+        location: 'l'.repeat(181),
+        seniority: 's'.repeat(81),
+        company: 'c'.repeat(181),
         sort: 'unknown',
         direction: 'sideways',
-        page: '-4',
-        pageSize: '999',
+        page: '2garbage',
+        pageSize: '20x',
       }),
     ).toMatchObject({
       sort: 'matchRate',
       direction: 'desc',
+      query: '',
+      location: '',
+      seniority: '',
+      company: '',
       page: 1,
       pageSize: 20,
     })

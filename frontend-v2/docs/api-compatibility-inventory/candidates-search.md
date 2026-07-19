@@ -16,6 +16,9 @@ Ticket 09 verified the durable profile contract against the worker producer and 
 query before its adapter shipped. The canonical dossier deliberately reads identity, title, experience,
 skills, education, projects, languages, certifications, and summary from the worker-owned `profile_json`;
 it does not reproduce the old mapper's speculative reads from unselected dossier-row columns.
+The post-implementation review also made the selected tenant IDs a fail-closed constraint on the dossier,
+profile, evidence-chunk, and original-document queries; membership RLS remains the outer authorization
+boundary, while the explicit filter enforces the user's current UI scope.
 
 Before ticket 09, `getCandidateDetail` queried `candidate_dossier_v1` with:
 
@@ -146,6 +149,13 @@ matched_companies, role, seniority, min_years_experience, location }` — confir
   defensive-only; the field is never actually absent from the current backend.
 - **Retirement notes**: safe to model `rankVersion` as required, not defaulted, once verified against a live
   payload.
+
+### `meta.count`
+
+- **Meaning**: count of results in the current response page, not the total number of matching candidates.
+- **Evidence**: both response branches set `count: results.length` after applying `limit` and `offset`.
+- **Canonical name**: the v2 adapter maps this to `meta.pageCount`; pagination uses `next_cursor` and never
+  presents this value as a result-set total.
 
 ### `meta.intent` (from `meta.intent`, mapped via `mapSearchIntentFilters`)
 

@@ -76,6 +76,7 @@ describe('search page', () => {
     })
 
     expect(await screen.findByRole('button', { name: 'Maya Hassan' })).toBeInTheDocument()
+    expect(screen.getByText('1 candidate on this page')).toBeInTheDocument()
     expect(requestBody).toMatchObject({
       q: 'platform',
       tenant_ids: ['tenant-1'],

@@ -28,7 +28,7 @@ describe('search compatibility adapters', () => {
       ],
       nextCursor: 20,
       meta: {
-        count: 1,
+        pageCount: 1,
         rankVersion: 'v2-rate',
         intentSource: 'explicit',
       },
