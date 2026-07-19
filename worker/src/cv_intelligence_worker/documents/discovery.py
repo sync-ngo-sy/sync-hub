@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterator, List, Sequence
 from uuid import NAMESPACE_URL, uuid5
 
-from ..schema import DocumentSource
+from ..domain.models import DocumentSource
 
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt"}

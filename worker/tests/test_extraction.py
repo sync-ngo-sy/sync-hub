@@ -15,7 +15,7 @@ from cv_intelligence_worker.candidate_extraction import (
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.integrations.llm import LLMResponseError
 from cv_intelligence_worker.integrations.llm.models import CandidateExtraction, JobFamily, JobFamilyExtraction
-from cv_intelligence_worker.schema import CandidateProfile, DocumentSource, DocumentText
+from cv_intelligence_worker.domain.models import CandidateProfile, DocumentSource, DocumentText
 
 
 class ExtractionTests(unittest.TestCase):

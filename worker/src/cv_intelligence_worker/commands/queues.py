@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from ..config import WorkerConfig
-from ..schema import dataclass_to_dict
+from ..domain.models import dataclass_to_dict
 from ..workflows import DraftIngestion, PublicApplicationIngestion
 from .common import emit_json, progress_printer
 from .registry import command_registry

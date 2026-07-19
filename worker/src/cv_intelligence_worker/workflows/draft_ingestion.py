@@ -9,8 +9,8 @@ from uuid import uuid4
 
 from ..config import WorkerConfig
 from ..integrations.supabase import SupabaseClient
-from ..pipeline import IngestionPipeline
-from ..schema import DocumentSource
+from ..domain.models import DocumentSource
+from .ingestion_pipeline import IngestionPipeline
 
 
 Progress = Callable[[str], None]

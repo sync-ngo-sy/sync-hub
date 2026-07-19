@@ -4,8 +4,7 @@ import argparse
 from dataclasses import replace
 
 from ..config import WorkerConfig
-from ..manatal import ManatalSync, ManatalSyncResult
-from ..workflows import ManatalOriginalsBackfill
+from ..workflows import ManatalOriginalsBackfill, ManatalSync, ManatalSyncResult
 from .common import emit_json, progress_printer, resolve_configured_tenant_id
 from .registry import command_registry
 

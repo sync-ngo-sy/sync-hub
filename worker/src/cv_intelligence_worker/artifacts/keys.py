@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..utils import sha256_text
+from ..core.identifiers import sha256_text
 
 
 def comparison_key(tenant_id: str, candidate_ids: list[str], query: str = "") -> str:

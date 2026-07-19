@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.pipeline import IngestionResult
+from cv_intelligence_worker.workflows import IngestionResult
 from cv_intelligence_worker.workflows import PublicApplicationIngestion
 
 

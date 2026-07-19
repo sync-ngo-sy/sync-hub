@@ -1,4 +1,5 @@
-from .client import SupabaseCapacitySnapshot, SupabaseClient, SupabaseSyncStats
+from .capacity import SupabaseCapacitySnapshot
+from .client import SupabaseClient, SupabaseSyncStats
 from .responses import (
     CandidateDraftRow,
     PublicJobApplicationRow,

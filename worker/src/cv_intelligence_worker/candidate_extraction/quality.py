@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..schema import CandidateProfile
+from ..domain.models import CandidateProfile
 
 
 def missing_profile_fields(profile: CandidateProfile) -> list[str]:

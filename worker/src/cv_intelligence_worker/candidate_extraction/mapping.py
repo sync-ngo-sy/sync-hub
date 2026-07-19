@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..candidate_normalization import normalize_location, normalize_profile
+from ..core.identifiers import stable_uuid
+from ..core.text import compact_whitespace, dedupe_keep_order, normalize_email
 from ..integrations.llm.models import CandidateExtraction, ExtractedEducation, ExtractedExperience, ExtractedProject
-from ..schema import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
-from ..utils import compact_whitespace, dedupe_keep_order, normalize_email, stable_uuid
+from ..domain.models import CandidateProfile, DocumentSource, DocumentText, EducationEntry, ExperienceEntry, ProjectEntry
 from .quality import missing_profile_fields
 
 

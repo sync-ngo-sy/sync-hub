@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..utils import compact_whitespace
+from ..core.text import compact_whitespace
 
 
 LEADING_BULLET_RE = re.compile(r"^[▪•●◦\-*]+\s*")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cv_intelligence_worker.schema import (
+from cv_intelligence_worker.domain.models import (
     CandidateProfile,
     ChunkRecord,
     ComparisonArtifact,
@@ -10,7 +10,7 @@ from cv_intelligence_worker.schema import (
     ExperienceEntry,
     SummaryArtifact,
 )
-from cv_intelligence_worker.utils import stable_uuid
+from cv_intelligence_worker.core.identifiers import stable_uuid
 
 
 class FakeEmbedder:
