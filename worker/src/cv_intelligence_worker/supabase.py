@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from .config import WorkerConfig
-from .integrations.supabase import build_bundle_rows
+from .integrations.supabase import (
+    CandidateDraftRow,
+    PublicJobApplicationRow,
+    SourceDocumentRow,
+    build_bundle_rows,
+    validate_optional_row,
+    validate_rows,
+)
 from .schema import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
 from .supabase_helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
 from .utils import normalize_email, strip_nul_bytes, urlopen
@@ -469,7 +476,7 @@ class SupabaseClient:
             query_args["resume_ingestion_status"] = "eq.queued"
         query = urllib.parse.urlencode(query_args)
         result = self._request("GET", f"/rest/v1/job_applications?{query}")
-        return result if isinstance(result, list) else []
+        return validate_rows(result, PublicJobApplicationRow, "job application queue")
 
     def source_document(self, source_document_id: str) -> dict[str, Any] | None:
         query = urllib.parse.urlencode(
@@ -480,9 +487,7 @@ class SupabaseClient:
             }
         )
         result = self._request("GET", f"/rest/v1/source_documents?{query}")
-        if isinstance(result, list) and result:
-            return result[0]
-        return None
+        return validate_optional_row(result, SourceDocumentRow, "source document lookup")
 
     def update_job_application(self, application_id: str, payload: dict[str, Any]) -> None:
         query = urllib.parse.urlencode({"id": f"eq.{application_id}"})
@@ -611,7 +616,7 @@ class SupabaseClient:
             query_args["parse_status"] = "eq.pending_validation"
         query = urllib.parse.urlencode(query_args)
         result = self._request("GET", f"/rest/v1/candidate_registration_drafts?{query}")
-        return result if isinstance(result, list) else []
+        return validate_rows(result, CandidateDraftRow, "candidate draft queue")
 
     def update_candidate_draft(self, user_id: str, payload: dict[str, Any]) -> None:
         query = urllib.parse.urlencode({"user_id": f"eq.{user_id}"})
