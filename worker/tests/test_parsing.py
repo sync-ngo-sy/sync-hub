@@ -69,6 +69,38 @@ class ParsingTests(unittest.TestCase):
             self.assertIn("Ayman", document.raw_text)
             self.assertIn("PDF text layer was empty; used OCR fallback", document.warnings)
 
+    def test_pdf_uses_first_valid_parser_without_weighted_scoring(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "resume.pdf"
+            path.write_bytes(b"%PDF-1.7\nfixture\n")
+            source = discover_documents([str(path)], "tenant-1", "run-1")[0]
+
+            with patch(
+                "cv_intelligence_worker.parsing._run_pdftotext",
+                side_effect=["Jane Doe\nBackend Engineer", "Jane Doe\nSKILLS\nPython\njane@example.com"],
+            ) as run_pdftotext:
+                document = parse_document(source)
+
+            self.assertEqual(document.parser_name, "pdftotext-raw")
+            self.assertEqual(document.raw_text, "Jane Doe\nBackend Engineer")
+            self.assertEqual(run_pdftotext.call_count, 1)
+            self.assertEqual(run_pdftotext.call_args.args[1], "raw")
+
+    def test_pdf_tries_layout_after_invalid_raw_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "resume.pdf"
+            path.write_bytes(b"%PDF-1.7\nfixture\n")
+            source = discover_documents([str(path)], "tenant-1", "run-1")[0]
+
+            with patch(
+                "cv_intelligence_worker.parsing._run_pdftotext",
+                side_effect=["binary\x01", "Jane Doe\nBackend Engineer"],
+            ):
+                document = parse_document(source)
+
+            self.assertEqual(document.parser_name, "pdftotext-layout")
+            self.assertIn("pdftotext-raw output looked like non-text bytes and was discarded", document.warnings)
+
     def test_pdf_discards_binary_embedded_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "resume.pdf"
