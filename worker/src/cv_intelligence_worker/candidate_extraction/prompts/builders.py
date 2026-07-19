@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ...job_family_taxonomy import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
+from ...domain import JOB_FAMILY_LABELS, JOB_FAMILY_TAXONOMY_VERSION
 from ...schema import CandidateProfile
 from ...utils import compact_whitespace
 from .loader import load_prompt_template
