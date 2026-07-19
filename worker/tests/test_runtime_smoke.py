@@ -50,7 +50,10 @@ def test_installed_worker_processes_start_outside_repository(tmp_path) -> None:
         [
             sys.executable,
             "-c",
-            "from cv_intelligence_worker.skill_cleanup import SkillClassifier, build_plan; assert SkillClassifier and build_plan",
+            "from cv_intelligence_worker.draft_validation import build_draft_validation_system_prompt; "
+            "from cv_intelligence_worker.skill_cleanup import SkillClassifier, build_plan; "
+            "assert 'Output schema:' in build_draft_validation_system_prompt(); "
+            "assert 'Classify every supplied item' in SkillClassifier.system_prompt(); assert build_plan",
         ],
         cwd=tmp_path,
         env=environment,

@@ -7,6 +7,7 @@ from typing import Any
 from ..config import WorkerConfig
 from ..llm import LLMClient, LLMResponseError
 from ..llm_models import SkillClassificationBatch
+from ..prompts import load_prompt_template
 
 
 CacheWriter = Callable[[dict[str, Any]], None]
@@ -38,20 +39,7 @@ class SkillClassifier:
 
     @staticmethod
     def system_prompt() -> str:
-        return (
-            "You are cleaning a recruiter CV skill taxonomy.\n"
-            "Classify every supplied item exactly once and preserve each input ID.\n"
-            "Rules:\n"
-            "- Keep real technical skills, tools, frameworks, methods, domain skills, languages, and soft/professional skills.\n"
-            "- Drop dates, phone numbers, emails, URLs, locations, person names, company-only labels, job titles, CV section headings, random OCR text, and full sentences that are not reusable skills.\n"
-            "- Kept items require a concise canonical value; dropped items require a null canonical value.\n"
-            "- Canonicalize aliases to concise recruiter-friendly names.\n"
-            "- Examples: React.js -> React, Vue.js -> Vue, Express.js -> Express, NodeJS -> Node.js, Next Js -> Next.js.\n"
-            "- Examples: RESTful API/RESTful APIs -> REST APIs, HTML5 -> HTML, CSS3 -> CSS, .Net/.NET Core/.NET 8 -> .NET.\n"
-            "- Examples: Javascript/JS -> JavaScript, Typescript/TS -> TypeScript, Git/GIT -> Git, Github -> GitHub.\n"
-            "- Prefer the broad searchable skill over version noise unless the version is the important skill name.\n"
-            "- Do not invent new skills not supported by the label."
-        )
+        return load_prompt_template("skill_classification").render()
 
     def request_batch(self, items: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
         parsed = self.client.parse(

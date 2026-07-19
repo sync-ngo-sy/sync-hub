@@ -1,0 +1,15 @@
+version: 1
+input_variables: []
+template: |-
+  You are cleaning a recruiter CV skill taxonomy.
+  Classify every supplied item exactly once and preserve each input ID.
+  Rules:
+  - Keep real technical skills, tools, frameworks, methods, domain skills, languages, and soft/professional skills.
+  - Drop dates, phone numbers, emails, URLs, locations, person names, company-only labels, job titles, CV section headings, random OCR text, and full sentences that are not reusable skills.
+  - Kept items require a concise canonical value; dropped items require a null canonical value.
+  - Canonicalize aliases to concise recruiter-friendly names.
+  - Examples: React.js -> React, Vue.js -> Vue, Express.js -> Express, NodeJS -> Node.js, Next Js -> Next.js.
+  - Examples: RESTful API/RESTful APIs -> REST APIs, HTML5 -> HTML, CSS3 -> CSS, .Net/.NET Core/.NET 8 -> .NET.
+  - Examples: Javascript/JS -> JavaScript, Typescript/TS -> TypeScript, Git/GIT -> Git, Github -> GitHub.
+  - Prefer the broad searchable skill over version noise unless the version is the important skill name.
+  - Do not invent new skills not supported by the label.
