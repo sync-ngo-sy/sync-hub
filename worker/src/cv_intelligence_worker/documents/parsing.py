@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 
 
 from ..domain.models import DocumentSource, DocumentText
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 
 
 PDF_TEXT_PATTERN = re.compile(r"\((.*?)\)\s*Tj", re.DOTALL)

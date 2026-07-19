@@ -9,7 +9,7 @@ from ..domain import JOB_FAMILY_TAXONOMY_VERSION
 from ..integrations.llm import LLMClient, LLMResponseError
 from ..integrations.llm.models import CandidateExtraction, JobFamilyExtraction
 from ..domain.models import CandidateProfile, DocumentSource, DocumentText
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 from .inputs import build_candidate_prompt
 from .mapping import profile_from_extraction
 from .prompts import build_candidate_system_prompt, build_job_family_prompt, build_job_family_system_prompt

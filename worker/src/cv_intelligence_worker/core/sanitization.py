@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def strip_nul_bytes(value):
     if isinstance(value, str):
         return value.replace("\x00", "")
@@ -10,7 +11,3 @@ def strip_nul_bytes(value):
     if isinstance(value, dict):
         return {key: strip_nul_bytes(item) for key, item in value.items()}
     return value
-
-
-def format_error_message(exc: Exception) -> str:
-    return f"{type(exc).__name__}: {exc}"

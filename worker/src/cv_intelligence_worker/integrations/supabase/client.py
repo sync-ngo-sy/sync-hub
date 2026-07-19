@@ -14,7 +14,7 @@ from ...config import WorkerConfig
 from ...core.http import urlopen
 from ...core.text import normalize_email
 from ...domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
-from ...utils import strip_nul_bytes
+from ...core.sanitization import strip_nul_bytes
 from .helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
 from .responses import (
     CandidateDraftRow,
