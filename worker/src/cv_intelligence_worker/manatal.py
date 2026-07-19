@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from .config import WorkerConfig
 from .documents import guess_mime_type, stable_document_id
-from .gcs_storage import GcsJsonClient
+from .integrations.gcs import GcsJsonClient
 from .integrations.manatal import ManatalCandidate, ManatalClient, ManatalResumeDownload
 from .integrations.manatal.client import _redact_url_for_error
 from .pipeline import IngestionPipeline, IngestionResult

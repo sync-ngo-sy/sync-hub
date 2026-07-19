@@ -7,8 +7,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .config import WorkerConfig
-from .utils import urlopen
+from ...config import WorkerConfig
+from ...utils import urlopen
 
 
 METADATA_TOKEN_URL = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
@@ -62,4 +62,6 @@ class GcsJsonClient:
             if exc.code == 412:
                 return
             detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"GCS upload failed for gs://{bucket}/{object_name} ({exc.code}): {detail or exc.reason}") from exc
+            raise RuntimeError(
+                f"GCS upload failed for gs://{bucket}/{object_name} ({exc.code}): {detail or exc.reason}"
+            ) from exc
