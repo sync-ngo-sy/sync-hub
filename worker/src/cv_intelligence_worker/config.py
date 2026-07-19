@@ -187,7 +187,6 @@ class WorkerConfig:
     supabase_database_expansion_factor: float = field(default_factory=lambda: _float_env("CV_SUPABASE_DATABASE_EXPANSION_FACTOR", "CVI_SUPABASE_DATABASE_EXPANSION_FACTOR", default="1.8"))
     user_agent: str = field(default_factory=lambda: _env_any("CVI_USER_AGENT", default="cv-intelligence-worker/0.1.0"))
     device_id: str = field(default_factory=lambda: _env_any("CVI_DEVICE_ID", "CV_WORKER_DEVICE_ID"))
-    allow_heuristic_fallback: bool = field(default_factory=lambda: _bool_env("CV_ALLOW_HEURISTIC_FALLBACK", "CVI_ALLOW_HEURISTIC_FALLBACK", default=False))
     delete_synced_bundles: bool = field(default_factory=lambda: _bool_env("CV_DELETE_SYNCED_BUNDLES", "CVI_DELETE_SYNCED_BUNDLES", default=True))
     manatal_api_token: str = field(default_factory=lambda: _env_any("MANATAL_API_TOKEN", "CV_MANATAL_API_TOKEN", "CVI_MANATAL_API_TOKEN"))
     manatal_api_base_url: str = field(default_factory=lambda: _env_any("MANATAL_API_BASE_URL", "CV_MANATAL_API_BASE_URL", default="https://api.manatal.com/open/v3"))

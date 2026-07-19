@@ -236,7 +236,6 @@ CV_EMBEDDING_DIMENSION=768
 CV_EMBEDDING_VERSION=gemini-embedding-001-768-v1
 CV_WORKER_CACHE_DIR=./tmp/cv_intelligence_worker
 CV_DELETE_SYNCED_BUNDLES=true
-CV_ALLOW_HEURISTIC_FALLBACK=false
 ```
 
 If you do not yet have a worker access token, you can use a service role key temporarily for local/admin environments, but avoid that on laptops in production.

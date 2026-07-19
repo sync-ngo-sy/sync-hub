@@ -7,10 +7,10 @@ from unittest import mock
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.discovery import stable_document_id
-from cv_intelligence_worker.extraction import heuristic_extract_profile
 from cv_intelligence_worker.integrations.supabase import build_bundle_rows
 from cv_intelligence_worker.pipeline import IngestionPipeline
 from cv_intelligence_worker.supabase import SupabaseClient
+from tests.test_helpers.profiles import build_test_profile
 
 
 class RecordingSupabaseClient(SupabaseClient):
@@ -109,7 +109,7 @@ class SupabaseClientTests(unittest.TestCase):
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
             pipeline = IngestionPipeline(config)
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=lambda source, document, config: heuristic_extract_profile(source, document)):
+            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
             client = RecordingSupabaseClient(config)
@@ -140,7 +140,7 @@ class SupabaseClientTests(unittest.TestCase):
                 cache_dir=str(Path(tmpdir) / "cache"),
             )
             pipeline = IngestionPipeline(config)
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=lambda source, document, config: heuristic_extract_profile(source, document)):
+            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             bundle = result.bundles[0]
             first_rows = build_bundle_rows(
@@ -179,7 +179,7 @@ class SupabaseClientTests(unittest.TestCase):
                 supabase_batch_size=50,
             )
             pipeline = IngestionPipeline(config)
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=lambda source, document, config: heuristic_extract_profile(source, document)):
+            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = pipeline.ingest_paths([str(path)], tenant_id="tenant-1", sync_to_supabase=False)
             client = FlakySupabaseClient(config)
             client.sync_bundle(result.bundles[0])

@@ -143,7 +143,7 @@ def _compare_profiles(
 
     Returns (hard_diffs, info_diffs):
       - hard_diffs: mismatches that must match (name, current_title, experience)
-      - info_diffs: informational differences (e.g. extra skills from heuristic processing)
+      - info_diffs: informational differences such as extra extracted skills
     """
     hard: list[str] = []
     info: list[str] = []
@@ -170,7 +170,7 @@ def _compare_profiles(
     extra_in_normal = normal_skills - expected_skills
     extra_in_realtime = realtime_skills - expected_skills
     if extra_in_normal:
-        info.append(f"extra skills in normal path (heuristic): {sorted(extra_in_normal)}")
+        info.append(f"extra skills in normal path: {sorted(extra_in_normal)}")
     if extra_in_realtime:
         info.append(f"extra skills in realtime path: {sorted(extra_in_realtime)}")
 
@@ -278,7 +278,7 @@ class TestOutputComparison:
 
             hard_diffs, info_diffs = _compare_profiles(norm_normal, norm_realtime)
 
-            # Informational diffs (extra skills from heuristic processing) are logged
+            # Informational diffs are logged
             # but do not fail the test — both paths extract the core expected skills.
             for info_msg in info_diffs:
                 print(f"  info: {info_msg}")

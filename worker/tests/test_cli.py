@@ -11,13 +11,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 from cv_intelligence_worker.cli import main
-from cv_intelligence_worker.extraction import heuristic_extract_profile
 from cv_intelligence_worker.public_applications import PublicApplicationIngestionResult
 from cv_intelligence_worker.supabase import SupabaseSyncStats
-
-
-def _test_extract_profile(source, document_text, config):
-    return heuristic_extract_profile(source, document_text)
+from tests.test_helpers.profiles import build_test_profile
 
 
 class CliTests(unittest.TestCase):
@@ -30,7 +26,7 @@ class CliTests(unittest.TestCase):
             )
             buffer = io.StringIO()
             with mock.patch.dict(os.environ, {"CV_WORKER_CACHE_DIR": str(Path(tmpdir) / "cache")}):
-                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=_test_extract_profile):
+                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                     with redirect_stdout(buffer):
                         exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1", "--no-sync"])
             self.assertEqual(0, exit_code)
@@ -48,7 +44,7 @@ class CliTests(unittest.TestCase):
             )
             ingest_buffer = io.StringIO()
             with mock.patch.dict(os.environ, {"CV_WORKER_CACHE_DIR": str(Path(tmpdir) / "cache")}):
-                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=_test_extract_profile):
+                with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                     with redirect_stdout(ingest_buffer):
                         exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1", "--no-sync"])
             self.assertEqual(0, exit_code)
@@ -92,7 +88,7 @@ class CliTests(unittest.TestCase):
             with mock.patch.dict(os.environ, env):
                 with mock.patch("cv_intelligence_worker.pipeline.SupabaseClient") as supabase_client_cls:
                     supabase_client_cls.return_value.sync_bundles.return_value = SupabaseSyncStats(bundles=1)
-                    with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=_test_extract_profile):
+                    with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                         with redirect_stdout(buffer):
                             exit_code = main(["ingest", str(path), "--tenant-id", "tenant-1"])
             self.assertEqual(0, exit_code)

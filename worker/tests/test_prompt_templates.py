@@ -24,9 +24,9 @@ def test_yaml_prompts_preserve_reviewed_content() -> None:
         "skill_classification": SkillClassifier.system_prompt(),
     }
 
-    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "d94ed524518745aa37b2531491cef26e9cc93dc17d9bd5e0c1acb981b66e1109"
+    assert hashlib.sha256(prompts["candidate"].encode()).hexdigest() == "147aa519bade634f94098cfe86e045d9d8cba95d8705e952bcddb9dd66123a78"
     assert hashlib.sha256(prompts["job_family"].encode()).hexdigest() == "9befc252a1abcb381b97cb6e9d7b31f8edacd17b20adcb516c59bd88d30d2515"
-    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "20b1df5ce7241423f7ee622abdcb5545f3ba2376e285a08951906be974d8e147"
+    assert hashlib.sha256(prompts["realtime"].encode()).hexdigest() == "ec48559ea01daed67d3cfd68016412df85c240dc9c614d59bbe4ebc1fd5ec7d9"
     assert (
         hashlib.sha256(prompts["draft_validation"].encode()).hexdigest()
         == "4dec3b30129e3bc87e207461e7418cfd6b9ef9f4881fb269a255f29bad36c28f"

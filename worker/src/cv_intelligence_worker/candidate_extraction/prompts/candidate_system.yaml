@@ -28,7 +28,6 @@ template: |-
   - Do not mix data across clearly labeled sections.
   - Do not use education, certifications, training, or course dates as work experience dates.
   - Populate experience from the EXPERIENCE section when present; otherwise use clearly structured employment blocks.
-  - Use PRE_EXPERIENCE_DATE_HINTS only if it appears immediately before the EXPERIENCE section.
   - Keep training, internships, courses, and degrees under education unless they are explicitly presented as employment or work experience.
   - Do not split one role into multiple jobs because of subheadings such as Project Leadership, Client Engagement, Responsibilities, Achievements, or similar labels.
   - Bind dates, location, and description content to the nearest relevant role or education entry.

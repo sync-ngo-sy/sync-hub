@@ -160,7 +160,7 @@ Current worker behavior:
 - If you pass a directory, it recursively scans supported files under that directory.
 - There is no hard per-run CV limit today. One run processes every supported file discovered under the provided inputs.
 - Public application CV uploads are queued by the `public-jobs` Edge Function. The worker is not a daemon by default; run `public-applications` manually or schedule it with your process manager.
-- Public application parsing uses the same extraction configuration as normal CV ingestion. Set `GEMINI_API_KEY` or the `CV_MODEL_*` variables before draining the queue; otherwise the worker will fail queued applications rather than silently using heuristic extraction.
+- Public application parsing uses the same model configuration as normal CV ingestion. Set `GEMINI_API_KEY` or the `CV_MODEL_*` variables before draining the queue; otherwise queued applications fail closed.
 - `CV_INGEST_CONCURRENCY` controls how many CVs are parsed, extracted, and embedded in parallel.
 - `CV_BATCH_SIZE` controls how many completed bundles are flushed to Supabase at a time; it is not a run cap.
 - `CV_SUPABASE_BATCH_SIZE` controls the maximum row count per Supabase upsert request.
@@ -358,7 +358,7 @@ PYTHONPATH=worker/src python3 -m cv_intelligence_worker ingest ./workspaces/demo
   --supabase-row-batch-size 50
 ```
 
-The worker refuses to extract without `CV_EXTRACTION_MODEL`, so ingestion does not fall back to the legacy heuristic extractor. Supabase capacity warnings are emitted on stderr and in the final JSON payload when usage approaches `CV_SUPABASE_LIMIT_WARNING_THRESHOLD` of the configured database or storage limit. The capacity RPC is created by `supabase/migrations/20260503010000_ingestion_capacity_snapshot_v1.sql`; without it, the worker falls back to table counts and warns that exact byte usage is unavailable.
+The worker refuses to extract without `CV_EXTRACTION_MODEL`. Supabase capacity warnings are emitted on stderr and in the final JSON payload when usage approaches `CV_SUPABASE_LIMIT_WARNING_THRESHOLD` of the configured database or storage limit. The capacity RPC is created by `supabase/migrations/20260503010000_ingestion_capacity_snapshot_v1.sql`; without it, the worker falls back to table counts and warns that exact byte usage is unavailable.
 
 ### Default Gemini worker profile
 
@@ -375,7 +375,6 @@ CV_EMBEDDING_PROVIDER=openai
 CV_EMBEDDING_MODEL=gemini-embedding-001
 CV_EMBEDDING_DIMENSION=768
 CV_EMBEDDING_VERSION=gemini-embedding-001-768-v1
-CV_ALLOW_HEURISTIC_FALLBACK=false
 CV_INGEST_CONCURRENCY=8
 CV_SUPABASE_BATCH_SIZE=50
 CV_SUPABASE_LIMIT_WARNING_THRESHOLD=0.85

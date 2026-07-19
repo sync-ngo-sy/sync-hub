@@ -7,13 +7,9 @@ from unittest import mock
 
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.discovery import discover_documents
-from cv_intelligence_worker.extraction import heuristic_extract_profile
 from cv_intelligence_worker.pipeline import IngestionPipeline
 from cv_intelligence_worker.schema import DocumentSource
-
-
-def _test_extract_profile(source, document_text, config):
-    return heuristic_extract_profile(source, document_text)
+from tests.test_helpers.profiles import build_test_profile
 
 
 class IngestionPipelineTests(unittest.TestCase):
@@ -35,7 +31,7 @@ class IngestionPipelineTests(unittest.TestCase):
                 progress_interval=25,
             )
 
-            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=_test_extract_profile):
+            with mock.patch("cv_intelligence_worker.pipeline.extract_candidate_profile", side_effect=build_test_profile):
                 result = IngestionPipeline(config).ingest_sources(
                     sources,
                     tenant_id="tenant-1",
