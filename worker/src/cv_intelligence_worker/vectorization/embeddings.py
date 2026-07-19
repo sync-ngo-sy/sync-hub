@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .config import WorkerConfig
-from .integrations.llm import LLMClient
-from .schema import ChunkRecord, EmbeddingRecord
+from ..config import WorkerConfig
+from ..integrations.llm import LLMClient
+from ..schema import ChunkRecord, EmbeddingRecord
 
 SUPPORTED_EMBEDDING_PROVIDERS = frozenset({"openai", "openai-compatible", "local-openai", "ollama", "ollama-openai"})
 

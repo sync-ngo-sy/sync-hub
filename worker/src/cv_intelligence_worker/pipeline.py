@@ -7,16 +7,15 @@ from typing import Callable
 from uuid import uuid4
 
 from .artifacts import ArtifactGenerator, LLMArtifactGenerator, comparison_key
-from .chunking import build_chunks
 from .config import WorkerConfig
 from .documents import discover_documents, parse_document
-from .embeddings import Embedder, build_embedder
 from .extraction import extract_candidate_profile
 from .ingestion import SyncBatcher, build_processing_run
 from .schema import ArtifactBundle, CandidateProfile, DocumentSource, DocumentText, candidate_profile_from_dict
 from .store import LocalArtifactStore
 from .supabase import SupabaseClient
 from .utils import format_error_message
+from .vectorization import Embedder, build_chunks, build_embedder
 
 
 @dataclass(frozen=True)

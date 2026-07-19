@@ -3,10 +3,9 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from cv_intelligence_worker.chunking import build_chunks
 from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.embeddings import SDKEmbedder, build_embedder
 from cv_intelligence_worker.schema import CandidateProfile, ExperienceEntry
+from cv_intelligence_worker.vectorization import SDKEmbedder, build_chunks, build_embedder
 
 
 class ChunkingEmbeddingTests(unittest.TestCase):
