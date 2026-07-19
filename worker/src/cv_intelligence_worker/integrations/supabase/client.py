@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import urllib.parse
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ from .helpers import (
     format_bytes,
     json_payload_size,
 )
+from .query_filters import queued_or_stale_status_filter
 from .responses import (
     CandidateDraftRow,
     PublicJobApplicationRow,
@@ -401,11 +401,14 @@ class SupabaseClient:
             "order": "submitted_at.asc",
             "limit": str(max(1, limit)),
         }
-        if retry_stale_minutes > 0:
-            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            query_args["or"] = f"(resume_ingestion_status.eq.queued,and(resume_ingestion_status.eq.parsing,updated_at.lt.{stale_before}))"
-        else:
-            query_args["resume_ingestion_status"] = "eq.queued"
+        query_args.update(
+            queued_or_stale_status_filter(
+                status_column="resume_ingestion_status",
+                queued_status="queued",
+                processing_status="parsing",
+                retry_stale_minutes=retry_stale_minutes,
+            )
+        )
         query = urllib.parse.urlencode(query_args)
         result = self._request("GET", f"/rest/v1/job_applications?{query}")
         return validate_rows(result, PublicJobApplicationRow, "job application queue")
@@ -541,11 +544,14 @@ class SupabaseClient:
             "order": "updated_at.asc",
             "limit": str(max(1, limit)),
         }
-        if retry_stale_minutes > 0:
-            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            query_args["or"] = f"(parse_status.eq.pending_validation,and(parse_status.eq.parsing,updated_at.lt.{stale_before}))"
-        else:
-            query_args["parse_status"] = "eq.pending_validation"
+        query_args.update(
+            queued_or_stale_status_filter(
+                status_column="parse_status",
+                queued_status="pending_validation",
+                processing_status="parsing",
+                retry_stale_minutes=retry_stale_minutes,
+            )
+        )
         query = urllib.parse.urlencode(query_args)
         result = self._request("GET", f"/rest/v1/candidate_registration_drafts?{query}")
         return validate_rows(result, CandidateDraftRow, "candidate draft queue")
