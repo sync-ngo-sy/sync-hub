@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import ssl
-from datetime import datetime, timezone
 from typing import Iterable
 from urllib import request as urllib_request
 from uuid import NAMESPACE_URL, uuid5
@@ -29,10 +27,6 @@ def build_ssl_context() -> ssl.SSLContext:
 
 def urlopen(request: urllib_request.Request, *, timeout: int):
     return urllib_request.urlopen(request, timeout=timeout, context=build_ssl_context())
-
-
-def slugify(value: str) -> str:
-    return NON_ALNUM_RE.sub("-", value.lower()).strip("-")
 
 
 def skill_slugify(value: str) -> str:
@@ -91,14 +85,6 @@ def approximate_token_count(value: str) -> int:
     return max(1, len(value.split()))
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def json_dumps(value: object) -> str:
-    return json.dumps(value, ensure_ascii=True, sort_keys=True)
-
-
 def dedupe_keep_order(values: Iterable[object]) -> list[str]:
     seen: set[str] = set()
     items: list[str] = []
@@ -118,4 +104,3 @@ def dedupe_keep_order(values: Iterable[object]) -> list[str]:
 
 def format_error_message(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
-
