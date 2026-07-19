@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -152,6 +153,34 @@ def test_parse_endpoint_returns_only_sdk_validated_json(openai, config_from_env,
     assert response.status_code == 200
     assert RealtimeCandidateExtraction.model_validate_json(response.text) == extraction
     sdk_client.chat.completions.parse.assert_awaited_once()
+    parsed_source = parse_document.call_args.args[0]
+    assert not Path(parsed_source.source_path).exists()
+
+
+@patch("cv_intelligence_worker.realtime_extractor._check_rate_limit")
+@patch("cv_intelligence_worker.realtime_extractor.WorkerConfig.from_env")
+def test_parse_endpoint_rejects_declared_mime_type_mismatch(config_from_env, _rate_limit):
+    config_from_env.return_value = WorkerConfig(
+        api_key="worker-secret",
+        extraction_model="test-model",
+        model_api_key="model-secret",
+    )
+
+    response = client.post(
+        "/api/v1/parse-cv-fast",
+        files={
+            "file": (
+                "cv.docx",
+                b"%PDF-1.7\ntest",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data={"user_id": "b7d19f85-fcb1-4eb9-bb10-0d515e925c55"},
+        headers={"X-API-Key": "worker-secret"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid file type. Only PDF and Word documents are allowed."}
 
 
 @patch("cv_intelligence_worker.realtime_extractor._check_rate_limit")

@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-import os
-import time
-import tempfile
 import asyncio
-import logging
 import hmac
+import logging
+import os
+import tempfile
+import time
+import uuid
+from collections.abc import AsyncIterator
 from collections import defaultdict, deque
 from datetime import UTC, datetime
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, Security, HTTPException, status, Depends, Request
-import uuid
+
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, Security, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
-
-# Configure standard logging
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
 from cv_intelligence_worker.candidate_extraction import build_candidate_prompt, build_realtime_candidate_system_prompt
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.llm import LLMClient, LLMResponseError
 from cv_intelligence_worker.llm_models import RealtimeCandidateExtraction
 from cv_intelligence_worker.parsing import parse_document
-from cv_intelligence_worker.schema import DocumentSource
+from cv_intelligence_worker.schema import DocumentSource, DocumentText
 from cv_intelligence_worker.supabase import SupabaseClient
 
+logger = logging.getLogger(__name__)
 app = FastAPI(title="Realtime CV Extraction")
 
 
@@ -33,21 +32,18 @@ app = FastAPI(title="Realtime CV Extraction")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
-# ---------------------------------------------------------------------------
-# H2: Rate limiting — 10 requests/minute per API key (sliding window)
-#     + global concurrent LLM request cap of 5
-# ---------------------------------------------------------------------------
+
 _RATE_LIMIT_REQUESTS = int(os.environ.get("RATE_LIMIT_REQUESTS", "10"))
 _RATE_LIMIT_WINDOW_SECS = int(os.environ.get("RATE_LIMIT_WINDOW_SECS", "60"))
 _MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_LLM", "5"))
 
-_request_log: dict[str, deque] = defaultdict(deque)   # api_key → timestamps
+_request_log: dict[str, deque[float]] = defaultdict(deque)
 _concurrency_sem = asyncio.Semaphore(_MAX_CONCURRENT)
+
 
 def _check_rate_limit(api_key: str) -> None:
     now = time.monotonic()
     window = _request_log[api_key]
-    # Evict timestamps outside the sliding window
     while window and now - window[0] > _RATE_LIMIT_WINDOW_SECS:
         window.popleft()
     if len(window) >= _RATE_LIMIT_REQUESTS:
@@ -56,6 +52,7 @@ def _check_rate_limit(api_key: str) -> None:
             detail=f"Rate limit exceeded: max {_RATE_LIMIT_REQUESTS} requests per {_RATE_LIMIT_WINDOW_SECS}s",
         )
     window.append(now)
+
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
 
@@ -69,7 +66,8 @@ def _detect_allowed_mime_type(file_bytes: bytes) -> str | None:
         return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return None
 
-def verify_api_key(api_key: str = Security(api_key_header)):
+
+def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     config = WorkerConfig.from_env()
     if not config.api_key:
         logger.error("API Key not configured on server")
@@ -78,8 +76,10 @@ def verify_api_key(api_key: str = Security(api_key_header)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid API Key")
     return api_key
 
+
 def build_extended_system_prompt() -> str:
     return build_realtime_candidate_system_prompt()
+
 
 def sync_to_supabase_background(user_id: str, extraction: RealtimeCandidateExtraction, config: WorkerConfig) -> None:
     if not config.supabase_url or not config.supabase_service_key:
@@ -105,11 +105,17 @@ def sync_to_supabase_background(user_id: str, extraction: RealtimeCandidateExtra
     except Exception as e:
         logger.error(f"[DB SYNC] Failed to sync to Supabase: {e}")
         try:
-            supabase.upsert("candidate_registration_drafts", [{
-                "user_id": user_id,
-                "parse_status": "failed",
-                "parse_error": f"DB sync error: {e}",
-            }], on_conflict="user_id")
+            supabase.upsert(
+                "candidate_registration_drafts",
+                [
+                    {
+                        "user_id": user_id,
+                        "parse_status": "failed",
+                        "parse_error": f"DB sync error: {e}",
+                    }
+                ],
+                on_conflict="user_id",
+            )
         except Exception as db_err:
             logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
 
@@ -126,19 +132,15 @@ def mark_extraction_failed(user_id: str, error: str, config: WorkerConfig) -> No
     except Exception as db_err:
         logger.error(f"[DB SYNC] Failed to mark draft as failed: {db_err}")
 
+
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
-@app.post("/api/v1/parse-cv-fast")
-async def parse_cv_endpoint(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),  # noqa: B008
-    user_id: str = Form(...),      # noqa: B008
-    api_key: str = Depends(verify_api_key)
-):
-    if "content-length" in request.headers:
+
+def _validated_request_config(request: Request, user_id: str, api_key: str) -> WorkerConfig:
+    content_length = request.headers.get("content-length")
+    if content_length:
         try:
-            if int(request.headers["content-length"]) > MAX_FILE_SIZE:
+            if int(content_length) > MAX_FILE_SIZE:
                 raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
         except ValueError:
             pass
@@ -148,80 +150,81 @@ async def parse_cv_endpoint(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid user_id format. Must be a valid UUID.") from None
 
-    # H2: enforce per-key rate limit and global concurrency cap
     _check_rate_limit(api_key)
-
     if _concurrency_sem.locked():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Server busy, please retry shortly",
         )
-
-    # Dynamic config picking up os.environ variables
     config = WorkerConfig.from_env()
     if not config.extraction_model:
         raise HTTPException(status_code=503, detail="CV extraction model is not configured")
+    return config
 
-    # 1. Parse Document (Using existing robust logic)
-    suffix = Path(file.filename).suffix if file.filename else ".pdf"
 
-    # Read content BEFORE creating temp file to avoid a temp-file leak if the
-    # size validation raises HTTPException (delete=False files are not cleaned up
-    # automatically when an exception is thrown inside the with-block).
+async def _read_validated_upload(file: UploadFile) -> tuple[bytes, str, str]:
     content = await file.read(MAX_FILE_SIZE + 1)
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large (exceeds 5MB limit)")
-
     detected_mime_type = _detect_allowed_mime_type(content)
-    if not detected_mime_type:
+    if not detected_mime_type or (file.content_type and file.content_type != detected_mime_type):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF and Word documents are allowed.")
-    if file.content_type and file.content_type != detected_mime_type:
-        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF and Word documents are allowed.")
+    suffix = Path(file.filename).suffix if file.filename else ".pdf"
+    return content, detected_mime_type, suffix
 
+
+async def _parse_upload(file: UploadFile, content: bytes, mime_type: str, suffix: str) -> DocumentText:
     tmp_path: str | None = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-
         source = DocumentSource(
             tenant_id="default",
             source_path=tmp_path,
             source_type="file",
             original_filename=file.filename or "cv",
-            mime_type=detected_mime_type,
+            mime_type=mime_type,
             document_id="tmp",
             document_sha256="tmp",
-            ingestion_run_id="tmp"
+            ingestion_run_id="tmp",
         )
-
-        # Offload CPU-bound parsing to threadpool
         loop = asyncio.get_running_loop()
-        document_text = await loop.run_in_executor(None, parse_document, source)
-
+        return await loop.run_in_executor(None, parse_document, source)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    # 2. Build Prompt (Re-using original logic but with extended schema)
-    prompt = build_candidate_prompt(document_text)
-    system_prompt = build_extended_system_prompt()
 
+async def _extract_candidate(document_text: DocumentText, user_id: str, config: WorkerConfig) -> RealtimeCandidateExtraction:
     try:
         async with _concurrency_sem:
-            extraction = await LLMClient(config).parse_async(
+            return await LLMClient(config).parse_async(
                 model=config.extraction_model,
-                system_prompt=system_prompt,
-                prompt=prompt,
+                system_prompt=build_extended_system_prompt(),
+                prompt=build_candidate_prompt(document_text),
                 response_model=RealtimeCandidateExtraction,
             )
     except LLMResponseError as exc:
         await asyncio.to_thread(mark_extraction_failed, user_id, str(exc), config)
         raise HTTPException(status_code=502, detail="CV extraction failed") from exc
 
+
+async def _validated_stream(extraction: RealtimeCandidateExtraction) -> AsyncIterator[str]:
+    yield extraction.model_dump_json()
+
+
+@app.post("/api/v1/parse-cv-fast")
+async def parse_cv_endpoint(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),  # noqa: B008
+    user_id: str = Form(...),  # noqa: B008
+    api_key: str = Depends(verify_api_key),
+) -> StreamingResponse:
+    config = _validated_request_config(request, user_id, api_key)
+    content, mime_type, suffix = await _read_validated_upload(file)
+    document_text = await _parse_upload(file, content, mime_type, suffix)
+    extraction = await _extract_candidate(document_text, user_id, config)
     background_tasks.add_task(sync_to_supabase_background, user_id, extraction, config)
-
-    async def validated_stream():
-        yield extraction.model_dump_json()
-
-    return StreamingResponse(validated_stream(), media_type="text/event-stream")
+    return StreamingResponse(_validated_stream(extraction), media_type="text/event-stream")
