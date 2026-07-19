@@ -13,8 +13,8 @@ from ..integrations.gcs import GcsJsonClient
 from ..integrations.manatal import ManatalCandidate, ManatalClient, ManatalResumeDownload
 from ..integrations.manatal.client import _redact_url_for_error
 from ..integrations.supabase import SupabaseClient
-from ..schema import DocumentSource
-from ..utils import format_error_message
+from ..domain.models import DocumentSource
+from ..core.errors import format_error_message
 from .ingestion_pipeline import IngestionPipeline, IngestionResult
 
 

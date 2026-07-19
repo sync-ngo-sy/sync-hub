@@ -4,11 +4,12 @@ from dataclasses import replace
 from typing import Any
 
 from ..config import WorkerConfig
+from ..core.text import compact_whitespace, dedupe_keep_order
 from ..domain import JOB_FAMILY_TAXONOMY_VERSION
 from ..integrations.llm import LLMClient, LLMResponseError
 from ..integrations.llm.models import CandidateExtraction, JobFamilyExtraction
-from ..schema import CandidateProfile, DocumentSource, DocumentText
-from ..utils import compact_whitespace, dedupe_keep_order, format_error_message
+from ..domain.models import CandidateProfile, DocumentSource, DocumentText
+from ..core.errors import format_error_message
 from .inputs import build_candidate_prompt
 from .mapping import profile_from_extraction
 from .prompts import build_candidate_system_prompt, build_job_family_prompt, build_job_family_system_prompt
@@ -139,7 +140,7 @@ def extract_candidate_profile(
     config: WorkerConfig,
 ) -> CandidateProfile:
     if source.metadata.get("is_draft"):
-        from ..schema import candidate_profile_from_dict
+        from ..domain.models import candidate_profile_from_dict
         from .draft_validation import validate_user_overrides_with_llm
 
         draft_data = source.metadata.get("draft_data", {})

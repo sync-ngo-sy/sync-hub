@@ -4,7 +4,7 @@ import argparse
 
 from ..config import WorkerConfig
 from ..documents import discover_documents
-from ..schema import dataclass_to_dict
+from ..domain.models import dataclass_to_dict
 from ..workflows import IngestionPipeline
 from .common import emit_json, progress_printer, resolve_discovery_inputs, resolve_tenant_id, with_ingest_overrides
 from .registry import command_registry

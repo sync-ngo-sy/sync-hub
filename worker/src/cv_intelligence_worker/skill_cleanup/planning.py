@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from ..utils import compact_whitespace, skill_slugify
+from ..core.text import compact_whitespace, skill_slugify
 
 
 def normalize_evidence(group: list[dict[str, Any]], canonical: str) -> dict[str, Any]:

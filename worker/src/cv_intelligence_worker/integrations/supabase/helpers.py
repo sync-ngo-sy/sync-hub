@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from ...utils import strip_nul_bytes
+from ...core.sanitization import strip_nul_bytes
 
 
 def vector_literal(values: list[float]) -> str:

@@ -8,7 +8,7 @@ from cv_intelligence_worker.artifacts import LLMArtifactGenerator, comparison_ke
 from cv_intelligence_worker.artifacts.models import ComparisonArtifactOutput, ComparisonItemOutput, SummaryArtifactOutput
 from cv_intelligence_worker.config import WorkerConfig
 from cv_intelligence_worker.integrations.llm import LLMResponseError
-from cv_intelligence_worker.schema import CandidateProfile
+from cv_intelligence_worker.domain.models import CandidateProfile
 
 
 def _profile(candidate_id: str, *, skills: list[str] | None = None) -> CandidateProfile:
