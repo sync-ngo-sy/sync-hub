@@ -336,10 +336,10 @@ class TestExtractCandidateProfileDraft:
             warnings=[],
         )
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_merge_original_and_overrides(self, mock_validate, mock_classify):
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
         config = _make_config()
         original = {
             "tenant_id": "t", "candidate_id": "c1", "source_document_id": "sd1",
@@ -362,10 +362,10 @@ class TestExtractCandidateProfileDraft:
         mock_validate.assert_called_once_with(original, overrides, config)
         assert result is mock_profile
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_experience_list_merge(self, mock_validate, mock_classify):
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
         config = _make_config()
         original = {
             "tenant_id": "t", "candidate_id": "c2", "source_document_id": "sd2",
@@ -391,12 +391,12 @@ class TestExtractCandidateProfileDraft:
         merged_into = call_args[1]  # user_overrides
         assert merged_into == overrides
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_empty_draft_data_raises_keyerror(self, mock_validate, mock_classify):
         """draft_data={} → original_profile and user_overrides are both {}.
         merged_profile_json = {} → candidate_profile_from_dict({}) → KeyError."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
         config = _make_config()
         source = self._make_source({"is_draft": True, "draft_data": {}})
         mock_validate.return_value = (True, "")
@@ -404,12 +404,12 @@ class TestExtractCandidateProfileDraft:
         with pytest.raises(KeyError):
             extract_candidate_profile(source, self._make_document_text(), config)
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_empty_overrides_still_validates(self, mock_validate, mock_classify):
         """Even with empty overrides, the validate function is called.
         If it returns True, profile is built from original."""
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
         config = _make_config()
         original = {
             "tenant_id": "t", "candidate_id": "c3", "source_document_id": "sd3",
@@ -426,10 +426,10 @@ class TestExtractCandidateProfileDraft:
         mock_validate.assert_called_once_with(original, {}, config)
         assert result is not None
 
-    @patch("cv_intelligence_worker.extraction.classify_job_family_with_llm")
+    @patch("cv_intelligence_worker.candidate_extraction.service.classify_job_family_with_llm")
     @patch("cv_intelligence_worker.draft_validation.validate_user_overrides_with_llm")
     def test_validation_rejection_raises(self, mock_validate, mock_classify):
-        from cv_intelligence_worker.extraction import extract_candidate_profile
+        from cv_intelligence_worker.candidate_extraction import extract_candidate_profile
         config = _make_config()
         original = {
             "tenant_id": "t", "candidate_id": "c4", "source_document_id": "sd4",
@@ -446,7 +446,7 @@ class TestExtractCandidateProfileDraft:
             extract_candidate_profile(source, self._make_document_text(), config)
 
     def test_recursive_draft_merge_preserves_nested_arrays(self):
-        from cv_intelligence_worker.extraction import _merge_draft_profile_json
+        from cv_intelligence_worker.candidate_extraction.service import _merge_draft_profile_json
 
         original = {
             "experience": [{"title": "Developer", "highlights": ["A", "B"]}],
