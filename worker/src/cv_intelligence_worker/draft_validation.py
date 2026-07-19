@@ -11,8 +11,7 @@ from .prompts import load_prompt_template
 
 
 def build_draft_validation_system_prompt() -> str:
-    schema = json.dumps(DraftValidationExtraction.model_json_schema(), ensure_ascii=True)
-    return load_prompt_template("draft_validation").render(output_schema=schema)
+    return load_prompt_template("draft_validation").render()
 
 
 def _validation_prompt(original_profile: dict[str, Any], user_overrides: dict[str, Any]) -> dict[str, str]:

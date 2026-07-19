@@ -36,7 +36,7 @@ def test_installed_worker_processes_start_outside_repository(tmp_path) -> None:
         [
             sys.executable,
             "-c",
-            "from cv_intelligence_worker.candidate_extraction import build_candidate_system_prompt; assert 'Output schema:' in build_candidate_system_prompt()",
+            "from cv_intelligence_worker.candidate_extraction import build_candidate_system_prompt; assert 'Output schema:' not in build_candidate_system_prompt()",
         ],
         cwd=tmp_path,
         env=environment,
@@ -53,7 +53,7 @@ def test_installed_worker_processes_start_outside_repository(tmp_path) -> None:
             "from cv_intelligence_worker.draft_validation import build_draft_validation_system_prompt; "
             "from cv_intelligence_worker.prompts import load_prompt_template; "
             "from cv_intelligence_worker.skill_cleanup import SkillClassifier, build_plan; "
-            "assert 'Output schema:' in build_draft_validation_system_prompt(); "
+            "assert 'Output schema:' not in build_draft_validation_system_prompt(); "
             "assert 'factual recruiter-facing summary' in load_prompt_template('candidate_summary').render(); "
             "assert 'Compare the supplied' in load_prompt_template('candidate_comparison').render(); "
             "assert 'Classify every supplied item' in SkillClassifier.system_prompt(); assert build_plan",

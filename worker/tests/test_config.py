@@ -8,11 +8,11 @@ from cv_intelligence_worker.config import WorkerConfig
 
 
 class WorkerConfigTests(unittest.TestCase):
-    def test_prompt_version_defaults_to_v2(self) -> None:
+    def test_prompt_version_defaults_to_structured_output_v3(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
             config = WorkerConfig.from_env()
 
-        self.assertEqual("openai-json-v2", config.prompt_version)
+        self.assertEqual("structured-output-v3", config.prompt_version)
 
     def test_embedding_defaults_are_explicitly_unconfigured_without_model_credentials(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):

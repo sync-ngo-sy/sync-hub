@@ -99,6 +99,15 @@ def test_client_configures_sdk_retries_timeout_and_provider_url() -> None:
         timeout=45,
         max_retries=2,
     )
+    sdk_client.chat.completions.parse.assert_called_once_with(
+        model="test-model",
+        messages=[
+            {"role": "system", "content": "Extract a profile."},
+            {"role": "user", "content": '{"cv": "Jane Doe"}'},
+        ],
+        temperature=0,
+        response_format=CandidateExtraction,
+    )
 
 
 def test_client_rejects_missing_parsed_output() -> None:

@@ -10,4 +10,3 @@ template: |-
   Use only supplied allowed_evidence_refs, copied exactly.
   Confidence represents confidence in this artifact's factual support from 0 to 1, not candidate quality.
   Keep the short summary under 50 words and the long summary under 180 words.
-  Return only the structured output requested by the API.

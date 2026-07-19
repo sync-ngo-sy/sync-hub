@@ -12,4 +12,3 @@ template: |-
   Use only supplied allowed_evidence_refs for each candidate, copied exactly.
   recommended_candidate_id must be null or one of the supplied candidate IDs.
   Avoid protected characteristics and do not make a final hiring decision.
-  Return only the structured output requested by the API.

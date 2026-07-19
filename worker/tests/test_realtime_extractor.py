@@ -25,7 +25,7 @@ def test_build_extended_system_prompt():
 
     assert prompt == build_realtime_candidate_system_prompt()
     assert "You are an expert ATS" in prompt or "Extract" in prompt, "Base prompt logic is missing"
-    assert "Output schema:" in prompt
+    assert "Output schema:" not in prompt
     assert "Additional Registration Flow Rules:" in prompt
 
     assert "field_confidence" in prompt
