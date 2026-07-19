@@ -94,7 +94,13 @@ describe('Combobox (multiple select)', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: 'Remove Junior' }))
+    const trigger = screen.getByRole('combobox')
+    const removeButton = screen.getByRole('button', { name: 'Remove Junior' })
+
+    expect(trigger).not.toContainElement(removeButton)
+    expect(removeButton).toHaveAttribute('data-slot', 'button')
+
+    await user.click(removeButton)
 
     expect(onChange).toHaveBeenCalledWith(['senior'])
   })

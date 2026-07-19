@@ -12,11 +12,8 @@ interface TenantBadgeProps {
 export function TenantBadge({ name, iconUrl, size = 'md', className }: TenantBadgeProps) {
   return (
     <Avatar
-      className={cn(
-        'rounded-xl bg-primary/8 after:rounded-xl',
-        size === 'sm' ? 'size-7' : 'size-10',
-        className,
-      )}
+      size={size === 'sm' ? 'sm' : 'lg'}
+      className={cn('rounded-xl bg-primary/8 after:rounded-xl', className)}
     >
       {iconUrl && <AvatarImage src={iconUrl} alt={`${name} logo`} />}
       <AvatarFallback className="rounded-xl bg-transparent text-primary">

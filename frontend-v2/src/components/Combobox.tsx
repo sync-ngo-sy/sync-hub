@@ -117,49 +117,65 @@ export function Combobox(props: ComboboxProps) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className={cn('h-auto min-h-8 w-full justify-between font-normal', className)}
+      {props.multiple ? (
+        <div
+          className={cn(
+            'flex min-h-8 w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-1',
+            disabled && 'cursor-not-allowed opacity-50',
+            className,
+          )}
         >
-          {props.multiple ? (
-            selectedValues.length ? (
-              <span className="flex flex-1 flex-wrap gap-1">
-                {selectedValues.map((value) => {
-                  const label = options.find((option) => option.value === value)?.label ?? value
-                  return (
-                    <Badge key={value} variant="secondary" className="gap-1">
-                      {label}
-                      <button
-                        type="button"
-                        aria-label={`Remove ${label}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          removeValue(value)
-                        }}
-                        className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                      >
-                        <X size={12} />
-                      </button>
-                    </Badge>
-                  )
-                })}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
+          {selectedValues.map((value) => {
+            const label = options.find((option) => option.value === value)?.label ?? value
+            return (
+              <Badge key={value} variant="secondary" className="gap-1 pr-1">
+                {label}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled={disabled}
+                  aria-label={`Remove ${label}`}
+                  onClick={() => removeValue(value)}
+                  className="size-4 rounded-full"
+                >
+                  <X size={12} />
+                </Button>
+              </Badge>
             )
-          ) : (
+          })}
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              role="combobox"
+              aria-expanded={open}
+              disabled={disabled}
+              className="min-w-24 flex-1 justify-between px-1.5 font-normal"
+            >
+              <span className="text-muted-foreground">{placeholder}</span>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+        </div>
+      ) : (
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className={cn('h-auto min-h-8 w-full justify-between font-normal', className)}
+          >
             <span className={cn(!selectedOption && 'text-muted-foreground')}>
               {selectedOption?.label ?? placeholder}
             </span>
-          )}
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+      )}
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
         <Command shouldFilter={false}>
           <CommandInput value={query} onValueChange={setQuery} placeholder={searchPlaceholder} />

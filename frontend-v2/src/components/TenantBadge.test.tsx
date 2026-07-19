@@ -55,7 +55,7 @@ describe('TenantBadge', () => {
     const { container: sm } = render(<TenantBadge name="Acme Corp" size="sm" />)
     const { container: md } = render(<TenantBadge name="Acme Corp" size="md" />)
 
-    expect(sm.querySelector('[data-slot="avatar"]')).toHaveClass('size-7')
-    expect(md.querySelector('[data-slot="avatar"]')).toHaveClass('size-10')
+    expect(sm.querySelector('[data-slot="avatar"]')).toHaveAttribute('data-size', 'sm')
+    expect(md.querySelector('[data-slot="avatar"]')).toHaveAttribute('data-size', 'lg')
   })
 })

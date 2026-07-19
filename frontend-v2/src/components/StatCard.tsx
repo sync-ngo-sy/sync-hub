@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { captionLabelClassName } from '@/lib/typography'
+import { captionLabelClassName, dashboardNumberClassName } from '@/lib/typography'
 import { cn } from '@/lib/utils'
 
 const statCardIconVariants = cva('flex size-8.5 items-center justify-center rounded-xl border', {
@@ -54,7 +54,7 @@ export function StatCard({
         {loading ? (
           <Skeleton className="h-8 w-24 rounded-full" />
         ) : (
-          <strong className="text-3xl leading-none font-medium tracking-[-0.04em]">{value}</strong>
+          <strong className={dashboardNumberClassName}>{value}</strong>
         )}
         {loading
           ? delta !== undefined && <Skeleton className="h-6 w-21.5 rounded-full" />
