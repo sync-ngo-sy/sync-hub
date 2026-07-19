@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ...job_family_taxonomy import JOB_FAMILY_LABELS
+from ...domain import JOB_FAMILY_LABELS
 
 
 class LLMOutput(BaseModel):
