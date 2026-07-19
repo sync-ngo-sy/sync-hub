@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
 import os
 import re
@@ -10,14 +9,12 @@ import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from cv_intelligence_worker.config import WorkerConfig
-from cv_intelligence_worker.llm import LLMClient, LLMResponseError
-from cv_intelligence_worker.llm_models import SkillClassificationBatch
+from cv_intelligence_worker.skill_cleanup import SkillClassifier, build_plan
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1014,175 +1011,11 @@ class SupabaseRest:
             return 0
 
 
-class SkillClassifier:
-    def __init__(
-        self,
-        *,
-        batch_size: int,
-        max_workers: int,
-        config: WorkerConfig | None = None,
-        client: LLMClient | None = None,
-    ) -> None:
-        if batch_size < 1 or max_workers < 1:
-            raise ValueError("batch size and max workers must be positive")
-        config = config or WorkerConfig.from_env()
-        if not config.extraction_model:
-            raise RuntimeError("Missing CV_EXTRACTION_MODEL for LLM skill cleanup")
-        self.batch_size = batch_size
-        self.max_workers = max_workers
-        self.model = config.extraction_model
-        self.client = client or LLMClient(config)
-
-    @staticmethod
-    def system_prompt() -> str:
-        return (
-            "You are cleaning a recruiter CV skill taxonomy.\n"
-            "Classify every supplied item exactly once and preserve each input ID.\n"
-            "Rules:\n"
-            "- Keep real technical skills, tools, frameworks, methods, domain skills, languages, and soft/professional skills.\n"
-            "- Drop dates, phone numbers, emails, URLs, locations, person names, company-only labels, job titles, CV section headings, random OCR text, and full sentences that are not reusable skills.\n"
-            "- Kept items require a concise canonical value; dropped items require a null canonical value.\n"
-            "- Canonicalize aliases to concise recruiter-friendly names.\n"
-            "- Examples: React.js -> React, Vue.js -> Vue, Express.js -> Express, NodeJS -> Node.js, Next Js -> Next.js.\n"
-            "- Examples: RESTful API/RESTful APIs -> REST APIs, HTML5 -> HTML, CSS3 -> CSS, .Net/.NET Core/.NET 8 -> .NET.\n"
-            "- Examples: Javascript/JS -> JavaScript, Typescript/TS -> TypeScript, Git/GIT -> Git, Github -> GitHub.\n"
-            "- Prefer the broad searchable skill over version noise unless the version is the important skill name.\n"
-            "- Do not invent new skills not supported by the label."
-        )
-
-    def request_batch(self, items: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-        parsed = self.client.parse(
-            model=self.model,
-            system_prompt=self.system_prompt(),
-            prompt={"items": items},
-            response_model=SkillClassificationBatch,
-        )
-        expected = {int(item["id"]) for item in items}
-        received = {item.id for item in parsed.items}
-        if received != expected:
-            raise LLMResponseError("skill classification response IDs do not match request")
-        return {
-            item.id: {"action": item.action, "canonical": item.canonical}
-            for item in parsed.items
-        }
-
-    def classify(self, labels: list[tuple[str, int]], cache: dict[str, Any]) -> dict[str, Any]:
-        missing = [
-            {"id": index, "label": label, "count": count}
-            for index, (label, count) in enumerate(labels)
-            if label not in cache
-        ]
-        if not missing:
-            return cache
-
-        batches = [missing[index : index + self.batch_size] for index in range(0, len(missing), self.batch_size)]
-        by_id = {int(item["id"]): item["label"] for item in missing}
-        completed = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_batch = {executor.submit(self.request_batch, batch): batch for batch in batches}
-            for future in concurrent.futures.as_completed(future_to_batch):
-                results = future.result()
-                for item_id, value in results.items():
-                    cache[by_id[item_id]] = value
-                completed += len(results)
-                if completed % max(self.batch_size, 100) == 0 or completed == len(missing):
-                    json_dump(CACHE_PATH, cache)
-                    print(f"classified {completed}/{len(missing)} missing labels")
-        json_dump(CACHE_PATH, cache)
-        return cache
-
-
 def load_cache() -> dict[str, Any]:
     if not CACHE_PATH.exists():
         return {}
     value = json.loads(CACHE_PATH.read_text())
     return value if isinstance(value, dict) else {}
-
-
-def normalize_evidence(group: list[dict[str, Any]], canonical: str) -> dict[str, Any]:
-    aliases: list[str] = []
-    for row in group:
-        evidence = row.get("evidence")
-        if isinstance(evidence, dict):
-            raw_aliases = evidence.get("aliases")
-            if isinstance(raw_aliases, list):
-                aliases.extend(str(alias) for alias in raw_aliases if str(alias).strip())
-        aliases.append(str(row.get("canonical_skill") or ""))
-    deduped = []
-    seen = set()
-    for alias in aliases:
-        alias = compact_whitespace(alias)
-        if not alias or alias.casefold() == canonical.casefold():
-            continue
-        key = alias.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(alias)
-    return {"aliases": deduped[:25]}
-
-
-def build_plan(rows: list[dict[str, Any]], mapping: dict[str, Any]) -> dict[str, Any]:
-    drops: list[dict[str, Any]] = []
-    keep_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    row_targets: dict[str, tuple[str, str]] = {}
-    for row in rows:
-        raw_label = compact_whitespace(str(row.get("canonical_skill") or ""))
-        decision = mapping.get(raw_label)
-        if decision is None:
-            raise ValueError("skill mapping is incomplete")
-        canonical = compact_whitespace(str(decision.get("canonical") or ""))
-        action = decision.get("action")
-        target_slug = skill_slug(canonical) if canonical else ""
-        if action == "drop" or not canonical or not target_slug:
-            drops.append(row)
-            continue
-        row_targets[row["id"]] = (canonical, target_slug)
-        keep_groups[(row["tenant_id"], row["candidate_id"], target_slug)].append(row)
-
-    delete_ids = [row["id"] for row in drops]
-    upserts: list[dict[str, Any]] = []
-    duplicate_rows: list[dict[str, Any]] = []
-
-    for (_tenant_id, _candidate_id, target_slug), group in keep_groups.items():
-        def rank(row: dict[str, Any]) -> tuple[int, int, str]:
-            canonical, slug = row_targets[row["id"]]
-            current_label = compact_whitespace(str(row.get("canonical_skill") or ""))
-            current_slug = compact_whitespace(str(row.get("skill_slug") or ""))
-            return (
-                0 if current_slug == slug else 1,
-                0 if current_label.casefold() == canonical.casefold() else 1,
-                str(row.get("created_at") or row["id"]),
-            )
-
-        keeper = sorted(group, key=rank)[0]
-        duplicate_rows.extend(row for row in group if row["id"] != keeper["id"])
-        canonical, slug = row_targets[keeper["id"]]
-        evidence = normalize_evidence(group, canonical)
-        upsert = {
-            "id": keeper["id"],
-            "tenant_id": keeper["tenant_id"],
-            "candidate_id": keeper["candidate_id"],
-            "skill_slug": slug,
-            "canonical_skill": canonical,
-            "evidence": evidence,
-        }
-        if (
-            compact_whitespace(str(keeper.get("skill_slug") or "")) != slug
-            or compact_whitespace(str(keeper.get("canonical_skill") or "")).casefold() != canonical.casefold()
-            or keeper.get("evidence") != evidence
-        ):
-            upserts.append(upsert)
-
-    delete_ids.extend(row["id"] for row in duplicate_rows)
-    final_rows = len(rows) - len(delete_ids)
-    return {
-        "delete_ids": delete_ids,
-        "drop_rows": drops,
-        "duplicate_rows": duplicate_rows,
-        "upserts": upserts,
-        "final_rows": final_rows,
-    }
 
 
 def summarize(rows: list[dict[str, Any]], plan: dict[str, Any], mapping: dict[str, Any]) -> dict[str, Any]:
@@ -1254,7 +1087,12 @@ def main() -> None:
     else:
         cache = load_cache()
     if args.mode == "llm" and not args.skip_llm:
-        classifier = SkillClassifier(batch_size=args.batch_size, max_workers=args.max_workers)
+        classifier = SkillClassifier(
+            batch_size=args.batch_size,
+            max_workers=args.max_workers,
+            cache_writer=lambda value: json_dump(CACHE_PATH, value),
+            progress_reporter=lambda completed, total: print(f"classified {completed}/{total} missing labels"),
+        )
         cache = classifier.classify(ordered_labels, cache)
 
     plan = build_plan(rows, cache)
