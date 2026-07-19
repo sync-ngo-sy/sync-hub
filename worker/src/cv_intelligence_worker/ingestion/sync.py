@@ -8,7 +8,7 @@ from ..artifacts import LocalArtifactStore
 from ..config import WorkerConfig
 from ..integrations.supabase import SupabaseClient
 from ..domain.models import ArtifactBundle
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 
 
 @dataclass

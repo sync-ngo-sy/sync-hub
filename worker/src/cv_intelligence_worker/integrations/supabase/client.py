@@ -1,36 +1,27 @@
 from __future__ import annotations
 
-import json
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from ...config import WorkerConfig
 from ...core.http import urlopen
+from ...core.text import normalize_email
 from ...domain.models import ArtifactBundle, ComparisonArtifact, dataclass_to_dict
-from ...utils import normalize_email, strip_nul_bytes
-from .helpers import chunks, dedupe_rows, format_bytes, is_jwt, is_retryable_supabase_error, json_payload_size
-from .responses import (
-    CandidateDraftRow,
-    PublicJobApplicationRow,
-    SourceDocumentRow,
-    validate_optional_row,
-    validate_rows,
+from .batching import SupabaseBatchWriter
+from .capacity import SupabaseCapacityService, SupabaseCapacitySnapshot
+from .candidate_drafts import CandidateDraftRepository
+from .helpers import (
+    chunks,
+    dedupe_rows,
+    json_payload_size,
 )
+from .manatal import ManatalRepository
+from .public_applications import PublicApplicationRepository
 from .rows import build_bundle_rows
-
-
-@dataclass(frozen=True)
-class SupabaseCapacitySnapshot:
-    database_bytes: int = 0
-    storage_bytes: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    source: str = "unavailable"
+from .storage import SupabaseStorageClient
+from .transport import SupabaseRestTransport
 
 
 @dataclass(frozen=True)
@@ -45,44 +36,39 @@ class SupabaseSyncStats:
 class SupabaseClient:
     def __init__(self, config: WorkerConfig) -> None:
         self.config = config
-        self.base_url = config.supabase_url.rstrip("/")
+        self._transport = SupabaseRestTransport(config, opener=urlopen)
+        self._storage = SupabaseStorageClient(config, opener=urlopen)
+        self._batch_writer = SupabaseBatchWriter(
+            self.upsert,
+            default_batch_size=config.supabase_batch_size,
+        )
+        self._public_applications = PublicApplicationRepository(self._request)
+        self._candidate_drafts = CandidateDraftRepository(self._request)
+        self._manatal = ManatalRepository(
+            config,
+            request=self._request,
+            select_rows=self._select_in,
+            upsert_many=self.upsert_many,
+        )
+        self._capacity = SupabaseCapacityService(
+            config,
+            request=self._request,
+            request_with_headers=self._request_with_headers,
+        )
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
-        api_key = self.config.supabase_api_key()
-        bearer_token = self.config.supabase_bearer_token()
-        headers = {
-            "apikey": api_key,
-            "Content-Type": "application/json",
-            "User-Agent": self.config.user_agent,
-        }
-        if is_jwt(bearer_token):
-            headers["Authorization"] = f"Bearer {bearer_token}"
-        if extra:
-            headers.update(extra)
-        return headers
+        return self._transport.headers(extra)
 
     def _request_with_headers(self, method: str, path: str, *, data: Any | None = None, headers: dict[str, str] | None = None) -> tuple[Any, dict[str, str]]:
-        body = None
-        if data is not None:
-            body = json.dumps(strip_nul_bytes(data)).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.base_url}{path}",
-            data=body,
-            headers=self._headers(headers),
-            method=method,
+        return self._transport.request_with_headers(
+            method,
+            path,
+            data=data,
+            headers=headers,
         )
-        try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-                content = response.read().decode("utf-8")
-                response_headers = dict(response.headers.items())
-        except urllib.error.HTTPError as exc:
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase {method} {path} failed ({exc.code}): {content or exc.reason}") from exc
-        return (json.loads(content) if content else None), response_headers
 
     def _request(self, method: str, path: str, *, data: Any | None = None, headers: dict[str, str] | None = None) -> Any:
-        result, _headers = self._request_with_headers(method, path, data=data, headers=headers)
-        return result
+        return self._transport.request(method, path, data=data, headers=headers)
 
     def upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> Any:
         if not rows:
@@ -95,27 +81,8 @@ class SupabaseClient:
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
         )
 
-    def _upsert_batch_with_retry(self, table: str, rows: list[dict[str, Any]], on_conflict: str, attempt: int = 1) -> None:
-        try:
-            self.upsert(table, rows, on_conflict)
-            return
-        except RuntimeError as exc:
-            if not is_retryable_supabase_error(exc):
-                raise
-            if len(rows) > 1:
-                midpoint = max(1, len(rows) // 2)
-                self._upsert_batch_with_retry(table, rows[:midpoint], on_conflict, attempt=attempt)
-                self._upsert_batch_with_retry(table, rows[midpoint:], on_conflict, attempt=attempt)
-                return
-            if attempt >= 3:
-                raise
-            time.sleep(0.5 * attempt)
-            self._upsert_batch_with_retry(table, rows, on_conflict, attempt=attempt + 1)
-
     def upsert_many(self, table: str, rows: list[dict[str, Any]], on_conflict: str, batch_size: int | None = None) -> int:
-        for batch in chunks(rows, batch_size or self.config.supabase_batch_size):
-            self._upsert_batch_with_retry(table, batch, on_conflict)
-        return len(rows)
+        return self._batch_writer.write_many(table, rows, on_conflict, batch_size)
 
     def _select_in(self, table: str, tenant_id: str, column: str, values: list[str], select: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -134,150 +101,43 @@ class SupabaseClient:
         return rows
 
     def manatal_sync_states(self, tenant_id: str, manatal_candidate_ids: list[str]) -> dict[str, dict[str, Any]]:
-        rows = self._select_in(
-            self.config.manatal_sync_state_table,
-            tenant_id,
-            "manatal_candidate_id",
-            manatal_candidate_ids,
-            "tenant_id,manatal_candidate_id,manatal_updated_at,manatal_full_name,manatal_email,resume_url,resume_sha256,source_document_id,sync_status,last_synced_at,error_message,metadata_json",
-        )
-        return {
-            str(row.get("manatal_candidate_id")): row
-            for row in rows
-            if row.get("manatal_candidate_id")
-        }
+        return self._manatal.sync_states(tenant_id, manatal_candidate_ids)
 
     def upsert_manatal_sync_states(self, rows: list[dict[str, Any]]) -> int:
-        return self.upsert_many(
-            self.config.manatal_sync_state_table,
-            rows,
-            "tenant_id,manatal_candidate_id",
-        )
+        return self._manatal.upsert_sync_states(rows)
 
     def pending_manatal_candidate_ids(self, tenant_id: str, limit: int = 100) -> list[str]:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "sync_status": "eq.pending",
-                "select": "manatal_candidate_id",
-                "order": "updated_at.asc",
-                "limit": str(max(1, limit)),
-            }
-        )
-        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
-        if not isinstance(result, list):
-            return []
-        return [
-            str(row.get("manatal_candidate_id"))
-            for row in result
-            if isinstance(row, dict) and row.get("manatal_candidate_id")
-        ]
+        return self._manatal.pending_candidate_ids(tenant_id, limit)
 
     def manatal_original_source_rows(self, tenant_id: str, *, offset: int, limit: int) -> list[dict[str, Any]]:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "source_document_id": "not.is.null",
-                "select": "tenant_id,manatal_candidate_id,manatal_full_name,manatal_email,resume_url,source_document_id,resume_sha256,metadata_json",
-                "order": "updated_at.asc",
-                "limit": str(max(1, limit)),
-                "offset": str(max(0, offset)),
-            }
+        return self._manatal.original_source_rows(
+            tenant_id,
+            offset=offset,
+            limit=limit,
         )
-        result = self._request("GET", f"/rest/v1/{self.config.manatal_sync_state_table}?{query}")
-        return [row for row in result if isinstance(row, dict)] if isinstance(result, list) else []
 
     def source_documents_by_ids(self, tenant_id: str, source_document_ids: list[str]) -> dict[str, dict[str, Any]]:
-        rows = self._select_in(
-            "source_documents",
-            tenant_id,
-            "id",
-            source_document_ids,
-            "id,tenant_id,candidate_id,original_filename,mime_type,source_uri,storage_path,metadata_json",
-        )
-        return {str(row.get("id")): row for row in rows if row.get("id")}
+        return self._manatal.source_documents(tenant_id, source_document_ids)
 
     def update_source_document(self, tenant_id: str, source_document_id: str, values: dict[str, Any]) -> None:
-        query = urllib.parse.urlencode(
-            {
-                "tenant_id": f"eq.{tenant_id}",
-                "id": f"eq.{source_document_id}",
-            }
-        )
-        self._request(
-            "PATCH",
-            f"/rest/v1/source_documents?{query}",
-            data=values,
-            headers={"Prefer": "return=minimal"},
+        self._manatal.update_source_document(
+            tenant_id,
+            source_document_id,
+            values,
         )
 
     def _count_table(self, table: str, tenant_id: str | None = None) -> int:
-        query_args = {"select": "id", "limit": "1"}
-        if tenant_id:
-            query_args["tenant_id"] = f"eq.{tenant_id}"
-        query = urllib.parse.urlencode(query_args)
-        _result, headers = self._request_with_headers(
-            "GET",
-            f"/rest/v1/{table}?{query}",
-            headers={"Prefer": "count=exact", "Range": "0-0"},
-        )
-        content_range = headers.get("Content-Range") or headers.get("content-range") or ""
-        if "/" not in content_range:
-            return 0
-        total = content_range.rsplit("/", 1)[-1]
-        return int(total) if total.isdigit() else 0
+        return self._capacity.count_table(table, tenant_id)
 
     def capacity_snapshot(self, tenant_id: str | None = None) -> SupabaseCapacitySnapshot:
-        try:
-            payload = {"p_tenant_id": tenant_id, "p_storage_bucket": self.config.supabase_storage_bucket} if tenant_id else {"p_storage_bucket": self.config.supabase_storage_bucket}
-            result = self._request("POST", "/rest/v1/rpc/ingestion_capacity_snapshot_v1", data=payload)
-            row = result[0] if isinstance(result, list) and result else result if isinstance(result, dict) else {}
-            if isinstance(row, dict):
-                table_counts = row.get("table_counts")
-                return SupabaseCapacitySnapshot(
-                    database_bytes=int(row.get("database_bytes") or 0),
-                    storage_bytes=int(row.get("storage_bytes") or 0),
-                    table_counts=dict(table_counts) if isinstance(table_counts, dict) else {},
-                    source="rpc",
-                )
-        except RuntimeError:
-            pass
-
-        tables = ["source_documents", "candidates", "candidate_profiles", "candidate_summaries", "candidate_skill_map", "candidate_chunks", "processing_runs"]
-        counts: dict[str, int] = {}
-        for table in tables:
-            try:
-                counts[table] = self._count_table(table, tenant_id=tenant_id)
-            except RuntimeError:
-                counts[table] = 0
-        return SupabaseCapacitySnapshot(table_counts=counts, source="rest-counts")
+        return self._capacity.snapshot(tenant_id)
 
     def capacity_warnings(self, tenant_id: str, estimated_database_bytes: int = 0, estimated_storage_bytes: int = 0) -> list[str]:
-        warnings: list[str] = []
-        threshold = self.config.supabase_limit_warning_threshold
-        snapshot = self.capacity_snapshot(tenant_id)
-        if self.config.supabase_database_limit_bytes and snapshot.database_bytes:
-            projected_database_bytes = snapshot.database_bytes + int(estimated_database_bytes * self.config.supabase_database_expansion_factor)
-            ratio = projected_database_bytes / self.config.supabase_database_limit_bytes
-            if ratio >= threshold:
-                warnings.append(
-                    "Supabase database usage is near the configured limit: "
-                    f"projected {format_bytes(projected_database_bytes)} of {format_bytes(self.config.supabase_database_limit_bytes)} "
-                    f"({ratio:.1%}, source={snapshot.source})."
-                )
-        if self.config.supabase_storage_limit_bytes:
-            projected_storage_bytes = snapshot.storage_bytes + estimated_storage_bytes
-            if projected_storage_bytes:
-                ratio = projected_storage_bytes / self.config.supabase_storage_limit_bytes
-                if ratio >= threshold:
-                    warnings.append(
-                        "Supabase storage usage is near the configured limit: "
-                        f"projected {format_bytes(projected_storage_bytes)} of {format_bytes(self.config.supabase_storage_limit_bytes)} "
-                        f"({ratio:.1%}, source={snapshot.source})."
-                    )
-        if snapshot.source == "rest-counts":
-            warnings.append("Supabase capacity RPC is not available; limit checks used table counts only and cannot read exact database or storage size.")
-        return warnings
+        return self._capacity.warnings(
+            tenant_id,
+            estimated_database_bytes,
+            estimated_storage_bytes,
+        )
 
     def public_source_uri(self, local_source_path: str) -> str:
         return self.config.public_source_uri or local_source_path
@@ -422,110 +282,33 @@ class SupabaseClient:
         return rows, storage_bytes
 
     def upload_file(self, bucket: str, object_path: str, file_path: str, content_type: str) -> None:
-        data = Path(file_path).read_bytes()
-        api_key = self.config.supabase_api_key()
-        bearer_token = self.config.supabase_bearer_token()
-        headers = {
-            "apikey": api_key,
-            "Content-Type": content_type,
-            "x-upsert": "true",
-        }
-        if is_jwt(bearer_token):
-            headers["Authorization"] = f"Bearer {bearer_token}"
-        request = urllib.request.Request(
-            f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
-            data=data,
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds):
-                return
-        except urllib.error.HTTPError as exc:
-            if exc.code == 409:
-                return
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase storage upload failed ({exc.code}): {content or exc.reason}") from exc
+        self._storage.upload_file(bucket, object_path, file_path, content_type)
 
     def download_file(self, bucket: str, object_path: str, target_path: str) -> None:
-        request = urllib.request.Request(
-            f"{self.base_url}/storage/v1/object/{bucket}/{urllib.parse.quote(object_path)}",
-            headers=self._headers({"Accept": "application/octet-stream"}),
-            method="GET",
-        )
-        try:
-            with urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-                data = response.read()
-        except urllib.error.HTTPError as exc:
-            content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase storage download failed ({exc.code}): {content or exc.reason}") from exc
-        path = Path(target_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        self._storage.download_file(bucket, object_path, target_path)
 
     def queued_public_job_applications(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
-        query_args = {
-            "resume_storage_path": "not.is.null",
-            "select": "id,tenant_id,job_posting_id,resume_storage_path,resume_original_filename,resume_source_document_id,candidate_hub_visibility,resume_ingestion_status,submitted_at,updated_at",
-            "order": "submitted_at.asc",
-            "limit": str(max(1, limit)),
-        }
-        if retry_stale_minutes > 0:
-            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            query_args["or"] = f"(resume_ingestion_status.eq.queued,and(resume_ingestion_status.eq.parsing,updated_at.lt.{stale_before}))"
-        else:
-            query_args["resume_ingestion_status"] = "eq.queued"
-        query = urllib.parse.urlencode(query_args)
-        result = self._request("GET", f"/rest/v1/job_applications?{query}")
-        return validate_rows(result, PublicJobApplicationRow, "job application queue")
+        return self._public_applications.queued(limit, retry_stale_minutes)
 
     def source_document(self, source_document_id: str) -> dict[str, Any] | None:
-        query = urllib.parse.urlencode(
-            {
-                "id": f"eq.{source_document_id}",
-                "select": "id,tenant_id,candidate_id,document_sha256,storage_path,source_uri,original_filename,mime_type",
-                "limit": "1",
-            }
-        )
-        result = self._request("GET", f"/rest/v1/source_documents?{query}")
-        return validate_optional_row(result, SourceDocumentRow, "source document lookup")
+        return self._public_applications.source_document(source_document_id)
 
     def update_job_application(self, application_id: str, payload: dict[str, Any]) -> None:
-        query = urllib.parse.urlencode({"id": f"eq.{application_id}"})
-        self._request(
-            "PATCH",
-            f"/rest/v1/job_applications?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self._public_applications.update_application(application_id, payload)
 
     def update_processing_runs_for_source(self, source_document_id: str, payload: dict[str, Any], application_id: str | None = None) -> None:
-        query_args = {
-            "source_document_id": f"eq.{source_document_id}",
-            "status": "in.(queued,parsing)",
-        }
-        if application_id:
-            query_args["metadata_json->>job_application_id"] = f"eq.{application_id}"
-        query = urllib.parse.urlencode(query_args)
-        self._request(
-            "PATCH",
-            f"/rest/v1/processing_runs?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
+        self._public_applications.update_processing_runs(
+            source_document_id,
+            payload,
+            application_id,
         )
 
     def record_job_application_event(self, tenant_id: str, application_id: str, event_type: str, payload: dict[str, Any]) -> None:
-        self._request(
-            "POST",
-            "/rest/v1/job_application_events",
-            data=[{
-                "tenant_id": tenant_id,
-                "application_id": application_id,
-                "actor_user_id": None,
-                "event_type": event_type,
-                "payload": payload,
-            }],
-            headers={"Prefer": "return=minimal"},
+        self._public_applications.record_event(
+            tenant_id,
+            application_id,
+            event_type,
+            payload,
         )
 
     def sync_bundle(self, bundle: ArtifactBundle) -> None:
@@ -605,39 +388,10 @@ class SupabaseClient:
         self.upsert("comparison_artifacts", [row], "artifact_key")
 
     def queued_candidate_drafts(self, limit: int = 25, retry_stale_minutes: int = 30) -> list[dict[str, Any]]:
-        query_args = {
-            "select": "id,user_id,parsed_profile_json,user_overrides_json,cv_storage_path,cv_original_filename,cv_mime_type,cv_size_bytes,primary_specialization,parse_status,updated_at",
-            "order": "updated_at.asc",
-            "limit": str(max(1, limit)),
-        }
-        if retry_stale_minutes > 0:
-            stale_before = (datetime.now(timezone.utc) - timedelta(minutes=retry_stale_minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            query_args["or"] = f"(parse_status.eq.pending_validation,and(parse_status.eq.parsing,updated_at.lt.{stale_before}))"
-        else:
-            query_args["parse_status"] = "eq.pending_validation"
-        query = urllib.parse.urlencode(query_args)
-        result = self._request("GET", f"/rest/v1/candidate_registration_drafts?{query}")
-        return validate_rows(result, CandidateDraftRow, "candidate draft queue")
+        return self._candidate_drafts.queued(limit, retry_stale_minutes)
 
     def update_candidate_draft(self, user_id: str, payload: dict[str, Any]) -> None:
-        query = urllib.parse.urlencode({"user_id": f"eq.{user_id}"})
-        self._request(
-            "PATCH",
-            f"/rest/v1/candidate_registration_drafts?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self._candidate_drafts.update_draft(user_id, payload)
 
     def update_candidate_by_registered_user(self, user_id: str, payload: dict[str, Any]) -> None:
-        """Patch the candidates row whose uploaded_by matches the registering user_id.
-
-        Called after a successful draft publish to stamp registered_user_id,
-        is_published, and published_at onto the row that the pipeline created.
-        """
-        query = urllib.parse.urlencode({"uploaded_by": f"eq.{user_id}"})
-        self._request(
-            "PATCH",
-            f"/rest/v1/candidates?{query}",
-            data=payload,
-            headers={"Prefer": "return=minimal"},
-        )
+        self._candidate_drafts.update_candidate(user_id, payload)

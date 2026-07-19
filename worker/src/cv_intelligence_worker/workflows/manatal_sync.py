@@ -14,7 +14,7 @@ from ..integrations.manatal import ManatalCandidate, ManatalClient, ManatalResum
 from ..integrations.manatal.client import _redact_url_for_error
 from ..integrations.supabase import SupabaseClient
 from ..domain.models import DocumentSource
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 from .ingestion_pipeline import IngestionPipeline, IngestionResult
 
 

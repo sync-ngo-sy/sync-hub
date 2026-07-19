@@ -10,7 +10,7 @@ from ..config import WorkerConfig
 from ..documents import compute_sha256, guess_mime_type, stable_document_id
 from ..integrations.supabase import SupabaseClient
 from ..domain.models import DocumentSource
-from ..utils import format_error_message
+from ..core.errors import format_error_message
 from .ingestion_pipeline import IngestionPipeline
 
 

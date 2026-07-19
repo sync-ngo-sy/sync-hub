@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..domain.models import CandidateProfile, ExperienceEntry
-from ..utils import compact_whitespace
+from ..core.text import compact_whitespace
 
 
 MONTH_NAME_TO_NUMBER = {

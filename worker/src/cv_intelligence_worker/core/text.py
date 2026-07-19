@@ -34,18 +34,6 @@ def normalize_email(value: str) -> str:
     return compact_whitespace(value).strip(" <>.,;:").lower()
 
 
-def strip_nul_bytes(value):
-    if isinstance(value, str):
-        return value.replace("\x00", "")
-    if isinstance(value, list):
-        return [strip_nul_bytes(item) for item in value]
-    if isinstance(value, tuple):
-        return [strip_nul_bytes(item) for item in value]
-    if isinstance(value, dict):
-        return {key: strip_nul_bytes(item) for key, item in value.items()}
-    return value
-
-
 def compact_whitespace(value: str) -> str:
     return " ".join(value.split()).strip()
 
@@ -69,7 +57,3 @@ def dedupe_keep_order(values: Iterable[object]) -> list[str]:
         seen.add(lowered)
         items.append(value)
     return items
-
-
-def format_error_message(exc: Exception) -> str:
-    return f"{type(exc).__name__}: {exc}"
