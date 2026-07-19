@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '@fontsource-variable/alexandria';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -13,6 +14,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-8: var(--chart-8);
+  --color-chart-7: var(--chart-7);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -22,12 +26,16 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  --color-muted-foreground-soft: var(--muted-foreground-soft);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
+  --color-primary-strong: var(--primary-strong);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -36,6 +44,7 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -47,78 +56,180 @@
   /* Caps small button corners from rounding into a pill shape at tiny sizes. */
   --radius-button-xs: min(var(--radius-md), 10px);
   --radius-button-sm: min(var(--radius-md), 12px);
+
+  /* The one hand-tuned shadow the current app has, kept as the "elevated"
+     tier for modals/popovers. Smaller tiers use Tailwind's default scale —
+     there's no existing precedent for those. */
+  --shadow-elevated: 0 24px 80px rgb(0 0 0 / 0.28);
+
+  --font-sans: 'Alexandria Variable', 'Alexandria', ui-sans-serif, system-ui, sans-serif;
+
+  /* Utopia-style fluid type scale: interpolates between a mobile-min
+     (20rem/320px, base 16px) and desktop-max (96rem/1536px, Tailwind's 2xl
+     breakpoint, base 18px) viewport, so text grows smoothly instead of
+     jumping at breakpoints. Replaces Tailwind's static default sizes. */
+  --text-xs: clamp(0.6944rem, 0.6877rem + 0.0336vw, 0.72rem);
+  --text-xs--line-height: 1.5;
+  --text-sm: clamp(0.8333rem, 0.8158rem + 0.0877vw, 0.9rem);
+  --text-sm--line-height: 1.5;
+  --text-base: clamp(1rem, 0.9671rem + 0.1645vw, 1.125rem);
+  --text-base--line-height: 1.5;
+  --text-lg: clamp(1.2rem, 1.1457rem + 0.2714vw, 1.4063rem);
+  --text-lg--line-height: 1.45;
+  --text-xl: clamp(1.44rem, 1.3564rem + 0.4182vw, 1.7578rem);
+  --text-xl--line-height: 1.35;
+  --text-2xl: clamp(1.728rem, 1.6045rem + 0.6175vw, 2.1973rem);
+  --text-2xl--line-height: 1.25;
+  --text-3xl: clamp(2.0736rem, 1.8965rem + 0.8855vw, 2.7466rem);
+  --text-3xl--line-height: 1.2;
+  --text-4xl: clamp(2.4883rem, 2.24rem + 1.2433vw, 3.4332rem);
+  --text-4xl--line-height: 1.1;
+  --text-5xl: clamp(2.986rem, 2.6424rem + 1.7178vw, 4.2915rem);
+  --text-5xl--line-height: 1.1;
+  --text-6xl: clamp(3.5832rem, 3.1144rem + 2.3437vw, 5.3644rem);
+  --text-6xl--line-height: 1.1;
+  --text-7xl: clamp(4.2998rem, 3.6667rem + 3.1654vw, 6.7055rem);
+  --text-7xl--line-height: 1.1;
+  --text-8xl: clamp(5.1598rem, 4.3119rem + 4.2396vw, 8.3819rem);
+  --text-8xl--line-height: 1.1;
+  --text-9xl: clamp(6.1917rem, 5.0639rem + 5.639vw, 10.4774rem);
+  --text-9xl--line-height: 1.1;
+
+  /* Breakpoints: Tailwind v4's built-in sm/md/lg/xl/2xl scale (640/768/
+     1024/1280/1536) is used as-is — the standard 5-step scale that
+     replaces the app's seven ad hoc breakpoints. Nothing to override here. */
+
+  /* No --z-* scale: every stacking context (dialog, popover, dropdown,
+     alert-dialog) is a Radix portal with its own internal stacking
+     management, so there's no shared magic-number problem left to solve. */
 }
 
 :root {
-  /* Dark-only for now (no theme toggle) — see gaps-and-recommendations.md Part 2 §9.
-     Real brand tokens replace these shadcn defaults in the design-token ticket. */
+  /* Dark-only for now (no theme toggle) — see gaps-and-recommendations.md
+     Part 2 §9. This block is the shadcn-shape placeholder for a future
+     light theme; only the values that already had an obvious light-mode
+     equivalent are filled in — the rest stay shadcn's stock neutrals until
+     a real light theme is designed. */
   color-scheme: dark;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+
+  /* Internal primitive neutral ramp, anchored on the app's dominant
+     background color (#39393a, 125 occurrences across the old codebase)
+     rather than Tailwind's stock gray/zinc/slate. Same ramp in both
+     themes — semantic tokens below pick different steps per theme, not a
+     different ramp. Deliberately NOT exposed as a --color-neutral-* util
+     in @theme inline: per the locked decision
+     (issues/03-styling-system-token-rebuild.md), tokens are consumed
+     through semantic names only, never a raw scale step at a call site. */
+  --neutral-50: oklch(0.98 0.001 286.3);
+  --neutral-100: oklch(0.95 0.002 286.3);
+  --neutral-200: oklch(0.88 0.003 286.3);
+  --neutral-300: oklch(0.79 0.004 286.3);
+  --neutral-400: oklch(0.67 0.004 286.3);
+  --neutral-500: oklch(0.54 0.004 286.3);
+  --neutral-600: oklch(0.46 0.004 286.3);
+  --neutral-700: oklch(0.387 0.003 286.3);
+  --neutral-800: oklch(0.345 0.002 286.3);
+  --neutral-900: oklch(0.27 0.002 286.3);
+  --neutral-950: oklch(0.22 0.002 286.3);
+
+  --background: var(--neutral-50);
+  --foreground: var(--neutral-950);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: var(--neutral-950);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: var(--neutral-950);
+  --primary: oklch(0.744 0.103 188);
+  --primary-foreground: var(--neutral-50);
+  --primary-strong: oklch(0.556 0.097 188.3);
+  --secondary: var(--neutral-100);
+  --secondary-foreground: var(--neutral-950);
+  --muted: var(--neutral-100);
+  --muted-foreground: oklch(0.45 0.028 191);
+  --muted-foreground-soft: oklch(0.55 0.037 189.7);
+  --accent: var(--neutral-200);
+  --accent-foreground: var(--neutral-950);
   --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.65 0.13 159.3);
+  --warning: oklch(0.65 0.117 80.6);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --ring: oklch(0.744 0.103 188);
+  --chart-1: oklch(0.744 0.103 188);
+  --chart-2: oklch(0.879 0.117 80.6);
+  --chart-3: oklch(0.827 0.13 159.3);
+  --chart-4: oklch(0.745 0.131 268.7);
+  --chart-5: oklch(0.756 0.131 354.9);
+  --chart-6: oklch(0.777 0.123 291.2);
+  --chart-7: oklch(0.777 0.122 51.6);
+  --chart-8: oklch(0.852 0.084 237.8);
+  --radius: 1.375rem;
+  --sidebar: var(--neutral-50);
+  --sidebar-foreground: var(--neutral-950);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--neutral-100);
+  --sidebar-accent-foreground: var(--neutral-950);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  /* Colors extracted from the current app's actual usage (219 raw hex /
+     arbitrary-value occurrences audited in issue 03), not invented fresh. */
+  --background: var(--neutral-800); /* #39393a, the dominant background */
+  --foreground: oklch(0.984 0.005 183); /* #f6fbfa, current --text */
+  /* Not specified by the decision doc (it only resolves background/
+     foreground/primary/etc.) — filled with the closest existing precedent,
+     the --panel surface (#444446), but flattened to opaque: the old value
+     was translucent (rgba(68,68,70,0.84) over the page background), which
+     isn't safe for a reusable token that may sit over other surfaces. */
+  --card: var(--neutral-700);
+  --card-foreground: var(--foreground);
+  --popover: var(--neutral-700);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.744 0.103 188); /* #50c1b8, 40 occurrences */
+  /* Matches the current app's .button--primary: color: var(--bg) —
+     dark text reads better than white on a teal this bright. */
+  --primary-foreground: var(--neutral-800);
+  --primary-strong: oklch(0.556 0.097 188.3); /* #00857e, progress-bar gradient */
+  --secondary: var(--neutral-700);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--neutral-700);
+  --muted-foreground: oklch(0.847 0.028 191); /* #b9d3d1, current --text-muted */
+  --muted-foreground-soft: oklch(0.712 0.037 189.7); /* #88aaa7, current --text-soft */
+  --accent: var(--neutral-600);
+  --accent-foreground: var(--foreground);
+  /* New token — the old app had no error/destructive color, just four
+     different ad hoc reds. Standardized on the one already used for a
+     genuine error case (ChatComposer.tsx). */
+  --destructive: oklch(0.711 0.166 22.2); /* #f87171 */
+  /* #73e0a8 / #ffcf7a — same values as --chart-3 / --chart-2 below,
+     derived from them rather than duplicated so the two can't drift. */
+  --success: var(--chart-3);
+  --warning: var(--chart-2);
+  /* Formalized, not new: the current border color already *is* primary at
+     low opacity (primary/16, primary/30 for the strong variant). */
+  --border: oklch(0.744 0.103 188 / 16%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --ring: oklch(0.744 0.103 188);
+  /* Direct lift of the existing CHART_COLORS array
+     (insightsDashboard.helpers.ts) — 3 of 8 already equal brand tokens. */
+  --chart-1: oklch(0.744 0.103 188); /* #50c1b8 */
+  --chart-2: oklch(0.879 0.117 80.6); /* #ffcf7a */
+  --chart-3: oklch(0.827 0.13 159.3); /* #73e0a8 */
+  --chart-4: oklch(0.745 0.131 268.7); /* #8aa8ff */
+  --chart-5: oklch(0.756 0.131 354.9); /* #f08bb4 */
+  --chart-6: oklch(0.777 0.123 291.2); /* #b7a8ff */
+  --chart-7: oklch(0.777 0.122 51.6); /* #f49f6b */
+  --chart-8: oklch(0.852 0.084 237.8); /* #9ad7ff */
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--neutral-600);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 @layer base {
