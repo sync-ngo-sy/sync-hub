@@ -19,18 +19,18 @@
     "tunnel:sync-dev:token": "cloudflared tunnel run --token \"$CLOUDFLARED_TOKEN\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.1",
-    "@tanstack/react-query": "^5.100.8",
-    "framer-motion": "^12.40.0",
-    "lucide-react": "0.378.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.30.4"
+    "@supabase/supabase-js": "^2.110.7",
+    "@tanstack/react-query": "^5.101.2",
+    "framer-motion": "^12.42.2",
+    "lucide-react": "1.25.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",
-    "@types/react": "^18.2.66",
-    "@types/react-dom": "^18.2.22",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.5.0",
     "esbuild": "^0.25.0",
