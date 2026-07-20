@@ -56,14 +56,14 @@ temp/
 tenants.csv
 tenants-ic.csv
 
-# Agent/Skills
-.agents/skills/
+# # Agent/Skills
+# .agents/skills/
 
-# Custom Agent Skills
+# # Custom Agent Skills
 .agents
 .claude
-docs/agents
-.scratch
-skills-lock.json
-AGENTS.md
-CLAUDE.md
+# docs/agents
+# .scratch
+# skills-lock.json
+# AGENTS.md
+# CLAUDE.md
