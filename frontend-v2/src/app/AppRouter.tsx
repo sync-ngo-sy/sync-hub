@@ -63,7 +63,7 @@ const SearchPage = lazyNamed(() => import('@/features/search/pages/SearchPage'),
 const JobsPage = lazyPlaceholder('Job postings')
 const InsightsPage = lazyPlaceholder('Insights')
 const ChatPage = lazyPlaceholder('SYNC AI')
-const ComparePage = lazyPlaceholder('Intelligent comparison')
+const ComparePage = lazyNamed(() => import('@/features/compare/pages/ComparePage'), 'ComparePage')
 const SettingsPage = lazyPlaceholder('Account settings')
 const DossierPage = lazyNamed(
   () => import('@/features/candidates/pages/CandidateDossierPage'),

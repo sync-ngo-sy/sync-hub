@@ -7,17 +7,9 @@ import {
   searchSortSchema,
   type SearchParams,
 } from '@/features/search/types'
+import { commaSeparatedValues } from '@/lib/url/commaSeparatedValues'
 
-const skillsUrlSchema = z.string().transform((value) =>
-  Array.from(
-    new Set(
-      value
-        .split(',')
-        .map((skill) => skill.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 20),
-)
+const skillsUrlSchema = z.string().transform((value) => commaSeparatedValues(value).slice(0, 20))
 
 const positiveIntegerSchema = z
   .string()

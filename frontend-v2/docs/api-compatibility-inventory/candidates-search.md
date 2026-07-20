@@ -341,10 +341,33 @@ recommended_candidate_id, items: [...], meta: { compared_count } }` — **flat, 
   `nested = asRecord(payload.comparison); normalized = Object.keys(nested).length ? nested : payload;` —
   is a **legitimate, backend-verified encoding of this real dual shape**, not a speculative alias. Keep this
   pattern in the new adapter (as an explicit Zod union/discriminated-by-presence check on `comparison`, or by
-  checking `source === "cached_artifact"`), but note the internal shape of the cached `comparison_json`
-  column itself was not independently verified in this pass (it's presumably written elsewhere to match the
-  fresh-compute shape — verify against wherever `comparison_artifacts.comparison_json` is written, not found
-  in the files reviewed here).
+  checking `source === "cached_artifact"`).
+
+### Cached `comparison_json` — verified (ticket 12), and it is **not** the fresh-compute shape
+
+The open question above is now closed. `comparison_artifacts.comparison_json` is written by the worker
+(`worker/src/cv_intelligence_worker/supabase.py:589-599`) as `dataclass_to_dict(ComparisonArtifact)`
+(`worker/src/cv_intelligence_worker/schema.py:144-162`, built in `artifacts.py:55-95`):
+
+```
+{ tenant_id, candidate_ids: [...], overall_summary, items: [{ candidate_id, score, matched_skills,
+  gaps, evidence_refs }], overlap, recommended_candidate_id, evidence_refs, artifact_version }
+```
+
+Differences from the fresh-compute shape that matter to the frontend:
+
+- **Artifact items carry no dossier detail** — no `tenant_id`, `name`, `current_title`,
+  `years_experience`, `seniority`, `strengths`, `risks`, or `summary`; only scoring fields plus
+  `evidence_refs`. The old `mapRemoteComparison` papered over this with `String(record.name ?? "Unknown
+  candidate")` etc., i.e. it rendered invented values for a whole cached comparison. The v2 canonical model
+  makes this explicit instead: `comparisonItemSchema.detail` is `null` on the cached path.
+- **`overall_summary` and `evidence_refs` exist only on the artifact**; `meta.compared_count` only on the
+  fresh path.
+- **`recommended_candidate_id` is `""`**, not `null`, when the artifact has no ranked candidate
+  (`artifacts.py:93`) — the adapter maps empty string to `null`.
+
+Both variants have raw fixture tests in `src/features/compare/api/compareApi.test.ts`
+(`src/test/fixtures/compare.ts`), including the source/body-shape conflict cases.
 
 ### `source` (top-level)
 

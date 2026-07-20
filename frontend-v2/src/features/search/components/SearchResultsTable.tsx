@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { SearchParams, SearchResponse, SearchResult } from '@/features/search/types'
+import { candidateRoleLabel } from '@/features/search/candidateRoleLabel'
 import { shortlistItemKey } from '@/features/search/shortlistIdentity'
 
 interface SearchResultsTableProps {
@@ -97,7 +98,7 @@ export function SearchResultsTable({
               {row.original.name}
             </button>
             <span className="text-xs text-muted-foreground">
-              {row.original.currentTitle || row.original.primaryRole || 'Role not available'}
+              {candidateRoleLabel(row.original)}
             </span>
           </div>
         ),

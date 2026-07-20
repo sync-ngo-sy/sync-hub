@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { candidateRoleLabel } from '@/features/search/candidateRoleLabel'
 import { ClearShortlistButton } from '@/features/search/components/ClearShortlistButton'
 import { shortlistItemKey } from '@/features/search/shortlistIdentity'
 import type { ShortlistItem, ShortlistRemoveCommand } from '@/features/search/types'
@@ -114,9 +115,7 @@ export function ShortlistDrawer({
                         <div className="min-w-0">
                           <CardTitle className="truncate">{item.candidateName}</CardTitle>
                           <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {item.currentTitle
-                              ? item.currentTitle
-                              : (item.primaryRole ?? 'Role not available')}
+                            {candidateRoleLabel(item)}
                           </p>
                         </div>
                       </div>
